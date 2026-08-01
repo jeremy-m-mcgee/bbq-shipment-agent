@@ -8,10 +8,11 @@ not in the path of any decision that can be computed."
 * C2 `configurations` -- parcel variants crossed with quoted services
 * C3 `thermal`        -- the 4.4C gate, plus the seam step 4 replaces
 * C5 `solve`          -- every legal carrier subset, ranked
+* C6 `manifest`       -- the reviewable work package
 
 `rates` is not a pipeline stage but the seam the whole spine rests on: which
 carriers and services exist, what they cost, and how long they take are
-answers from a live API rather than constants anyone chose. C6 remains.
+answers from a live API rather than constants anyone chose.
 """
 
 from .catalog import (
@@ -34,6 +35,14 @@ from .configurations import (
     parcel_variants,
 )
 from .load import Load, define_load
+from .manifest import (
+    Excluded,
+    Manifest,
+    ManifestRow,
+    RunnerUp,
+    assemble_manifest,
+    render,
+)
 from .rates import (
     SATURDAY_CARRIERS,
     Address,
@@ -69,38 +78,43 @@ from .thermal import (
 )
 
 __all__ = [
-    "BOXES",
-    "DEFAULT_LANE",
-    "GEL_PACK_LATENT_HEAT_J_KG",
-    "GEL_PACK_MASS_KG",
-    "MAX_ARRIVAL_TEMP_C",
-    "MAX_CARRIERS_PER_RUN",
-    "MAX_GEL_PACKS",
-    "SATURDAY_CARRIERS",
     "Address",
     "Assignment",
+    "BOXES",
     "Box",
     "BoxSize",
     "CarrierMessage",
     "CarrierPlan",
     "Configuration",
+    "DEFAULT_LANE",
     "Enumeration",
     "EvaluatedConfiguration",
+    "Excluded",
+    "GEL_PACK_LATENT_HEAT_J_KG",
+    "GEL_PACK_MASS_KG",
     "Lane",
     "Load",
     "LumpedCapacitanceModel",
+    "MAX_ARRIVAL_TEMP_C",
+    "MAX_CARRIERS_PER_RUN",
+    "MAX_GEL_PACKS",
+    "Manifest",
+    "ManifestRow",
     "ParcelSpec",
     "Quote",
     "QuoteResult",
     "QuotingUnavailable",
     "RateQuoter",
     "RecordedQuoter",
+    "RunnerUp",
+    "SATURDAY_CARRIERS",
     "ShipDay",
     "ShipDayError",
     "Shipment",
     "ShippoQuoter",
     "Solve",
     "ThermalModel",
+    "assemble_manifest",
     "carrier_subsets",
     "define_load",
     "enumerate_configurations",
@@ -108,6 +122,7 @@ __all__ = [
     "heaviest_variant",
     "parcel_variants",
     "pin_carriers",
+    "render",
     "ship_day_for",
     "shipment_options",
     "solve_carriers",
