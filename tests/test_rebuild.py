@@ -169,26 +169,31 @@ def test_a_run_is_reconstructible_from_the_ledger_alone(writer, ledger):
     writer.append(
         RunRecord(
             run_id="r1", profile="planner_trial", flag_payload_hash="deadbeef",
+            cap_fingerprint="cap-v1", cap_snapshot={"planner": "shadow"},
             evaluation_reasons={"planner-mode": "TARGET_MATCH"},
         )
     )
     writer.append(
-        ShipmentRecord(
-            run_id="r1", recipient_key="k1", cap_fingerprint="cap-v1",
-            cap_snapshot={"planner": "shadow"}, flag_payload_hash="deadbeef",
-        )
+        ShipmentRecord(run_id="r1", recipient_key="k1", cap_fingerprint="cap-v1")
     )
     writer.append(
         AgentInvocationRecord(
             run_id="r1", agent_key="manifest-verification",
-            instruction_variation_key="v3", instruction_hash="cafe1234",
+            instruction_variation_key="v3", instruction_version=7,
+            instruction_hash="cafe1234",
             model="claude-sonnet-5", iterations=2, outcome="pass",
         )
     )
 
     connection = rebuild(ledger)
+    # The shipment carries the fingerprint and nothing else: the capabilities
+    # it names are read off the run row it points at. Joining on the
+    # fingerprint rather than on run_id is what exercises that.
     assert connection.execute(
-        "SELECT r.profile, r.flag_payload_hash, s.cap_fingerprint, a.instruction_hash "
-        "FROM runs r JOIN shipments s USING (run_id) "
-        "JOIN agent_invocations a USING (run_id)"
-    ).fetchone() == ("planner_trial", "deadbeef", "cap-v1", "cafe1234")
+        "SELECT r.profile, r.flag_payload_hash, "
+        "json_extract_string(r.cap_snapshot, '$.planner'), "
+        "a.instruction_variation_key, a.instruction_version, a.instruction_hash "
+        "FROM shipments s "
+        "JOIN runs r ON r.cap_fingerprint = s.cap_fingerprint "
+        "JOIN agent_invocations a ON a.run_id = s.run_id"
+    ).fetchone() == ("planner_trial", "deadbeef", "shadow", "v3", 7, "cafe1234")

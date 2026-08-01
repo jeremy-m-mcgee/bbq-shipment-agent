@@ -192,6 +192,12 @@ class RunRecord(LedgerRecord):
     merge_key: ClassVar[tuple[str, ...]] = ("run_id",)
 
     profile: str | None = _opt("VARCHAR")
+    # Section 2 requires the resolved capability set on every run, and section
+    # 6.9's planner prerequisite needs to count prior shadow runs -- neither is
+    # answerable from `profile` alone, since profile definitions change over
+    # time while the ledger does not.
+    cap_fingerprint: str | None = _opt("VARCHAR")
+    cap_snapshot: dict[str, Any] | None = _opt("JSON")
     packet_count: int | None = _opt("INTEGER")
     carrier_pair: list[str] | None = _opt("VARCHAR[]")
     total_cost: float | None = _opt("DOUBLE")
@@ -226,18 +232,34 @@ class ShipmentRecord(LedgerRecord):
     thermal_margin: float | None = _opt("DOUBLE")
     tracking_number: str | None = _opt("VARCHAR")
     idempotency_key: str | None = _opt("VARCHAR")
+    # A pointer to the run row, not a copy of it. ~22 shipments per run would
+    # otherwise each carry an identical `cap_snapshot` blob into a committed
+    # append-only file, which is what the fingerprint exists to avoid.
+    #
+    # This assumes a shipment's capabilities are the run's. True today: A1
+    # resolves once and nothing re-evaluates per shipment. If design 6.6's
+    # `shipment` context kind is ever used to vary a flag per recipient, a
+    # fingerprint here could name a set no run row describes, and the fix is a
+    # `capability_sets` stream keyed by fingerprint -- deliberately not built
+    # for a case that does not exist yet.
     cap_fingerprint: str | None = _opt("VARCHAR")
-    cap_snapshot: dict[str, Any] | None = _opt("JSON")
-    flag_payload_hash: str | None = _opt("VARCHAR")
 
 
 @dataclass(kw_only=True)
 class AgentInvocationRecord(LedgerRecord):
     """One invocation of one agent. Never folded -- see the module docstring.
 
-    `instruction_hash` is load-bearing: under the medium LD split the
-    instruction text that produced a behavior is not recoverable from
-    `git log`, so this is the only link back to it (design section 6.4).
+    Three fields identify the text that produced a behavior, and they are not
+    redundant with each other (design section 6.4):
+
+    `instruction_variation_key` and `instruction_version` are LaunchDarkly's
+    account of which variation was served. They are the right thing to quote
+    back to the console, and they resolve only against LD.
+
+    `instruction_hash` is a fact about the bytes, computable with no network.
+    It joins a ledger line to the committed snapshot, and it catches a
+    snapshot hand-edited away from the metadata beside it -- a check no
+    version number can perform on a repo file.
     """
 
     stream: ClassVar[str] = "agent_invocations"
@@ -246,6 +268,7 @@ class AgentInvocationRecord(LedgerRecord):
     agent_key: str = _req("VARCHAR")
     shipment_key: str | None = _opt("VARCHAR")
     instruction_variation_key: str | None = _opt("VARCHAR")
+    instruction_version: int | None = _opt("INTEGER")
     instruction_hash: str | None = _opt("VARCHAR")
     model: str | None = _opt("VARCHAR")
     iterations: int | None = _opt("INTEGER")

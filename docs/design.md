@@ -39,7 +39,7 @@ The candidate configuration space per shipment is small enough to enumerate exha
 
 **Capability and authority are different things.** Capability flags (planning, memory, verification) can be toggled freely because the worst case is a weaker proposal in a document being reviewed anyway. Authority flags change what happens in the world if the code is wrong, and are subject to a ceiling that no runtime configuration can raise.
 
-**Every run is reconstructible.** The resolved capability set, the flag payload hash, and the evaluation reasons are recorded on every row. A surprising run must be diagnosable months later.
+**Every run is reconstructible.** The resolved capability set, the flag payload hash, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
 
 **Irreversible actions require explicit approval.** Label purchase is the only stage that spends money, and it happens once, after a human says yes.
 
@@ -306,7 +306,9 @@ Worth stating, because the boundary is easy to erode:
 Moving instruction text to LD breaks the guarantee that instructions and tool signatures ship together. Four mitigations, in descending order of importance:
 
 1. **Tool contract assertion at run start.** Each agent config declares the tool names it expects. A1 checks the declared set against the tools Python actually registers and aborts the run on mismatch. This turns the failure from a mid-run surprise into a startup error, which is the single highest-value mitigation and should not be deferred.
-2. **Instruction hash in the ledger.** Record the resolved instruction variation key and a content hash per agent invocation. A run that behaved oddly must be traceable to the exact text that produced it, and console-side editing means the text is no longer recoverable from `git log`.
+2. **Instruction hash in the ledger.** Record the variation key, the variation version, and a content hash of the instruction template, per agent invocation. The key and version are LaunchDarkly's account of what it served, and they resolve only against LaunchDarkly. The hash is a fact about the bytes: it joins a ledger line to the snapshot in mitigation 3 with no network call, and it catches a snapshot that has been hand-edited away from the metadata beside it, which a version number cannot do for a file sitting in the repo.
+
+   Hash the un-rendered template, never the interpolated text. A rendered hash differs on every run by construction, so it would flag a difference every time and discriminate nothing, and for `address-repair` it would write recipient data into a committed append-only file.
 3. **Snapshot LD configs into the repo.** Pull all four agent configs to a versioned file at the start of every run and commit it. This is not the source of truth, it is an audit trail and the offline cache in one artifact.
 4. **Read-only agents are the safe place to iterate.** `manifest-verification` and `review-narrator` touch no tools with changing signatures. Instruction churn there carries close to zero drift risk. `address-repair` and `infeasibility-remediation` call tools that will change while the system is being built, and their instructions should be treated as more expensive to edit.
 
@@ -436,25 +438,49 @@ run_id, recipient_key, name, validated_address, box_size,
 gel_pack_count, ship_date, carrier, service, cost,
 expected_arrival, actual_arrival, predicted_arrival_temp,
 thermal_margin, tracking_number, idempotency_key,
-cap_fingerprint, cap_snapshot, flag_payload_hash, timestamp
+cap_fingerprint, timestamp
 ```
 
 Per-run row:
 
 ```
-run_id, profile, packet_count, carrier_pair, total_cost,
-suppressed_count, escalated_count, stranded_count,
-flag_payload_hash, evaluation_reasons, started_at, completed_at
+run_id, profile, cap_fingerprint, cap_snapshot, packet_count,
+carrier_pair, total_cost, suppressed_count, escalated_count,
+stranded_count, flag_payload_hash, evaluation_reasons,
+started_at, completed_at
 ```
+
+`cap_fingerprint` and `cap_snapshot` were not in the original field list, which
+conflicted with section 2's requirement that a run's capabilities are
+recoverable from the ledger. They are also load-bearing for the planner
+prerequisite in 6.9: counting how many runs actually operated in shadow cannot
+be answered from `profile` alone, because profile definitions are edited over
+time while the ledger is append-only.
+
+The snapshot lives on the run row only. A shipment row carries
+`cap_fingerprint` and reads the values off the run it points at. At ~22
+shipments per run the alternative is 22 identical copies of one blob in a
+committed append-only file, which answers no question the run row does not and
+makes the diff unreadable. Naming the equivalence class is the fingerprint's
+whole job; storing a hash beside the values it hashes is not.
+
+This assumes a shipment's capabilities are the run's, which holds because A1
+resolves once and nothing re-evaluates per shipment. If 6.6's `shipment`
+context kind is ever used to vary a flag per recipient, that assumption breaks:
+a fingerprint on a shipment row could then name a set no run row describes. The
+fix at that point is a `capability_sets` stream keyed by fingerprint and
+written once per distinct set, deliberately not built for a case that does not
+yet exist.
 
 Per agent invocation:
 
 ```
 run_id, shipment_key, agent_key, instruction_variation_key,
-instruction_hash, model, iterations, outcome, timestamp
+instruction_version, instruction_hash, model, iterations,
+outcome, timestamp
 ```
 
-The capability fingerprint and snapshot are not optional. Without them, the question of why one run behaved differently from another produces anecdotes rather than data. Under the medium split the instruction hash carries the same weight, because the text that produced a given behavior is no longer recoverable from `git log`.
+The capability fingerprint and snapshot are not optional. Without them, the question of why one run behaved differently from another produces anecdotes rather than data. The instruction hash carries the same weight under the medium split, for the reasons in 6.4.
 
 ### Suppression window
 
