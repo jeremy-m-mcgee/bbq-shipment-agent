@@ -1,0 +1,21 @@
+[project]
+name = "bbq-shipment-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "jeremy-m-mcgee", email = "mcgjeremy@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.5.5",
+    "launchdarkly-server-sdk>=9.16.1",
+    "shippo>=3.9.0",
+]
+
+[project.scripts]
+bbq-shipment-agent = "bbq_shipment_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
