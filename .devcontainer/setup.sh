@@ -2,11 +2,12 @@
 set -euo pipefail
 
 npm install -g @anthropic-ai/claude-code
+pip install uv
 
-python -m pip install --upgrade pip
-if [ -f requirements.txt ]; then
-  pip install -r requirements.txt
+if [ -f pyproject.toml ]; then
+  uv sync
+else
+  echo "No pyproject.toml yet, skipping uv sync"
 fi
 
-echo "setup complete"
 claude --version || echo "WARNING: claude not on PATH"
