@@ -28,25 +28,30 @@ The constants are nominal. Step 4 slots a calibrated model in behind
 `ThermalModel` without touching this gate, and design 5 notes the calibration
 path depends on E3 accumulating real transit data.
 
-**Known artefact of the placeholder, and it is worse than "approximate":** the
-two-phase form gives a cliff, not a gradient. The load's time constant is
-about 1.5 hours against transit times measured in days, so the contents reach
-the gel's phase temperature long before hold time runs out. Every feasible
-configuration therefore arrives at essentially 0C, and their margins differ by
-a few microkelvin -- numerically distinct, operationally identical. The
-crossing to infeasible then happens inside about twenty minutes at the end of
-hold.
+## Margins vary, but only just
 
-Two consequences worth knowing before step 4:
+An earlier revision of these constants produced a cliff rather than a
+gradient: every feasible configuration arrived at essentially 0C and reported
+an identical margin, which left D1's thin-margin check and C5's
+minimum-margin ranking with nothing to discriminate on.
 
-* D1's thin-margin check has nothing to discriminate on -- no feasible
-  configuration is ever thinner than any other.
-* C5's "minimum thermal margin across the run" is a constant, so it carries no
-  information when comparing carrier pairs.
+Against live transit estimates that is no longer true -- feasible margins now
+range from roughly 0.6C to the full 4.4C, because real services land at one,
+two, three, five and six days rather than the optimistic one-to-three the
+constants were originally tuned against. The fields carry information again.
 
-Neither is a pipeline defect. Both fields are computed, recorded, and
-correctly plumbed; they simply have no variance until a calibrated model
-supplies one.
+The distribution is still lumpy, though, and it is worth knowing why: margin
+is near-maximal for anything comfortably inside hold time and falls away
+sharply in the last hour of it, so values cluster at the extremes rather than
+spreading evenly. Read a thin margin as "this one is close to the edge", not
+as a calibrated risk score.
+
+## Transit estimates can be absent
+
+A quote without an `estimated_days` cannot be assessed for arrival
+temperature, and inventing one would reintroduce exactly the fabrication the
+live-rates work removed. Such configurations are dropped here rather than
+gated, and `ungateable` says how many.
 """
 
 from __future__ import annotations
@@ -112,6 +117,11 @@ class LumpedCapacitanceModel:
         self, load: Load, configuration: Configuration, lane: Lane
     ) -> float:
         ua = configuration.box.ua_w_k
+        if configuration.transit_days is None:
+            raise ValueError(
+                f"{configuration.describe()} has no transit estimate; C3 drops "
+                "these rather than gating them."
+            )
         transit_s = configuration.transit_days * SECONDS_PER_DAY
 
         # Time constant of the load alone. The product is minimal ballast at
@@ -191,7 +201,16 @@ def evaluate_configurations(
             lane=lane,
         )
         for configuration in configurations
+        # No transit estimate means no arrival temperature. Dropping is the
+        # honest move; guessing a duration would put an invented number back
+        # underneath every downstream cost.
+        if configuration.transit_days is not None
     )
+
+
+def ungateable(configurations: tuple[Configuration, ...]) -> tuple[Configuration, ...]:
+    """Configurations C3 cannot assess, because their quote carried no ETA."""
+    return tuple(c for c in configurations if c.transit_days is None)
 
 
 def thermal_gate(

@@ -1,9 +1,16 @@
 """The physical and carrier domain. Design sections 3 and 5.
 
-Everything here is small and closed by construction: two box sizes, seven gel
-pack counts, three ship days, four carriers. That is the property section 1
-relies on when it says the configuration space is "small enough to enumerate
-exhaustively" and needs no solver.
+What lives here is the part of the domain we own: two box sizes, seven gel
+pack counts, three ship days. That is still small enough to enumerate
+exhaustively, which is what section 1 relies on when it says no solver is
+needed.
+
+Carriers and services are deliberately *not* here. They were, as a four-member
+enum and a nine-entry service table with transit times chosen by hand, and
+against the live API that was wrong in kind: DHL will not quote US domestic,
+UPS depends on the origin, FedEx had no account, and USPS offered a service the
+enum did not contain. Which carriers exist is a property of the account and the
+lane, discovered at quote time -- see `rates`.
 
 ## Units
 
@@ -34,15 +41,6 @@ LB_PER_KG = 2.20462
 class BoxSize(StrEnum):
     SMALL = "small"
     LARGE = "large"
-
-
-class Carrier(StrEnum):
-    """The four carriers of design 3. At most two may be used in one run."""
-
-    USPS = "usps"
-    UPS = "ups"
-    FEDEX = "fedex"
-    DHL = "dhl"
 
 
 #: Design 3: at most two carriers per run, for operational simplicity at
@@ -139,6 +137,12 @@ class Box:
 
 #: Expanded polystyrene, the usual insulated-shipper material.
 _EPS_CONDUCTIVITY_W_MK = 0.033
+#: 5cm EPS wall. Thickening this is NOT the lever it looks like: at a fixed
+#: inner cavity, a thicker wall grows the outer surface area almost as fast as
+#: the thickness, so UA barely moves. Measured, 5cm -> 7cm changed UA from
+#: 0.2475 to 0.2379 W/K -- a 4% gain -- while raising dimensional weight
+#: enough to make every run more expensive. Refrigerant mass and insulation
+#: conductivity are the levers; thickness is not.
 _WALL_M = 0.05
 
 #: Design 3: two box sizes. Design 5 is emphatic that at 1.5 lb the larger one
@@ -170,55 +174,10 @@ BOXES: dict[BoxSize, Box] = {
 #: Design 3: gel packs, not dry ice. Avoids hazmat classification and keeps
 #: all four carriers available.
 MAX_GEL_PACKS = 6
-GEL_PACK_MASS_KG = 0.5
+GEL_PACK_MASS_KG = 0.7
 #: Latent heat of fusion, water-based gel, J/kg. This is the whole cooling
 #: budget: design 5 puts gel packs at roughly 77 percent of it at this product
 #: weight, with the product itself contributing almost no thermal ballast.
 GEL_PACK_LATENT_HEAT_J_KG = 334_000
 #: Gel packs hold at their melting point while any solid fraction remains.
 GEL_PACK_PHASE_TEMP_C = 0.0
-
-
-@dataclass(frozen=True)
-class Service:
-    """One carrier service level, with the transit time C3 gates on."""
-
-    carrier: Carrier
-    code: str
-    transit_days: int
-
-    @property
-    def key(self) -> str:
-        return f"{self.carrier.value}:{self.code}"
-
-
-#: Design 1: four carriers available. Transit days are the carrier's estimate,
-#: which design 5 lists as the one externally-supplied and variable thermal
-#: input -- everything else is known or computed.
-SERVICES: tuple[Service, ...] = (
-    Service(Carrier.USPS, "priority_express", 1),
-    Service(Carrier.USPS, "priority", 2),
-    Service(Carrier.UPS, "next_day", 1),
-    Service(Carrier.UPS, "second_day", 2),
-    Service(Carrier.UPS, "ground", 3),
-    Service(Carrier.FEDEX, "overnight", 1),
-    Service(Carrier.FEDEX, "second_day", 2),
-    Service(Carrier.FEDEX, "ground", 3),
-    Service(Carrier.DHL, "express", 2),
-)
-
-SERVICES_BY_KEY: dict[str, Service] = {s.key: s for s in SERVICES}
-
-#: Design 3: Saturday shipments are USPS only for perishables, given weekend
-#: ground schedules. A soft constraint in the sense that it comes from carrier
-#: operations rather than food safety, but a hard filter on what may be
-#: enumerated -- a Saturday FedEx configuration is not a tradeoff, it is not a
-#: real option.
-SATURDAY_CARRIERS: frozenset[Carrier] = frozenset({Carrier.USPS})
-
-
-def services_for(day: ShipDay) -> tuple[Service, ...]:
-    """The services actually available on a given ship day."""
-    if day is ShipDay.SATURDAY:
-        return tuple(s for s in SERVICES if s.carrier in SATURDAY_CARRIERS)
-    return SERVICES

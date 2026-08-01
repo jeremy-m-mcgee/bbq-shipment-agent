@@ -4,47 +4,57 @@ Build order step 3: C1 through C6 with zero model calls. Every decision here
 is ordinary Python, which is design 2's central claim -- "a language model is
 not in the path of any decision that can be computed."
 
-Stages present so far:
-
 * C1 `load`           -- packet contents to mass and dimensions
-* C2 `configurations` -- the cross product, all four carriers, no pair limit
+* C2 `configurations` -- parcel variants crossed with quoted services
 * C3 `thermal`        -- the 4.4C gate, plus the seam step 4 replaces
+* C5 `solve`          -- every legal carrier subset, ranked
 
-Still to come: C5 (six-pair solve) and C6 (manifest assembly).
+`rates` is not a pipeline stage but the seam the whole spine rests on: which
+carriers and services exist, what they cost, and how long they take are
+answers from a live API rather than constants anyone chose. C6 remains.
 """
 
 from .catalog import (
     BOXES,
+    GEL_PACK_LATENT_HEAT_J_KG,
+    GEL_PACK_MASS_KG,
     MAX_CARRIERS_PER_RUN,
     MAX_GEL_PACKS,
-    SERVICES,
     Box,
     BoxSize,
-    Carrier,
-    Service,
     ShipDay,
     ShipDayError,
-    services_for,
     ship_day_for,
 )
-from .configurations import Configuration, enumerate_configurations
+from .configurations import (
+    Configuration,
+    Enumeration,
+    enumerate_configurations,
+    heaviest_variant,
+    parcel_variants,
+)
 from .load import Load, define_load
 from .rates import (
-    STATIC_RATES,
-    RateCard,
-    ServiceRate,
-    StaticRateCard,
-    billable_weight_kg,
+    SATURDAY_CARRIERS,
+    Address,
+    CarrierMessage,
+    ParcelSpec,
+    Quote,
+    QuoteResult,
+    QuotingUnavailable,
+    RateQuoter,
+    RecordedQuoter,
+    ShippoQuoter,
+    pin_carriers,
 )
 from .shipment import Shipment
 from .solve import (
-    CARRIER_PAIRS,
     Assignment,
-    PairPlan,
-    PricedConfiguration,
+    CarrierPlan,
     Solve,
+    carrier_subsets,
     shipment_options,
-    solve_pairs,
+    solve_carriers,
 )
 from .thermal import (
     DEFAULT_LANE,
@@ -55,45 +65,52 @@ from .thermal import (
     ThermalModel,
     evaluate_configurations,
     thermal_gate,
+    ungateable,
 )
 
 __all__ = [
     "BOXES",
-    "CARRIER_PAIRS",
     "DEFAULT_LANE",
-    "STATIC_RATES",
-    "Assignment",
-    "PairPlan",
-    "PricedConfiguration",
-    "RateCard",
-    "ServiceRate",
-    "Shipment",
-    "Solve",
-    "StaticRateCard",
-    "StaticRateCard",
-    "billable_weight_kg",
-    "shipment_options",
-    "solve_pairs",
+    "GEL_PACK_LATENT_HEAT_J_KG",
+    "GEL_PACK_MASS_KG",
     "MAX_ARRIVAL_TEMP_C",
     "MAX_CARRIERS_PER_RUN",
     "MAX_GEL_PACKS",
-    "SERVICES",
+    "SATURDAY_CARRIERS",
+    "Address",
+    "Assignment",
     "Box",
     "BoxSize",
-    "Carrier",
+    "CarrierMessage",
+    "CarrierPlan",
     "Configuration",
+    "Enumeration",
     "EvaluatedConfiguration",
     "Lane",
     "Load",
     "LumpedCapacitanceModel",
-    "Service",
+    "ParcelSpec",
+    "Quote",
+    "QuoteResult",
+    "QuotingUnavailable",
+    "RateQuoter",
+    "RecordedQuoter",
     "ShipDay",
     "ShipDayError",
+    "Shipment",
+    "ShippoQuoter",
+    "Solve",
     "ThermalModel",
+    "carrier_subsets",
     "define_load",
     "enumerate_configurations",
     "evaluate_configurations",
-    "services_for",
+    "heaviest_variant",
+    "parcel_variants",
+    "pin_carriers",
     "ship_day_for",
+    "shipment_options",
+    "solve_carriers",
     "thermal_gate",
+    "ungateable",
 ]

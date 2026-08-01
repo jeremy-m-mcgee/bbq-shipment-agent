@@ -1,22 +1,34 @@
+"""Quoting and C5, against real recorded Shippo quotes."""
+
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from bbq_shipment_agent.planning import (
-    CARRIER_PAIRS,
     MAX_CARRIERS_PER_RUN,
-    STATIC_RATES,
-    BoxSize,
-    Carrier,
+    Address,
+    CarrierMessage,
     Lane,
+    ParcelSpec,
+    Quote,
+    QuoteResult,
+    QuotingUnavailable,
+    RecordedQuoter,
     Shipment,
-    StaticRateCard,
-    billable_weight_kg,
+    ShippoQuoter,
+    carrier_subsets,
     define_load,
-    enumerate_configurations,
+    heaviest_variant,
+    parcel_variants,
+    pin_carriers,
     shipment_options,
-    solve_pairs,
+    solve_carriers,
 )
+
+FIXTURE = Path(__file__).parent / "fixtures" / "shippo-quotes-sf-dc.json"
+ORIGIN = Address("BBQ Kitchen", "64 Divisadero St", "San Francisco", "CA", "94117")
+DEST = Address("Recipient One", "1600 Pennsylvania Ave NW", "Washington", "DC", "20500")
 
 SATURDAY = date(2026, 8, 8)
 MONDAY = date(2026, 8, 10)
@@ -25,232 +37,266 @@ ALL_DAYS = (SATURDAY, MONDAY, TUESDAY)
 WEEKDAYS = (MONDAY, TUESDAY)
 
 
+@pytest.fixture
+def quoter():
+    return RecordedQuoter.from_file(FIXTURE)
+
+
 def shipments(count: int, **overrides) -> tuple[Shipment, ...]:
     return tuple(
-        Shipment(
-            recipient_key=f"r{i:02d}",
-            name=f"Recipient {i}",
-            address={"street": f"{i} Main St", "zip": "78701"},
-            **overrides,
-        )
+        Shipment(recipient_key=f"r{i:02d}", name=f"Recipient {i}", address=DEST, **overrides)
         for i in range(count)
     )
 
 
-class TestRates:
-    def test_the_large_box_is_billed_on_volume_it_is_not_using(self):
-        # Design 5: at 1.5 lb the large box is nowhere near its dimensional
-        # weight in actual mass, so it loses on cost as well as thermally.
-        load = define_load("k")
-        configurations = enumerate_configurations(load, (MONDAY,))
-        by_shape = {
-            (c.box_size, c.gel_packs): c
-            for c in configurations
-            if c.service.key == "usps:priority"
-        }
-        small = billable_weight_kg(load, by_shape[(BoxSize.SMALL, 6)])
-        large = billable_weight_kg(load, by_shape[(BoxSize.LARGE, 6)])
-        assert large > small
+class TestCarrierMessages:
+    def test_rate_limiting_is_recognised_as_transient(self):
+        assert CarrierMessage("UPS", "10429", "Hard: Too Many Requests").transient
 
-    def test_the_large_box_quotes_higher_for_the_same_contents(self):
-        load = define_load("k")
-        card = StaticRateCard()
-        ship = Shipment(recipient_key="k", name="K")
-        configurations = {
-            (c.box_size): c
-            for c in enumerate_configurations(load, (MONDAY,))
-            if c.service.key == "usps:priority" and c.gel_packs == 6
-        }
-        assert card.quote(load, configurations[BoxSize.LARGE], ship) > card.quote(
-            load, configurations[BoxSize.SMALL], ship
+    def test_a_service_area_rejection_is_not(self):
+        # Retrying a permanent rejection burns time and reports the same thing.
+        assert not CarrierMessage(
+            "UPS", "", "Shipment origin is out of service area for UPS Master account"
+        ).transient
+
+    def test_an_unrecognised_message_is_treated_as_a_real_answer(self):
+        assert not CarrierMessage("DHLExpress", "", "does not support US domestic").transient
+
+
+class TestQuotePinning:
+    def test_the_pin_is_what_actually_quoted(self, quoter):
+        load = define_load("r0")
+        reference = heaviest_variant(parcel_variants(load))
+        assert pin_carriers(quoter, ORIGIN, DEST, reference) == frozenset({"UPS", "USPS"})
+
+    def test_a_recording_missing_a_pinned_carrier_raises(self, quoter):
+        # The pin exists because quoting the same lane with different parcels
+        # returned UPS for some and not others. Planning against a short
+        # carrier set reports strandings that are artefacts of the API call.
+        load = define_load("r0")
+        parcel = parcel_variants(load)[0]
+        with pytest.raises(QuotingUnavailable, match="missing pinned carriers"):
+            quoter.quote(ORIGIN, DEST, parcel, require=frozenset({"UPS", "FedEx"}))
+
+    def test_missing_reports_the_gap(self):
+        result = QuoteResult(quotes=(), messages=())
+        assert result.missing(frozenset({"UPS"})) == frozenset({"UPS"})
+
+
+class TestQuoterRetry:
+    """Transient failures become latency rather than a short carrier set."""
+
+    def _quoter(self, responses):
+        class FakeShippo(ShippoQuoter):
+            def __init__(self, responses):
+                super().__init__(api_key="test", sleep=lambda _s: None, max_attempts=4)
+                self._responses = list(responses)
+                self.calls = 0
+
+            def _fetch(self, origin, destination, parcel, attempt):
+                self.calls += 1
+                return self._responses.pop(0)
+
+        return FakeShippo(responses)
+
+    def _quote(self, carrier="UPS", amount=10.0):
+        parcel = ParcelSpec(  # shape only; never sent anywhere in this test
+            box_size=next(iter(parcel_variants(define_load("r0")))).box_size,
+            gel_packs=0, length_cm=25, width_cm=25, height_cm=25, weight_kg=1.0,
+        )
+        return Quote(carrier, "svc", "Service", amount, "USD", 2, parcel)
+
+    def test_it_retries_until_the_pinned_carrier_answers(self):
+        throttled = QuoteResult(
+            quotes=(self._quote("USPS"),),
+            messages=(CarrierMessage("UPS", "10429", "Hard: Too Many Requests"),),
+        )
+        complete = QuoteResult(quotes=(self._quote("USPS"), self._quote("UPS")))
+        quoter = self._quoter([throttled, throttled, complete])
+        parcel = parcel_variants(define_load("r0"))[0]
+
+        result = quoter.quote(ORIGIN, DEST, parcel, require=frozenset({"UPS", "USPS"}))
+        assert result.carriers == {"UPS", "USPS"}
+        assert quoter.calls == 3
+
+    def test_attempts_counts_calls_made_not_which_one_won(self):
+        # The failure message said "after 1 attempts" when four had been made,
+        # which reads as a retry that never ran.
+        throttled = QuoteResult(
+            quotes=(self._quote("USPS"),),
+            messages=(CarrierMessage("UPS", "10429", "Too Many Requests"),),
+        )
+        quoter = self._quoter([throttled] * 4)
+        parcel = parcel_variants(define_load("r0"))[0]
+        with pytest.raises(QuotingUnavailable, match="after 4 attempts"):
+            quoter.quote(ORIGIN, DEST, parcel, require=frozenset({"UPS", "USPS"}))
+
+    def test_it_does_not_retry_a_permanent_rejection(self):
+        settled = QuoteResult(
+            quotes=(self._quote("USPS"),),
+            messages=(CarrierMessage("DHLExpress", "", "no US domestic"),),
+        )
+        quoter = self._quoter([settled])
+        parcel = parcel_variants(define_load("r0"))[0]
+        assert quoter.quote(ORIGIN, DEST, parcel).carriers == {"USPS"}
+        assert quoter.calls == 1
+
+    def test_no_quotes_at_all_stops_the_run(self):
+        # Unlike the LaunchDarkly path, quoting is not optional: a missing
+        # rate costs a manifest full of invented money.
+        quoter = self._quoter([QuoteResult(quotes=())])
+        parcel = parcel_variants(define_load("r0"))[0]
+        with pytest.raises(QuotingUnavailable, match="no carrier quoted"):
+            quoter.quote(ORIGIN, DEST, parcel)
+
+
+class TestCarrierSubsets:
+    def test_it_enumerates_singletons_and_pairs(self):
+        assert carrier_subsets(frozenset({"UPS", "USPS"})) == (
+            ("UPS",), ("USPS",), ("UPS", "USPS"),
         )
 
-    def test_faster_service_costs_more(self):
-        # The ordering is what should survive replacement by real Shippo
-        # rates, not any particular figure.
-        assert STATIC_RATES["fedex:overnight"].base > STATIC_RATES["fedex:second_day"].base
-        assert STATIC_RATES["fedex:second_day"].base > STATIC_RATES["fedex:ground"].base
+    def test_four_carriers_give_ten_subsets_not_six_pairs(self):
+        # "At most two" is a ceiling, not a quota, and a single carrier
+        # serving everything is a legal and often winning answer.
+        subsets = carrier_subsets(frozenset({"A", "B", "C", "D"}))
+        assert len(subsets) == 10
+        assert all(len(s) <= MAX_CARRIERS_PER_RUN for s in subsets)
 
-    def test_a_further_zone_costs_more(self):
-        load = define_load("k")
-        card = StaticRateCard()
-        configuration = next(
-            c for c in enumerate_configurations(load, (MONDAY,)) if c.gel_packs == 6
+    def test_a_single_available_carrier_still_yields_a_plan(self):
+        assert carrier_subsets(frozenset({"USPS"})) == (("USPS",),)
+
+    def test_ordering_is_deterministic(self):
+        assert carrier_subsets(frozenset({"C", "A", "B"})) == carrier_subsets(
+            frozenset({"B", "C", "A"})
         )
-        near = card.quote(load, configuration, Shipment("k", "K", zone=1))
-        far = card.quote(load, configuration, Shipment("k", "K", zone=8))
-        assert far > near
-
-    def test_an_unpriceable_service_is_dropped_not_raised(self):
-        # A carrier that does not serve a zone is an ordinary planning fact.
-        empty_card = StaticRateCard(rates={})
-        assert shipment_options(Shipment("k", "K"), ALL_DAYS, empty_card) == ()
-
-
-class TestPairEnumeration:
-    def test_four_carriers_choose_two_is_six(self):
-        assert len(CARRIER_PAIRS) == 6
-        assert all(len(pair) == MAX_CARRIERS_PER_RUN for pair in CARRIER_PAIRS)
-
-    def test_every_carrier_appears(self):
-        assert {c for pair in CARRIER_PAIRS for c in pair} == set(Carrier)
-
-    def test_pairs_are_ordered_deterministically(self):
-        assert CARRIER_PAIRS == tuple(sorted(CARRIER_PAIRS))
 
 
 class TestSolve:
-    def test_it_scores_all_six_pairs(self):
-        solve = solve_pairs(shipments(5), ALL_DAYS)
-        assert len(solve.covering) + len(solve.partial) == 6
+    def test_it_scores_every_legal_subset(self, quoter):
+        solve = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter)
+        assert len(solve.covering) + len(solve.partial) == len(
+            carrier_subsets(solve.available_carriers)
+        )
 
-    def test_covering_pairs_rank_by_cost(self):
-        solve = solve_pairs(shipments(5), ALL_DAYS)
+    def test_covering_subsets_rank_by_cost(self, quoter):
+        solve = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter)
         costs = [p.total_cost for p in solve.covering]
         assert costs == sorted(costs)
 
-    def test_the_best_plan_is_the_cheapest_covering_one(self):
-        solve = solve_pairs(shipments(5), ALL_DAYS)
+    def test_the_best_plan_is_the_cheapest_covering_one(self, quoter):
+        solve = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter)
         assert solve.best is solve.covering[0]
         assert solve.best.covers_all
 
-    def test_each_shipment_gets_its_cheapest_option_under_the_pair(self):
-        # Independent lookup: no interaction between shipments, which is why
-        # design 1 says no solver is needed.
-        ships = shipments(4)
-        solve = solve_pairs(ships, ALL_DAYS)
-        plan = solve.best
-        allowed = set(plan.carriers)
-        for assignment in plan.assignments:
-            available = [
-                p
-                for p in shipment_options(assignment.shipment, ALL_DAYS)
-                if p.carrier in allowed
-            ]
-            assert assignment.cost == min(p.cost for p in available)
+    def test_a_cheaper_single_carrier_beats_a_pair_that_ties(self, quoter):
+        # Equal cost resolves toward fewer carriers, which matches design 3's
+        # rationale for the ceiling: operational simplicity at drop-off.
+        solve = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter)
+        assert len(solve.best.carriers) == 1
 
-    def test_total_cost_is_the_sum_of_assignments(self):
-        plan = solve_pairs(shipments(6), ALL_DAYS).best
+    def test_each_shipment_gets_its_cheapest_option_under_the_subset(self, quoter):
+        ships = shipments(2)
+        solve = solve_carriers(ships, ORIGIN, ALL_DAYS, quoter)
+        allowed = set(solve.best.carriers)
+        feasible, _ = shipment_options(ships[0], ORIGIN, ALL_DAYS, quoter)
+        cheapest = min(
+            e.configuration.cost for e in feasible if e.configuration.carrier in allowed
+        )
+        assert solve.best.assignments[0].cost == cheapest
+
+    def test_total_cost_is_the_sum_of_assignments(self, quoter):
+        plan = solve_carriers(shipments(3), ORIGIN, ALL_DAYS, quoter).best
         assert plan.total_cost == pytest.approx(sum(a.cost for a in plan.assignments))
 
-    def test_a_partial_plan_never_outranks_a_covering_one(self):
-        # A cheap plan that quietly drops three recipients must not win.
-        ships = shipments(3) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
-        )
-        solve = solve_pairs(ships, WEEKDAYS)
-        assert solve.covering and solve.partial
-        assert all(p.covers_all for p in solve.covering)
-        assert solve.best.covers_all
+    def test_packets_by_date_accounts_for_every_shipment(self, quoter):
+        plan = solve_carriers(shipments(4), ORIGIN, ALL_DAYS, quoter).best
+        assert sum(plan.packets_by_date().values()) == plan.coverage == 4
 
-    def test_partial_plans_rank_by_coverage_then_cost(self):
-        ships = shipments(3) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
-        )
-        solve = solve_pairs(ships, WEEKDAYS)
-        coverages = [p.coverage for p in solve.partial]
-        assert coverages == sorted(coverages, reverse=True)
-
-    def test_carriers_used_can_be_narrower_than_the_pair(self):
-        # At most two is a ceiling, not a quota. The manifest should report
-        # what is actually being dropped off.
-        plan = solve_pairs(shipments(5), ALL_DAYS).best
+    def test_carriers_used_can_be_narrower_than_the_subset(self, quoter):
+        plan = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter).best
         assert set(plan.carriers_used) <= set(plan.carriers)
 
-    def test_packets_by_date_accounts_for_every_shipment(self):
-        plan = solve_pairs(shipments(22), ALL_DAYS).best
-        assert sum(plan.packets_by_date().values()) == plan.coverage == 22
-
-    def test_minimum_thermal_margin_is_reported(self):
-        plan = solve_pairs(shipments(5), ALL_DAYS).best
+    def test_minimum_thermal_margin_is_reported(self, quoter):
+        plan = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter).best
         assert plan.min_thermal_margin_c == min(
-            a.priced.thermal_margin_c for a in plan.assignments
+            a.evaluated.thermal_margin_c for a in plan.assignments
         )
 
-    def test_the_solve_is_deterministic(self):
-        ships = shipments(22)
-        first = solve_pairs(ships, ALL_DAYS)
-        second = solve_pairs(ships, ALL_DAYS)
+    def test_the_cheapest_plan_can_sit_on_a_thin_margin(self, quoter):
+        # Real behaviour worth pinning: cost-first ranking will happily pick a
+        # configuration close to the gate, which is what D1 exists to notice.
+        plan = solve_carriers(shipments(2), ORIGIN, ALL_DAYS, quoter).best
+        assert plan.min_thermal_margin_c < 1.0
+
+    def test_the_solve_is_deterministic(self, quoter):
+        ships = shipments(4)
+        first = solve_carriers(ships, ORIGIN, ALL_DAYS, quoter)
+        second = solve_carriers(ships, ORIGIN, ALL_DAYS, quoter)
         assert [p.carriers for p in first.covering] == [p.carriers for p in second.covering]
-        assert [
-            (a.shipment.recipient_key, a.priced.configuration)
-            for a in first.best.assignments
-        ] == [
-            (a.shipment.recipient_key, a.priced.configuration)
-            for a in second.best.assignments
+        assert [a.evaluated.configuration.describe() for a in first.best.assignments] == [
+            a.evaluated.configuration.describe() for a in second.best.assignments
         ]
+
+    def test_carrier_messages_reach_the_result(self, quoter):
+        assert isinstance(solve_carriers(shipments(1), ORIGIN, ALL_DAYS, quoter).messages, tuple)
 
 
 class TestStrandedVersusInfeasible:
-    """Design 4 draws this line explicitly, and conflating it turns a
-    reportable tradeoff into a mysteriously missing recipient."""
+    """Design 4 draws this line explicitly; conflating it turns a reportable
+    tradeoff into a mysteriously missing recipient."""
 
-    def test_feasible_elsewhere_but_not_here_is_stranded(self):
-        ships = shipments(2) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
+    def test_feasible_nowhere_is_infeasible_not_stranded(self, quoter):
+        ships = shipments(1) + (
+            Shipment("hot", "Hot", address=DEST, lane=Lane("furnace", 80.0)),
         )
-        solve = solve_pairs(ships, WEEKDAYS)
-        without_usps = [p for p in solve.partial if Carrier.USPS not in p.carriers]
-        assert without_usps
-        assert all("pinned" in p.stranded for p in without_usps)
-        assert solve.infeasible == ()
-
-    def test_feasible_nowhere_is_infeasible_not_stranded(self):
-        # C3 came back empty for this shipment; that belongs to C4.
-        ships = shipments(2) + (Shipment("hot", "Hot", lane=Lane("oven", 60.0)),)
-        solve = solve_pairs(ships, ALL_DAYS)
+        solve = solve_carriers(ships, ORIGIN, ALL_DAYS, quoter)
         assert solve.infeasible == ("hot",)
         assert all("hot" not in p.stranded for p in solve.covering + solve.partial)
 
-    def test_an_infeasible_shipment_does_not_block_coverage(self):
-        # Otherwise one undeliverable destination would make every pair
-        # partial and there would be no plan to review at all.
-        ships = shipments(2) + (Shipment("hot", "Hot", lane=Lane("oven", 60.0)),)
-        solve = solve_pairs(ships, ALL_DAYS)
-        assert solve.covering
-        assert solve.best.coverage == 2
+    def test_an_infeasible_shipment_does_not_block_coverage(self, quoter):
+        # Otherwise one undeliverable destination makes every subset partial
+        # and there is no plan to review at all.
+        ships = shipments(1) + (
+            Shipment("hot", "Hot", address=DEST, lane=Lane("furnace", 80.0)),
+        )
+        solve = solve_carriers(ships, ORIGIN, ALL_DAYS, quoter)
+        assert solve.covering and solve.best.coverage == 1
 
 
 class TestSaturdayForcing:
     """Design 3's "highest-leverage interaction in the planning stage"."""
 
-    def test_a_pinned_saturday_shipment_is_saturday_only(self):
-        ships = shipments(2) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
+    def _ships(self):
+        return shipments(2) + (
+            Shipment("pinned", "Pinned", address=DEST, required_ship_date=SATURDAY),
         )
-        assert solve_pairs(ships, WEEKDAYS).saturday_only == ("pinned",)
 
-    def test_it_forces_usps_into_every_covering_pair(self):
-        ships = shipments(2) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
+    def test_a_pinned_saturday_shipment_is_saturday_only(self, quoter):
+        assert solve_carriers(self._ships(), ORIGIN, WEEKDAYS, quoter).saturday_only == (
+            "pinned",
         )
-        solve = solve_pairs(ships, WEEKDAYS)
+
+    def test_it_forces_usps_into_every_covering_subset(self, quoter):
+        solve = solve_carriers(self._ships(), ORIGIN, WEEKDAYS, quoter)
         assert solve.covering
-        assert all(Carrier.USPS in p.carriers for p in solve.covering)
+        assert all("USPS" in p.carriers for p in solve.covering)
 
-    def test_and_the_forcing_is_stated_not_left_implicit(self):
-        # Design 4, D2: the reason is stated rather than buried in the
-        # ranking, because the operator needs to know why USPS is there.
-        ships = shipments(2) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
-        )
-        solve = solve_pairs(ships, WEEKDAYS)
+    def test_and_the_forcing_is_stated_not_left_implicit(self, quoter):
+        # Design 4, D2: the operator needs to know why USPS is there.
+        solve = solve_carriers(self._ships(), ORIGIN, WEEKDAYS, quoter)
         assert all(p.forced_by_saturday for p in solve.covering)
 
-    def test_pairs_without_usps_strand_it(self):
-        # "leaves exactly one free slot for the remaining shipments"
-        ships = shipments(2) + (
-            Shipment("pinned", "Pinned", required_ship_date=SATURDAY),
-        )
-        solve = solve_pairs(ships, WEEKDAYS)
-        assert {p.carriers for p in solve.partial} == {
-            pair for pair in CARRIER_PAIRS if Carrier.USPS not in pair
-        }
+    def test_subsets_without_usps_strand_it(self, quoter):
+        solve = solve_carriers(self._ships(), ORIGIN, WEEKDAYS, quoter)
+        assert solve.partial
+        assert all("pinned" in p.stranded for p in solve.partial)
+        assert all("USPS" not in p.carriers for p in solve.partial)
 
-    def test_no_pinning_means_no_forcing(self):
-        # Saturday offers a strict subset of weekday services and ship day
+    def test_no_pinning_means_no_forcing(self, quoter):
+        # Saturday offers a strict subset of weekday carriers and ship day
         # does not enter the thermal calculation, so nothing else can make a
         # shipment Saturday-only.
-        solve = solve_pairs(shipments(5), ALL_DAYS)
+        solve = solve_carriers(shipments(3), ORIGIN, ALL_DAYS, quoter)
         assert solve.saturday_only == ()
         assert not any(p.forced_by_saturday for p in solve.covering)

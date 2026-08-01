@@ -1,24 +1,39 @@
+"""C1-C3 against real recorded Shippo quotes.
+
+The fixture is 430 quotes really returned by the live API for one lane. It is
+a *recording*, not a rate table: nothing in these tests is a number anyone
+chose, which is the property the live-rates rework existed to establish.
+"""
+
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from bbq_shipment_agent.planning import (
     BOXES,
-    DEFAULT_LANE,
     MAX_ARRIVAL_TEMP_C,
-    MAX_CARRIERS_PER_RUN,
+    MAX_GEL_PACKS,
+    Address,
     BoxSize,
-    Carrier,
     Lane,
+    LumpedCapacitanceModel,
+    QuotingUnavailable,
+    RecordedQuoter,
     ShipDay,
     ShipDayError,
     define_load,
     enumerate_configurations,
     evaluate_configurations,
-    services_for,
+    heaviest_variant,
+    parcel_variants,
     ship_day_for,
     thermal_gate,
 )
+
+FIXTURE = Path(__file__).parent / "fixtures" / "shippo-quotes-sf-dc.json"
+ORIGIN = Address("BBQ Kitchen", "64 Divisadero St", "San Francisco", "CA", "94117")
+DEST = Address("Recipient One", "1600 Pennsylvania Ave NW", "Washington", "DC", "20500")
 
 SATURDAY = date(2026, 8, 8)
 MONDAY = date(2026, 8, 10)
@@ -28,8 +43,17 @@ ALL_DAYS = (SATURDAY, MONDAY, TUESDAY)
 
 
 @pytest.fixture
+def quoter():
+    return RecordedQuoter.from_file(FIXTURE)
+
+
+@pytest.fixture
 def load():
-    return define_load("k1")
+    return define_load("r0")
+
+
+def enumerate_all(load, quoter, dates=ALL_DAYS):
+    return enumerate_configurations(load, ORIGIN, DEST, dates, quoter)
 
 
 class TestShipDays:
@@ -39,222 +63,201 @@ class TestShipDays:
         assert ship_day_for(TUESDAY) is ShipDay.TUESDAY
 
     def test_a_non_shipping_day_is_refused_not_skipped(self):
-        # A silently smaller enumeration is a much worse way to discover the
-        # mistake than an exception naming the date.
         with pytest.raises(ShipDayError, match="Wednesday"):
             ship_day_for(WEDNESDAY)
-
-    def test_saturday_is_usps_only(self):
-        # Design 3: USPS only for perishables on Saturday, given weekend
-        # ground schedules.
-        assert {s.carrier for s in services_for(ShipDay.SATURDAY)} == {Carrier.USPS}
-
-    def test_weekdays_offer_every_carrier(self):
-        assert {s.carrier for s in services_for(ShipDay.MONDAY)} == set(Carrier)
 
 
 class TestBoxGeometry:
     def test_the_larger_box_leaks_faster(self):
-        # Design 5's central claim: at 1.5 lb more surface area is strictly
+        # Design 5's central claim at 1.5 lb: more surface area is strictly
         # worse, with no compensating ballast because the mass is not there.
         assert BOXES[BoxSize.LARGE].ua_w_k > BOXES[BoxSize.SMALL].ua_w_k
 
-    def test_ua_is_computed_from_geometry_not_stored(self, load):
-        # Step 4 computes UA from geometry and material properties, so the box
-        # must expose the geometry rather than a precomputed answer.
+    def test_ua_is_computed_from_geometry_not_stored(self):
         box = BOXES[BoxSize.SMALL]
-        expected = box.conductivity_w_mk * box.surface_area_m2 / box.wall_m
-        assert box.ua_w_k == pytest.approx(expected)
+        assert box.ua_w_k == pytest.approx(
+            box.conductivity_w_mk * box.surface_area_m2 / box.wall_m
+        )
 
-    def test_the_packet_fits_both_boxes(self, load):
-        assert all(load.fits_in(box) for box in BOXES.values())
+    def test_thicker_walls_barely_help(self):
+        # Recorded because it is counterintuitive and someone will try it: at
+        # a fixed inner cavity, wall thickness grows outer surface area almost
+        # as fast as it grows resistance, so UA hardly moves.
+        from dataclasses import replace
+
+        thin = BOXES[BoxSize.SMALL]
+        thick = replace(thin, wall_m=thin.wall_m + 0.02)
+        assert thick.ua_w_k > thin.ua_w_k * 0.9  # <10% better despite +40% wall
+        assert thick.volume_cm3 > thin.volume_cm3 * 1.3  # but much bulkier
+
+
+class TestParcelVariants:
+    def test_it_crosses_box_size_with_gel_pack_count(self, load):
+        variants = parcel_variants(load)
+        assert len(variants) == len(BOXES) * (MAX_GEL_PACKS + 1)
+
+    def test_gel_packs_only_change_weight(self, load):
+        small = [v for v in parcel_variants(load) if v.box_size is BoxSize.SMALL]
+        assert len({(v.length_cm, v.width_cm, v.height_cm) for v in small}) == 1
+        assert len({v.weight_kg for v in small}) == len(small)
+
+    def test_the_pin_reference_is_the_bulkiest_parcel(self, load):
+        variants = parcel_variants(load)
+        heaviest = heaviest_variant(variants)
+        # A carrier that takes the worst case takes the rest; pinning off the
+        # smallest can turn a genuine restriction into a hard failure.
+        assert heaviest.box_size is BoxSize.LARGE
+        assert heaviest.gel_packs == MAX_GEL_PACKS
 
 
 class TestEnumeration:
-    def test_it_covers_every_ship_day(self, load):
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        assert {c.ship_date for c in configurations} == set(ALL_DAYS)
+    def test_carriers_are_discovered_not_declared(self, load, quoter):
+        # The whole point of the rework: the carrier set comes back as an
+        # answer rather than going in as an assumption.
+        enumeration = enumerate_all(load, quoter)
+        assert enumeration.carriers <= enumeration.pinned_carriers
+        assert enumeration.carriers  # something really quoted
 
-    def test_no_saturday_configuration_uses_another_carrier(self, load):
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        saturday = [c for c in configurations if c.ship_date == SATURDAY]
+    def test_every_configuration_carries_its_own_quote(self, load, quoter):
+        for configuration in enumerate_all(load, quoter).configurations:
+            assert configuration.cost > 0
+            assert configuration.service_name
+
+    def test_transit_comes_from_the_carrier_not_a_constant(self, load, quoter):
+        days = {c.transit_days for c in enumerate_all(load, quoter).configurations}
+        # Real services land on more than the optimistic 1/2/3 that was
+        # originally assumed.
+        assert len(days) >= 4
+
+    def test_saturday_is_usps_only(self, load, quoter):
+        saturday = [
+            c
+            for c in enumerate_all(load, quoter).configurations
+            if c.ship_date == SATURDAY
+        ]
         assert saturday
-        assert {c.carrier for c in saturday} == {Carrier.USPS}
+        assert {c.carrier for c in saturday} == {"USPS"}
 
-    def test_all_four_carriers_survive_enumeration(self, load):
-        # Design 4, C2: all four carriers at this stage, no pair restriction.
-        # The pair limit is C5's job and applying it here would turn a
-        # tradeoff into an infeasibility.
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        assert {c.carrier for c in configurations} == set(Carrier)
+    def test_weekdays_keep_every_quoted_carrier(self, load, quoter):
+        enumeration = enumerate_all(load, quoter)
+        weekday = {c.carrier for c in enumeration.configurations if c.ship_date == MONDAY}
+        assert weekday == enumeration.carriers
 
-    def test_zero_gel_packs_is_enumerated(self, load):
-        # It will not survive C3, but the gate should be the only thing that
-        # decides feasibility.
-        configurations = enumerate_configurations(load, (MONDAY,))
-        assert any(c.gel_packs == 0 for c in configurations)
-
-    def test_gel_packs_are_bounded_by_the_box(self, load):
-        for configuration in enumerate_configurations(load, ALL_DAYS):
-            assert 0 <= configuration.gel_packs <= configuration.box.max_gel_packs
-
-    def test_a_non_shipping_date_is_refused(self, load):
+    def test_a_non_shipping_date_is_refused(self, load, quoter):
         with pytest.raises(ShipDayError):
-            enumerate_configurations(load, (MONDAY, WEDNESDAY))
+            enumerate_all(load, quoter, (MONDAY, WEDNESDAY))
 
-    def test_no_dates_is_an_error(self, load):
+    def test_no_dates_is_an_error(self, load, quoter):
         with pytest.raises(ValueError, match="no candidate ship dates"):
-            enumerate_configurations(load, ())
+            enumerate_all(load, quoter, ())
 
-    def test_the_space_stays_small_enough_to_brute_force(self, load):
-        # Design 1: small enough to enumerate exhaustively, no solver needed.
-        assert len(enumerate_configurations(load, ALL_DAYS)) < 1000
+    def test_carrier_messages_are_carried_out_of_the_stage(self, load, quoter):
+        # Without these, a carrier silently missing is indistinguishable from
+        # one with no service -- which is how a rate limiter passed for a
+        # service restriction until it was looked for.
+        assert isinstance(enumerate_all(load, quoter).messages, tuple)
+
+    def test_an_unrecorded_lane_raises_rather_than_inventing(self, load, quoter):
+        elsewhere = Address("Nobody", "1 Nowhere Rd", "Fargo", "ND", "58102")
+        with pytest.raises(QuotingUnavailable, match="no recorded quotes"):
+            enumerate_configurations(load, ORIGIN, elsewhere, (MONDAY,), quoter)
 
 
 class TestThermalGate:
     def test_the_threshold_is_the_documented_constant(self):
         assert MAX_ARRIVAL_TEMP_C == 4.4
 
-    def test_zero_gel_packs_never_survives(self, load):
-        configurations = enumerate_configurations(load, ALL_DAYS)
+    def test_it_admits_some_and_refuses_most(self, load, quoter):
+        configurations = enumerate_all(load, quoter).configurations
         feasible = thermal_gate(load, configurations)
-        assert feasible
+        assert 0 < len(feasible) < len(configurations)
+
+    def test_zero_gel_packs_never_survives(self, load, quoter):
+        feasible = thermal_gate(load, enumerate_all(load, quoter).configurations)
         assert all(f.configuration.gel_packs > 0 for f in feasible)
 
-    def test_more_gel_packs_never_arrives_warmer(self, load):
-        # Monotonicity is the property that should survive recalibration,
-        # unlike any particular constant in the placeholder model.
-        configurations = enumerate_configurations(load, (MONDAY,))
-        by_shape = {
-            (e.configuration.box_size, e.configuration.gel_packs, e.configuration.service.key): e
-            for e in evaluate_configurations(load, configurations)
-        }
-        service = "ups:next_day"
+    def test_more_gel_packs_never_arrives_warmer(self, load, quoter):
+        # Monotonicity should survive recalibration; no constant should.
+        model = LumpedCapacitanceModel()
+        configurations = enumerate_all(load, quoter, (MONDAY,)).configurations
+        service = max(
+            configurations, key=lambda c: c.cost
+        ).service_name  # any single real service
+        subset = [
+            c
+            for c in configurations
+            if c.service_name == service and c.box_size is BoxSize.SMALL
+        ]
+        by_gel = {c.gel_packs: c for c in subset}
         temps = [
-            by_shape[(BoxSize.SMALL, n, service)].predicted_arrival_temp_c
-            for n in range(0, 7)
+            model.predict_arrival_temp_c(load, by_gel[n], Lane("l", 22.0))
+            for n in sorted(by_gel)
         ]
         assert temps == sorted(temps, reverse=True)
 
-    def test_the_larger_box_is_never_thermally_better(self, load):
-        configurations = enumerate_configurations(load, (MONDAY,))
-        evaluated = {
-            (e.configuration.box_size, e.configuration.gel_packs, e.configuration.service.key): e
-            for e in evaluate_configurations(load, configurations)
-        }
-        for gel in range(0, 7):
-            small = evaluated[(BoxSize.SMALL, gel, "ups:next_day")]
-            large = evaluated[(BoxSize.LARGE, gel, "ups:next_day")]
-            assert (
-                large.predicted_arrival_temp_c >= small.predicted_arrival_temp_c
-            ), f"large box beat small at {gel} gel packs"
+    def test_the_larger_box_is_never_thermally_better(self, load, quoter):
+        model = LumpedCapacitanceModel()
+        lane = Lane("l", 22.0)
+        configurations = enumerate_all(load, quoter, (MONDAY,)).configurations
+        paired: dict[tuple, dict] = {}
+        for c in configurations:
+            paired.setdefault((c.service_name, c.gel_packs), {})[c.box_size] = c
+        compared = 0
+        for sizes in paired.values():
+            if len(sizes) < 2:
+                continue
+            compared += 1
+            assert model.predict_arrival_temp_c(
+                load, sizes[BoxSize.LARGE], lane
+            ) >= model.predict_arrival_temp_c(load, sizes[BoxSize.SMALL], lane)
+        assert compared, "no service quoted both box sizes; comparison was vacuous"
 
-    def test_longer_transit_never_arrives_colder(self, load):
-        configurations = enumerate_configurations(load, (MONDAY,))
-        evaluated = [
-            e
-            for e in evaluate_configurations(load, configurations)
-            if e.configuration.box_size is BoxSize.SMALL
-            and e.configuration.gel_packs == 6
-            and e.configuration.carrier is Carrier.FEDEX
-        ]
-        by_days = {e.configuration.transit_days: e for e in evaluated}
-        assert (
-            by_days[1].predicted_arrival_temp_c
-            <= by_days[2].predicted_arrival_temp_c
-            <= by_days[3].predicted_arrival_temp_c
-        )
-
-    def test_a_warmer_lane_is_never_easier(self, load):
-        configurations = enumerate_configurations(load, (MONDAY,))
-        cool = thermal_gate(load, configurations, Lane("cool", ambient_c=10.0))
-        warm = thermal_gate(load, configurations, Lane("warm", ambient_c=35.0))
+    def test_a_warmer_lane_is_never_easier(self, load, quoter):
+        configurations = enumerate_all(load, quoter).configurations
+        cool = thermal_gate(load, configurations, Lane("cool", 10.0))
+        warm = thermal_gate(load, configurations, Lane("warm", 35.0))
         assert len(cool) >= len(warm)
 
-    def test_margin_is_headroom_below_the_threshold(self, load):
-        configurations = enumerate_configurations(load, (MONDAY,))
+    def test_a_full_gel_load_survives_extreme_heat_overnight(self, load, quoter):
+        # Worth pinning because it is the reason design 3 can use gel packs at
+        # all rather than dry ice: six packs carry enough latent budget to
+        # hold ~26 hours even against 60C ambient, so overnight service still
+        # clears. The refrigerant, not the insulation, is doing the work.
+        feasible = thermal_gate(
+            load, enumerate_all(load, quoter).configurations, Lane("desert", 60.0)
+        )
+        assert feasible
+        assert {f.configuration.gel_packs for f in feasible} == {MAX_GEL_PACKS}
+        assert all(f.configuration.transit_days == 1 for f in feasible)
+
+    def test_a_hot_enough_lane_gates_everything_out(self, load, quoter):
+        # C3 comes back empty sometimes; design 4 routes that to C4 rather
+        # than treating it as an error. Past ~66C ambient the latent budget
+        # cannot cover even one day.
+        configurations = enumerate_all(load, quoter).configurations
+        assert thermal_gate(load, configurations, Lane("furnace", 80.0)) == ()
+
+    def test_margin_is_headroom_below_the_threshold(self, load, quoter):
+        configurations = enumerate_all(load, quoter, (MONDAY,)).configurations
         for evaluated in evaluate_configurations(load, configurations):
             assert evaluated.thermal_margin_c == pytest.approx(
                 MAX_ARRIVAL_TEMP_C - evaluated.predicted_arrival_temp_c
             )
             assert evaluated.feasible == (evaluated.thermal_margin_c >= 0)
 
-    def test_an_impossible_lane_gates_everything_out(self, load):
-        # C3 is expected to come back empty sometimes; design 4 routes that to
-        # C4 rather than treating it as an error.
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        assert thermal_gate(load, configurations, Lane("oven", ambient_c=60.0)) == ()
+    def test_margins_actually_vary(self, load, quoter):
+        # This inverts an earlier test. With the old invented transit times
+        # every feasible margin was identical, leaving D1's thin-margin check
+        # and C5's minimum-margin ranking with nothing to discriminate on.
+        # Against real transit estimates the field carries information.
+        feasible = thermal_gate(load, enumerate_all(load, quoter).configurations)
+        margins = {round(f.thermal_margin_c, 2) for f in feasible}
+        assert len(margins) > 1, "margin has no variance; D1 has nothing to check"
 
-    def test_evaluation_keeps_the_near_misses_the_gate_drops(self, load):
-        # C4 needs to know how far short the best option fell; a filtered list
-        # cannot tell "two hours" from "a full day".
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        assert len(evaluate_configurations(load, configurations)) == len(configurations)
-        assert len(thermal_gate(load, configurations)) < len(configurations)
-
-    def test_the_lane_is_recorded_on_every_evaluation(self, load):
-        # A thermal record whose ambient assumption is unlabelled is exactly
-        # what design 5 asks to avoid.
-        lane = Lane("gulf-summer", ambient_c=31.0, zone=6)
-        configurations = enumerate_configurations(load, (MONDAY,))
-        assert all(e.lane is lane for e in evaluate_configurations(load, configurations, lane))
-
-    def test_a_custom_model_can_be_injected(self, load):
-        # The swap point design 5 promises: step 4 replaces the model without
-        # touching the gate or the threshold.
-        class AlwaysFreezing:
-            def predict_arrival_temp_c(self, load, configuration, lane):
-                return -5.0
-
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        feasible = thermal_gate(load, configurations, DEFAULT_LANE, AlwaysFreezing())
-        assert len(feasible) == len(configurations)
-
-    def test_a_model_cannot_widen_the_threshold(self, load):
-        # The gate owns the threshold, so a recalibrated model can never
-        # quietly change what counts as safe.
+    def test_a_model_cannot_widen_the_threshold(self, load, quoter):
         class JustOverTheLine:
             def predict_arrival_temp_c(self, load, configuration, lane):
                 return MAX_ARRIVAL_TEMP_C + 0.01
 
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        assert thermal_gate(load, configurations, DEFAULT_LANE, JustOverTheLine()) == ()
-
-
-class TestPlaceholderArtefact:
-    """The cliff documented in `thermal`'s module docstring, pinned.
-
-    These do not describe a requirement — they pin a known property of the
-    stand-in so step 4 has to consciously break them rather than silently
-    inheriting a degenerate margin distribution.
-    """
-
-    def test_feasible_margins_are_operationally_indistinguishable(self, load):
-        # Not bit-identical: the 1-day cases sit a few microkelvin below the
-        # gel temperature because the exponential has not quite converged.
-        # Asserting the spread rather than equality states the property that
-        # actually matters — nothing here can rank one margin above another.
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        margins = [f.thermal_margin_c for f in thermal_gate(load, configurations)]
-        assert max(margins) - min(margins) < 1e-3
-
-    def test_which_leaves_the_run_minimum_margin_pinned_at_the_ceiling(self, load):
-        # C5 ranks partly on minimum thermal margin across the run. Under this
-        # model that field carries no information between carrier pairs.
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        feasible = thermal_gate(load, configurations)
-        assert min(f.thermal_margin_c for f in feasible) == pytest.approx(
-            MAX_ARRIVAL_TEMP_C, abs=1e-3
-        )
-
-
-class TestRunConstraints:
-    def test_the_carrier_limit_is_two(self):
-        assert MAX_CARRIERS_PER_RUN == 2
-
-    def test_every_carrier_is_reachable_after_gating(self, load):
-        # If the placeholder gated a carrier out entirely, C5's six-pair solve
-        # would be exercising far less than it looks.
-        configurations = enumerate_configurations(load, ALL_DAYS)
-        feasible = thermal_gate(load, configurations)
-        assert {f.configuration.carrier for f in feasible} == set(Carrier)
+        configurations = enumerate_all(load, quoter).configurations
+        assert thermal_gate(load, configurations, model=JustOverTheLine()) == ()

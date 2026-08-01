@@ -6,14 +6,18 @@ Keeping it a plain frozen dataclass rather than a ledger record is deliberate:
 planning runs entirely in memory and only the chosen plan is ever written, so
 nothing here should be shaped by what the append-only file needs.
 
+The address is a structured `Address` rather than a loose dict because it is
+sent to a carrier, not just compared: a quote needs street, city, state and
+zip in named fields, and B2's validation returns them that way.
+
 ## `required_ship_date`
 
 Design 3 calls the Saturday interaction "the highest-leverage interaction in
-the planning stage" -- one Saturday shipment forces USPS into the carrier pair
+the planning stage" -- one Saturday shipment forces USPS into the carrier set
 and leaves exactly one free slot for the other twenty-one.
 
 Nothing in C2 or C3 can produce that situation. Saturday offers a strict
-subset of the weekday services (USPS only), and ship day does not enter the
+subset of the weekday carriers (USPS only), and ship day does not enter the
 thermal calculation at all, so a shipment feasible on Saturday is always also
 feasible on Monday and Tuesday, and the solve would simply never choose
 Saturday. The interaction can only arise from an operator pinning a shipment
@@ -26,10 +30,10 @@ testable. It is optional and normally `None`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from typing import Any
 
+from .rates import Address
 from .thermal import DEFAULT_LANE, Lane
 
 
@@ -39,25 +43,22 @@ class Shipment:
 
     recipient_key: str
     name: str
-    #: Validated address, as B2 will return it. Opaque to planning: nothing
-    #: here reads inside it except to compare two addresses for equality.
-    address: dict[str, Any] = field(default_factory=dict)
+    address: Address
     #: Ambient assumption for this destination. Design 5 makes ambient a
     #: lane-based assumption, so it travels with the shipment rather than
     #: being a property of the run.
     lane: Lane = DEFAULT_LANE
-    #: Rate zone, 1-8. Drives the distance component of a quote.
-    zone: int = 4
     #: Operator pin. See the module docstring -- this is the only way a
     #: Saturday requirement can enter the plan.
     required_ship_date: date | None = None
 
+    def destination(self) -> Address:
+        return self.address
+
     def address_key(self) -> str:
         """Normalized address identity, for the duplicate check.
 
-        Sorted and lowercased so two spellings of the same address collide.
         B4 does the real consolidation; this is what D1 checks against and
-        what C5 needs to avoid quoting the same doorstep twice.
+        what stops the same doorstep being quoted twice.
         """
-        parts = (f"{k}={str(v).strip().lower()}" for k, v in sorted(self.address.items()))
-        return "|".join(parts)
+        return self.address.cache_key()

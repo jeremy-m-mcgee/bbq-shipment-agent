@@ -11,3 +11,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Shippo rate cache written by ShippoQuoter during development.
+# Real quotes captured as a test fixture live in tests/fixtures/ instead.
+rate-cache*.json
+rc*.json

@@ -3,18 +3,28 @@
 "Cross product of box size, gel pack count, ship date, and carrier service,
 per shipment. All four carriers at this stage. No pair restriction yet."
 
-The pair restriction is deliberately absent. C5 evaluates six carrier pairs
-against this full set, and a shipment that is feasible under some carrier but
-not the pair currently being scored is a *tradeoff*, not an infeasibility --
-design 4 draws that line explicitly, because collapsing it is what turns a
-stranded-shipment report into a mysteriously empty plan.
+The pair restriction is still deliberately absent -- C5 evaluates carrier
+subsets against this full set, and a shipment feasible under some carrier but
+not the subset being scored is a *tradeoff*, not an infeasibility.
 
-Two filters do apply here, and neither is thermal:
+## What changed, and why the stage shape moved
 
-* Saturday is USPS-only for perishables (design 3). A Saturday FedEx
-  configuration is not a worse option, it is not an option.
-* A configuration must physically exist -- the packet has to fit the box and
-  the gel packs have to fit beside it.
+The first version took a literal cross product against a declared service
+table. That cannot work: which services exist depends on the account and the
+lane, and is only discoverable by asking. So the cross product is now over the
+part we control -- box size and gel pack count, which together define a
+*parcel* -- and the carrier dimension comes back as an answer rather than
+going in as an assumption.
+
+One consequence is that C2 and C5's pricing step have collapsed into a single
+call, because a quote carries the price and the transit estimate together.
+Design 4 orders them separately; the API does not permit it.
+
+Two filters still apply here, and neither is thermal:
+
+* Saturday is USPS-only for perishables (design 3). A Saturday configuration
+  on any other carrier is not a worse option, it is not an option.
+* A configuration must physically exist -- the packet has to fit the box.
 
 Everything thermal happens in C3, so this module never reads a temperature.
 """
@@ -24,36 +34,50 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from .catalog import (
-    BOXES,
-    MAX_GEL_PACKS,
-    Box,
-    BoxSize,
-    Carrier,
-    Service,
-    ShipDay,
-    services_for,
-    ship_day_for,
-)
+from .catalog import BOXES, MAX_GEL_PACKS, Box, BoxSize, ShipDay, ship_day_for
 from .load import Load
+from .rates import (
+    SATURDAY_CARRIERS,
+    Address,
+    CarrierMessage,
+    ParcelSpec,
+    Quote,
+    RateQuoter,
+    pin_carriers,
+)
 
 
 @dataclass(frozen=True)
 class Configuration:
-    """One candidate way to ship one packet.
+    """One candidate way to ship one packet, with its quote attached.
 
-    Frozen and hashable so C5 can use configurations as dictionary keys while
-    scoring six pairs over the same enumeration without copying it.
+    The quote is part of the configuration rather than looked up later,
+    because a service only exists in the answer that priced it. Cost and
+    transit estimate therefore travel with the option that has them.
     """
 
     box_size: BoxSize
     gel_packs: int
     ship_date: date
-    service: Service
+    quote: Quote
 
     @property
-    def carrier(self) -> Carrier:
-        return self.service.carrier
+    def carrier(self) -> str:
+        return self.quote.carrier
+
+    @property
+    def service_name(self) -> str:
+        return self.quote.service_name
+
+    @property
+    def cost(self) -> float:
+        return self.quote.amount
+
+    @property
+    def transit_days(self) -> int | None:
+        """Carrier estimate. `None` when the quote carried none, which C3
+        treats as ungateable rather than guessing a number."""
+        return self.quote.estimated_days
 
     @property
     def ship_day(self) -> ShipDay:
@@ -63,48 +87,108 @@ class Configuration:
     def box(self) -> Box:
         return BOXES[self.box_size]
 
-    @property
-    def transit_days(self) -> int:
-        return self.service.transit_days
-
     def describe(self) -> str:
-        """Compact identity for a manifest row or a finding."""
         return (
-            f"{self.ship_date.isoformat()} {self.service.key} "
-            f"{self.box_size.value}/{self.gel_packs}gel"
+            f"{self.ship_date.isoformat()} {self.carrier} {self.service_name} "
+            f"{self.box_size.value}/{self.gel_packs}gel ${self.cost:.2f}"
         )
 
 
+@dataclass(frozen=True)
+class Enumeration:
+    """C2's output for one shipment, plus what the quoting call revealed.
+
+    `pinned_carriers` and `messages` are carried out of this stage rather than
+    discarded: which carriers were available, and why any were not, is what
+    makes a surprising plan explicable months later.
+    """
+
+    configurations: tuple[Configuration, ...]
+    pinned_carriers: frozenset[str]
+    messages: tuple[CarrierMessage, ...] = ()
+
+    @property
+    def carriers(self) -> frozenset[str]:
+        return frozenset(c.carrier for c in self.configurations)
+
+
+def parcel_variants(load: Load) -> tuple[ParcelSpec, ...]:
+    """Every parcel the packet could physically be shipped in.
+
+    The part of the configuration space we own outright -- box size crossed
+    with gel pack count. Everything else is discovered.
+    """
+    variants: list[ParcelSpec] = []
+    for box in BOXES.values():
+        if not load.fits_in(box):
+            continue
+        for gel_packs in range(0, min(box.max_gel_packs, MAX_GEL_PACKS) + 1):
+            variants.append(ParcelSpec.build(load, box, gel_packs))
+    return tuple(variants)
+
+
+def heaviest_variant(variants: tuple[ParcelSpec, ...]) -> ParcelSpec:
+    """The parcel to pin the carrier set from.
+
+    Largest volume, then heaviest. A carrier that will take the worst case
+    will take the rest, whereas pinning off the smallest parcel can pin a
+    carrier that later refuses a bigger box for a real reason -- turning a
+    genuine restriction into a hard failure.
+    """
+    return max(
+        variants,
+        key=lambda p: (p.length_cm * p.width_cm * p.height_cm, p.weight_kg),
+    )
+
+
 def enumerate_configurations(
-    load: Load, candidate_dates: tuple[date, ...]
-) -> tuple[Configuration, ...]:
-    """C2. Every physically real configuration for one shipment.
+    load: Load,
+    origin: Address,
+    destination: Address,
+    candidate_dates: tuple[date, ...],
+    quoter: RateQuoter,
+) -> Enumeration:
+    """C2. Every real configuration for one shipment.
 
     `candidate_dates` are validated rather than filtered: `ship_day_for`
     raises on a date the operation does not ship, so a caller that passes a
     Wednesday finds out immediately instead of getting a silently smaller
     enumeration.
+
+    Quotes are fetched once per parcel and reused across every candidate date.
+    See `rates` for why that approximation is taken and when to revisit it.
     """
     if not candidate_dates:
         raise ValueError("no candidate ship dates; C2 has nothing to enumerate.")
+    ship_days = {when: ship_day_for(when) for when in candidate_dates}
+
+    variants = parcel_variants(load)
+    if not variants:
+        raise ValueError(
+            f"the packet ({load.dimensions_m}) fits none of the available boxes."
+        )
+
+    pinned = pin_carriers(quoter, origin, destination, heaviest_variant(variants))
 
     configurations: list[Configuration] = []
-    for when in candidate_dates:
-        day = ship_day_for(when)
-        for service in services_for(day):
-            for box_size, box in BOXES.items():
-                if not load.fits_in(box):
+    messages: list[CarrierMessage] = []
+    for parcel in variants:
+        result = quoter.quote(origin, destination, parcel, require=pinned)
+        messages.extend(result.messages)
+        for quote in result.quotes:
+            for when, day in ship_days.items():
+                if day is ShipDay.SATURDAY and quote.carrier not in SATURDAY_CARRIERS:
                     continue
-                # Zero is a real candidate. It will not survive C3 for any
-                # meaningful transit, but enumerating it keeps the gate the
-                # only thing that decides feasibility.
-                for gel_packs in range(0, min(box.max_gel_packs, MAX_GEL_PACKS) + 1):
-                    configurations.append(
-                        Configuration(
-                            box_size=box_size,
-                            gel_packs=gel_packs,
-                            ship_date=when,
-                            service=service,
-                        )
+                configurations.append(
+                    Configuration(
+                        box_size=parcel.box_size,
+                        gel_packs=parcel.gel_packs,
+                        ship_date=when,
+                        quote=quote,
                     )
-    return tuple(configurations)
+                )
+    return Enumeration(
+        configurations=tuple(configurations),
+        pinned_carriers=pinned,
+        messages=tuple(messages),
+    )
