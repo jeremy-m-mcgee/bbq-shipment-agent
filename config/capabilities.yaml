@@ -1,0 +1,58 @@
+# Capability configuration. See docs/design.md section 6.7.
+#
+# Permission flags live here rather than in LaunchDarkly on purpose: changing
+# what the system is allowed to do has to be a visible commit (section 6.5).
+#
+# Values are quoted deliberately. YAML 1.1 parses bare `off` and `on` as
+# booleans, and `planner` is not a boolean -- it has three states, and `shadow`
+# is how a capability earns promotion. Unquoted, `planner` would be a bool in
+# two profiles and a string in the third. The loader re-coerces bools back to
+# "off"/"on" so dropping the quotes cannot silently change a type, but keep
+# them anyway: the file should read the way it parses.
+
+profiles:
+  baseline:
+    planner: "off"            # python sequences the stages
+    memory: "off"
+    verification: "off"
+    authority: "propose_only"
+
+  planner_trial:
+    planner: "shadow"         # runs, output logged not used
+    memory: "read"
+    verification: "on"
+    authority: "propose_only"
+
+  full:
+    planner: "on"
+    memory: "read_write"
+    verification: "on"
+    authority: "propose_only" # still
+
+default_profile: "baseline"
+
+# Hard ceiling, not raisable by CLI or environment. LaunchDarkly can lower
+# authority; it can never raise it.
+authority_ceiling: "propose_only"
+
+kill_switch: false
+
+# Capability dependencies as data rather than hand-written clamping logic
+# (section 6.9). A failed prerequisite demotes the capability and records why;
+# it never aborts the run. Degrading to a weaker proposal that a human is
+# reviewing anyway is the correct failure mode.
+prerequisites:
+  - id: authority_needs_verification
+    description: >-
+      Spending money requires the self-critique pass to be on.
+    when: {authority_above: "propose_only"}
+    requires: {verification: "on"}
+    demote: {authority: "propose_only"}
+
+  - id: planner_on_needs_shadow_history
+    description: >-
+      Promoting the planner to on requires shadow to have been evaluated
+      across a minimum number of completed runs.
+    when: {planner: "on"}
+    requires: {shadow_runs_at_least: 5}
+    demote: {planner: "shadow"}

@@ -31,9 +31,36 @@ address-repair (B3) | infeasibility-remediation (C4)
 manifest-verification (D1) | review-narrator (D2)
 
 ## Build order
-See docs/design.md section 11. Step 1 (ledger) is done. Next up is step 2.
+See docs/design.md section 11. Step 1 (ledger) done. Step 2 done bar the
+invocation itself — capabilities, clamp, prerequisites, context, A1, live LD
+provider, AI Config retrieval, instruction hash, run-start snapshot.
+`record_agent_invocation` is written and tested but has no caller: nothing
+invokes `manifest-verification` until step 3's spine produces a manifest to
+check. Next is step 3, the deterministic spine.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
+- `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
+- `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes
+- `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
+- `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
+- `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
+- `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
+- `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
 - `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`
+
+## Capability rules
+- A provider proposes; the repo decides. Order is fixed: profile → flag overrides → ceiling clamp → prerequisites.
+- Never clamp before applying overrides, or a payload could survive the ceiling.
+- Unmet prerequisites demote and record why. They never abort the run.
+- LD serves `planner-mode`, `memory-mode`, `verification-enabled` and nothing else. `authority-level` is never asked for — see `CAPABILITY_FLAGS`.
+- An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
+- Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
+- Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
+
+## Agent configs
+- Hash and snapshot the *un-rendered* template. Rendered text carries `ldctx` (recipient data) into committed files, and its hash differs every run, so it discriminates nothing.
+- Snapshot on `available`, never on "no exception". A served-but-disabled config is a real answer from LD and must not fall through to stale cached text.
+- An unreachable run never overwrites the snapshot. That cache is the fallback precisely when LD is down.
+- Invocation records take their identity from the config captured at A1, never a fresh lookup.
