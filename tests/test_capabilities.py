@@ -120,6 +120,64 @@ class TestAuthorityClamp:
         assert not (AuthorityLevel.PURCHASE_LABELS < AuthorityLevel.PROPOSE_ONLY)
 
 
+class TestUnusableOverrides:
+    """A proposal the repo cannot use is discarded, never fatal.
+
+    Found live: `planner-mode` was serving the literal string "variation 2",
+    LaunchDarkly's placeholder variation name, and it aborted the run.
+    """
+
+    def test_an_unparseable_value_leaves_the_profile_standing(self, tmp_path):
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"planner": "variation 2"})
+        assert resolved.capabilities.planner is PlannerMode.OFF
+
+    def test_the_rejected_value_is_named_in_the_reason(self, tmp_path):
+        # So the console gets fixed rather than guessed at.
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"planner": "variation 2"})
+        assert resolved.reasons["planner"] == "FLAG_VALUE_INVALID:'variation 2'"
+
+    def test_a_non_string_value_is_also_discarded(self, tmp_path):
+        # LD will serve whatever type the variation holds, including a number.
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"memory": 7})
+        assert resolved.capabilities.memory is MemoryMode.OFF
+        assert resolved.reasons["memory"].startswith("FLAG_VALUE_INVALID")
+
+    def test_one_bad_value_does_not_discard_the_good_ones(self, tmp_path):
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(
+            config, overrides={"planner": "variation 2", "memory": "read"}
+        )
+        assert resolved.capabilities.memory is MemoryMode.READ
+        assert resolved.reasons["memory"] == "FLAG_OVERRIDE"
+
+    def test_an_unknown_capability_is_recorded_not_raised(self, tmp_path):
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"telepathy": "on"})
+        assert resolved.reasons["telepathy"] == "UNKNOWN_CAPABILITY_IGNORED"
+
+    def test_a_bad_value_cannot_smuggle_authority_past_the_ceiling(self, tmp_path):
+        # Discarding must fall back to the profile, never to "leave it alone".
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"authority": "root"})
+        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
+
+    def test_the_committed_config_is_still_strict(self, tmp_path):
+        # The degrade applies to values LD hands over at runtime. A bad value
+        # in the repo is a repo problem and must still fail loudly.
+        path = write_config(tmp_path, BASE.replace('planner: "off"', 'planner: "nope"'))
+        with pytest.raises(CapabilityConfigError):
+            CapabilityConfig.load(path)
+
+    def test_an_unknown_profile_still_raises(self, tmp_path):
+        # That comes from the caller, not from the network.
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        with pytest.raises(CapabilityConfigError):
+            resolve(config, profile="does_not_exist")
+
+
 class TestPrerequisites:
     CONFIG = BASE + """
     prerequisites:

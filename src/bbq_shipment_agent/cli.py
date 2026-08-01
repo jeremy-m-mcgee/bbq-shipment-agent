@@ -1,15 +1,38 @@
 """Command line entry point.
 
-Only the ledger commands exist so far -- build order step 1. Pipeline stages
-get their own subcommands as they land.
+The ledger commands are build order step 1. `run init` is step 2, and it is
+the only place the live LaunchDarkly path is actually assembled: everything
+else in the package takes its provider and its config source by injection, so
+without this command nothing ever opens a socket.
+
+That is deliberate for the library and was a gap for the operator. Whether the
+flags and AI Configs a run depends on actually exist in the LD environment is
+not answerable from the tests, which run entirely on stubs. It is answerable
+here.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
+from .agent_configs import (
+    DEFAULT_SNAPSHOT_PATH,
+    ChainedAgentConfigs,
+    LaunchDarklyAgentConfigs,
+    OfflineAgentConfigs,
+    SnapshotAgentConfigs,
+)
+from .capabilities import DEFAULT_CONFIG_PATH, CapabilityConfigError, KillSwitchEngaged
+from .context import ContextError
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
+from .run import (
+    LaunchDarklyProvider,
+    OfflineProvider,
+    initialize_run,
+    launchdarkly_client,
+)
 
 DEFAULT_LEDGER_ROOT = Path("ledger")
 DEFAULT_DB_PATH = Path("ledger.duckdb")
@@ -55,6 +78,108 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _offline_reason(requested: bool) -> str:
+    """Say *why* the run is offline, not merely that it is.
+
+    `launchdarkly_client` returns None for a missing key and for a client that
+    did not come up, and those are different operator problems: one is a
+    `.env` that was never filled in, the other is a key or a network that does
+    not work. Section 6.10 treats both as normal, which makes distinguishing
+    them the CLI's job rather than nobody's.
+    """
+    if requested:
+        return "OFFLINE_REQUESTED"
+    if not os.environ.get("LD_SDK_KEY"):
+        return "NO_SDK_KEY"
+    return "LD_UNREACHABLE"
+
+
+def _print_run(run, connection: str, snapshot_state: str, ledger_root: Path) -> None:
+    print(f"\n{run.run_id}\n")
+    print(f"  connection   {connection}")
+    print(f"  profile      {run.resolved.profile}")
+
+    print("\n  capabilities")
+    for name, value in run.capabilities.to_mapping().items():
+        print(f"    {name:<14} {value:<14} {run.resolved.reasons[name]}")
+
+    payload = run.payload
+    print(f"\n  flags        {payload.source}")
+    print(f"    proposed     {payload.overrides or '(nothing)'}")
+    print(f"    reason       {payload.reason}")
+
+    print("\n  agents")
+    for key in sorted(run.agent_configs):
+        config = run.agent_configs[key]
+        status = "ready" if config.available else "unavailable"
+        detail = ""
+        if config.available:
+            variation = config.variation_key or "?"
+            detail = f"  {variation} rev {config.version}  {config.instruction_hash}"
+            if config.model:
+                detail += f"  {config.model}"
+        print(f"    {key:<28} {status:<12} {config.source:<13} {config.reason}{detail}")
+
+    print(f"\n  snapshot     {snapshot_state}")
+    print(f"  ledger       {stream_path(ledger_root, RECORD_TYPES[0])}\n")
+
+
+def _cmd_run_init(args: argparse.Namespace) -> int:
+    """A1, wired to whatever LaunchDarkly actually returns.
+
+    The run record is written either way. An offline run is a real run under
+    `baseline`, not a dry run, so pass a throwaway `--ledger` if all you want
+    is to see what the environment serves.
+    """
+    client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
+    try:
+        if client is None:
+            reason = _offline_reason(args.offline)
+            connection = f"offline ({reason})"
+            provider = OfflineProvider(reason=reason)
+            # The snapshot is still consulted. Section 6.10 step 1 bootstraps
+            # from cache, and a cached instruction set is exactly what makes an
+            # unreachable run degrade rather than fail.
+            agent_source = ChainedAgentConfigs(
+                SnapshotAgentConfigs(args.snapshot), OfflineAgentConfigs(reason)
+            )
+        else:
+            connection = "launchdarkly"
+            provider = LaunchDarklyProvider(client)
+            agent_source = ChainedAgentConfigs(
+                LaunchDarklyAgentConfigs(client), SnapshotAgentConfigs(args.snapshot)
+            )
+
+        before = args.snapshot.read_bytes() if args.snapshot.exists() else None
+        run = initialize_run(
+            ledger_root=args.ledger,
+            config_path=args.config,
+            provider=provider,
+            agent_source=agent_source,
+            snapshot_path=args.snapshot,
+            profile=args.profile,
+            campaign=args.campaign,
+            packet_count=args.packet_count,
+        )
+        after = args.snapshot.read_bytes() if args.snapshot.exists() else None
+
+        if after is None:
+            state = f"{args.snapshot} not written (nothing usable retrieved)"
+        elif before is None:
+            state = f"{args.snapshot} created — commit it"
+        elif before != after:
+            state = f"{args.snapshot} changed — commit it"
+        else:
+            state = f"{args.snapshot} unchanged"
+
+        _print_run(run, connection, state, args.ledger)
+        return 0
+    finally:
+        # The SDK runs a background thread. Leaving it open hangs the CLI.
+        if client is not None:
+            client.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bbq-shipment-agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -82,9 +207,43 @@ def build_parser() -> argparse.ArgumentParser:
             )
         sub.set_defaults(handler=handler)
 
+    run = subparsers.add_parser("run", help="pipeline runs")
+    run_sub = run.add_subparsers(dest="run_command", required=True)
+    init = run_sub.add_parser(
+        "init", help="A1: open a run against the live LaunchDarkly environment"
+    )
+    init.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER_ROOT)
+    init.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
+    init.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT_PATH)
+    init.add_argument(
+        "--profile", default=None, help="override default_profile for this run"
+    )
+    init.add_argument("--campaign", default=None, help="run context attribute")
+    init.add_argument(
+        "--packet-count", type=int, default=None, help="run context attribute"
+    )
+    init.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="seconds to wait for the SDK to initialize (default: 5)",
+    )
+    init.add_argument(
+        "--offline",
+        action="store_true",
+        help="skip LaunchDarkly entirely and take the cached/baseline path",
+    )
+    init.set_defaults(handler=_cmd_run_init)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except (CapabilityConfigError, ContextError, KillSwitchEngaged) as exc:
+        # These are operator errors with a fixable cause. A traceback buries
+        # the message that says what to fix.
+        print(f"error: {exc}")
+        return 1

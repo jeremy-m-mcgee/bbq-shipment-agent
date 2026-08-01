@@ -306,6 +306,12 @@ def resolve(
     `overrides` is whatever the flag layer proposed (empty on the offline
     path). It is applied *before* the clamp, never after, so nothing a flag
     payload says can survive the ceiling.
+
+    A proposal the repo cannot use is discarded, not raised on. Everything
+    downstream of the flag layer degrades and explains itself -- unmet
+    prerequisites demote, an unreachable LD falls back to `baseline` -- and a
+    malformed value has no claim to be the exception. An unknown profile name
+    still raises: that comes from the caller, not from the network.
     """
     profile_name = profile or config.default_profile
     if profile_name not in config.profiles:
@@ -318,15 +324,29 @@ def resolve(
 
     for name, raw in (overrides or {}).items():
         if name not in CAPABILITY_TYPES:
-            raise CapabilityConfigError(f"override for unknown capability {name!r}.")
+            # Nothing to enforce: there is no field for it, so it cannot change
+            # what the run does. Recorded rather than dropped, because a
+            # provider proposing a capability the repo has never heard of has
+            # drifted from the code and that is worth seeing in the ledger.
+            reasons[name] = "UNKNOWN_CAPABILITY_IGNORED"
+            continue
+
         enum_type = CAPABILITY_TYPES[name]
         try:
             value = enum_type(_coerce_yaml_scalar(f"override.{name}", raw))
-        except ValueError as exc:
-            allowed = ", ".join(m.value for m in enum_type)
-            raise CapabilityConfigError(
-                f"override.{name}: {raw!r} is not one of: {allowed}."
-            ) from exc
+        except (ValueError, CapabilityConfigError):
+            # Discarded, never fatal. `CapabilityConfig.load` still raises on a
+            # bad value in the committed YAML, where it is a repo problem
+            # someone can fix in a commit. This is a value LaunchDarkly handed
+            # over at runtime: an unedited variation still holding its console
+            # placeholder is likelier than LD being unreachable, and it must
+            # not be the one failure mode that stops a shipping run.
+            #
+            # The profile's value stands and the reason names the value that
+            # was rejected, so the console gets fixed rather than guessed at.
+            reasons[name] = f"FLAG_VALUE_INVALID:{raw!r}"
+            continue
+
         if value != getattr(capabilities, name):
             capabilities = capabilities.replace(**{name: value})
             reasons[name] = "FLAG_OVERRIDE"
