@@ -6,7 +6,11 @@
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "remoteEnv": {
-    "PYTHONPATH": "${containerWorkspaceFolder}/src"
+    "PYTHONPATH": "${containerWorkspaceFolder}/src",
+    // Makes every `uv run` load .env. Absolute so it resolves from any cwd.
+    // setup.sh seeds .env from .env.example, because uv exits 2 if the file
+    // named here does not exist.
+    "UV_ENV_FILE": "${containerWorkspaceFolder}/.env"
   },
   "customizations": {
     "vscode": {

@@ -1,6 +1,13 @@
 .venv/
 *.db
 *.sqlite
+# derived cache, rebuildable from ledger/*.jsonl at any time
+*.duckdb
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# secrets. .env.example is the committed template — keep it tracked.
+.env
+.env.*
+!.env.example

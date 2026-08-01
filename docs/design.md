@@ -411,7 +411,23 @@ Step 4 degrades cleanly by construction. `baseline` has `planner: off`, `memory:
 
 ### Ledger
 
-Append-only JSONL committed to the repo. SQLite is a derived cache, rebuildable from the JSONL at any time, and is never the source of truth.
+Append-only JSONL committed to the repo. DuckDB is a derived cache, rebuildable from the JSONL at any time, and is never the source of truth.
+
+One file per record type, under `ledger/`. The cache is dropped and rebuilt in full on every rebuild, because an incremental rebuild would let the database hold state the JSONL does not, at which point it has stopped being derived.
+
+### A line is a partial update, not a row
+
+Append-only storage and E3's backfill of `actual_arrival` into an existing row cannot both be literally true. The resolution is that a line is not a row, it is a partial update to one.
+
+Every append carries its merge key plus whatever fields are known at that moment, and null fields are omitted from the line entirely. The derived table folds all appends for a key by taking the last non-null value of each field in `seq` order. `seq` is a per-file monotonic counter assigned by the writer; it exists because JSONL has no inherent order a query can rely on.
+
+One rule then covers every deferred write in the pipeline. A1 opens a run record with `started_at`, the closing append adds `total_cost` and `completed_at`, and E3 adds `actual_arrival` to a shipment days later. None of them mutate a byte already on disk, and each append reads as a legible diff in `git log`.
+
+The consequence worth knowing: a field can never be un-set once written, only overwritten with another non-null value.
+
+Agent invocations are the exception and have no merge key. An invocation is an event rather than an entity, so two invocations of the same agent on the same shipment are two facts, not a correction of one another.
+
+Timestamps are stored in UTC. Offset-aware input is converted on the way in and naive input is rejected rather than assumed, because a mis-zoned carrier arrival time is precisely the error the thermal record exists to make visible.
 
 Per-shipment row:
 
@@ -493,7 +509,7 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 Sequenced so that each step de-risks the next.
 
-1. **Ledger and run record.** Schema, JSONL writer, SQLite rebuild. Everything else writes here.
+1. **Ledger and run record.** Schema, JSONL writer, DuckDB rebuild. Everything else writes here. *Done.*
 2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, payload hash, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy.
 3. **Deterministic spine, no models.** B2, B4, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls.
 4. **Thermal model.** Slot into C3 behind the interface the spine already expects.

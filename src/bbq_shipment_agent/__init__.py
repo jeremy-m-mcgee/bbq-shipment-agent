@@ -1,2 +1,5 @@
-def main() -> None:
-    print("Hello from bbq-shipment-agent!")
+"""BBQ packet fulfillment system. See docs/design.md."""
+
+from .cli import main
+
+__all__ = ["main"]
