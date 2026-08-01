@@ -105,6 +105,16 @@ class Box:
     #: Insulation conductivity, W/(m*K).
     conductivity_w_mk: float
     max_gel_packs: int
+    #: Empty box mass, kg. Part of billable weight, not of the thermal model:
+    #: the walls are treated as pure resistance, not as ballast.
+    tare_kg: float
+
+    @property
+    def volume_cm3(self) -> float:
+        """Outer volume, for dimensional weight. Design 5 notes the larger
+        box costs more here as well as thermally."""
+        length, width, height = self.outer_m
+        return length * width * height * 1_000_000
 
     @property
     def outer_m(self) -> tuple[float, float, float]:
@@ -144,6 +154,7 @@ BOXES: dict[BoxSize, Box] = {
         material="EPS",
         conductivity_w_mk=_EPS_CONDUCTIVITY_W_MK,
         max_gel_packs=6,
+        tare_kg=0.5,
     ),
     BoxSize.LARGE: Box(
         size=BoxSize.LARGE,
@@ -152,6 +163,7 @@ BOXES: dict[BoxSize, Box] = {
         material="EPS",
         conductivity_w_mk=_EPS_CONDUCTIVITY_W_MK,
         max_gel_packs=6,
+        tare_kg=0.9,
     ),
 }
 

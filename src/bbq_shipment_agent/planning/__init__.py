@@ -29,6 +29,23 @@ from .catalog import (
 )
 from .configurations import Configuration, enumerate_configurations
 from .load import Load, define_load
+from .rates import (
+    STATIC_RATES,
+    RateCard,
+    ServiceRate,
+    StaticRateCard,
+    billable_weight_kg,
+)
+from .shipment import Shipment
+from .solve import (
+    CARRIER_PAIRS,
+    Assignment,
+    PairPlan,
+    PricedConfiguration,
+    Solve,
+    shipment_options,
+    solve_pairs,
+)
 from .thermal import (
     DEFAULT_LANE,
     MAX_ARRIVAL_TEMP_C,
@@ -42,7 +59,21 @@ from .thermal import (
 
 __all__ = [
     "BOXES",
+    "CARRIER_PAIRS",
     "DEFAULT_LANE",
+    "STATIC_RATES",
+    "Assignment",
+    "PairPlan",
+    "PricedConfiguration",
+    "RateCard",
+    "ServiceRate",
+    "Shipment",
+    "Solve",
+    "StaticRateCard",
+    "StaticRateCard",
+    "billable_weight_kg",
+    "shipment_options",
+    "solve_pairs",
     "MAX_ARRIVAL_TEMP_C",
     "MAX_CARRIERS_PER_RUN",
     "MAX_GEL_PACKS",
