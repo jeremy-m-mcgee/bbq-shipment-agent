@@ -525,6 +525,12 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 **Ambient temperature assumptions.** Currently lane-based and static. Seasonal adjustment is likely needed, but there is no calibration data yet.
 
+**Thermal constants rule out multi-day transit.** The step 3 placeholder constants make 3-day ground infeasible in every configuration, and 2-day feasible only in the small box at 6 gel packs. Every plan therefore leans on overnight service, which is the expensive end, and two of the four carriers contribute almost nothing to the pair solve. The intended envelope is that 2 to 4 day services work *sometimes* — at high gel pack counts, or on a cooler lane — so that the cost tradeoff C5 exists to surface is a real one.
+
+Which constant is wrong is not yet established. Candidates, roughly in order of how much they move the answer: wall thickness, gel pack mass, EPS conductivity, and the lane ambient. A 4-day option also does not exist yet — `SERVICES` currently tops out at 3-day ground — so covering that range means adding an economy service as well as retuning.
+
+This is a calibration problem, not a structural one: the monotonicity properties the spine relies on already hold, and step 4 fitting against E3 data is the real fix. `TestPlaceholderArtefact` pins the current behaviour so the change has to be deliberate.
+
 **Escalation queue interface.** B3 failures need somewhere to go. Whether that is a section of the D2 review or a separate step before planning is unresolved.
 
 **Suppression window default.** Not yet set.
