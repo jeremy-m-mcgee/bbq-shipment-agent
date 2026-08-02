@@ -215,7 +215,7 @@ def _record_planning(
     A partial update, per design 7: same merge key, only the fields known now,
     and no `completed_at` because the run has not reached a terminal state.
     `carrier_pair` and `total_cost` describe the *proposed* plan -- nothing has
-    been approved or purchased, and E1 is build order step 9.
+    been approved. Nothing is ever purchased -- dispatch was removed, design 9.
     """
     reasons = run.evaluation_reasons()
     reasons["validation_mode"] = mode.value

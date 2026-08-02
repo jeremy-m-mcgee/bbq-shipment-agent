@@ -8,7 +8,9 @@ Last updated: 2026-08-01
 
 ## 1. Purpose
 
-Automate the assembly and shipment of frozen barbecue packets to a recipient list, producing a reviewable work package that a human approves before any money is spent or any label is purchased.
+Plan the assembly and shipment of frozen barbecue packets to a recipient list, producing a reviewable work package that a human approves before any money is spent or any label is purchased.
+
+*Plan*, not *execute*. The sentence above always ended at approval, and section 9 removed the dispatch stages that went past it, so the pipeline's last act is recording an approved document. The operator buys the labels.
 
 The system is not an agent that acts on the world unattended. It is a deterministic pipeline with agent loops at four specific points where variance cannot be enumerated in advance.
 
@@ -41,7 +43,7 @@ The candidate configuration space per shipment is small enough to enumerate exha
 
 **Every run is reconstructible.** The resolved capability set, the capability overrides the flag layer proposed, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
 
-**Irreversible actions require explicit approval.** Label purchase is the only stage that spends money, and it happens once, after a human says yes.
+**The system spends no money.** It produces a work package and stops. Label purchase was designed, specified, and then removed (section 9) rather than built, so there is no irreversible action anywhere in the pipeline — the strongest version of "human in the send loop" is a system with no send.
 
 ---
 
@@ -54,7 +56,7 @@ These are enforced in code and cannot be overridden by flag, CLI argument, or en
 | Constraint | Value | Rationale |
 |---|---|---|
 | Arrival temperature | at or below 4.4C | Food safety |
-| Authority ceiling | `propose_only` | Human in the send loop |
+| Authority ceiling | `propose_only` | Human in the send loop. Gates nothing today — see 6.5 |
 | Carriers per run | at most 2 | Operational simplicity at drop-off |
 
 ### Soft constraints
@@ -90,9 +92,7 @@ flowchart TD
     C6 --> D1[D1 Verify]
     D1 --> D2[D2 Human review]
     D2 -->|edit| C5
-    D2 -->|approve| E1[E1 Purchase labels]
-    E1 --> E2[E2 Write ledger]
-    E2 --> E3[E3 Backfill actuals]
+    D2 -->|approve| E2[E2 Write ledger]
 
     classDef agentic fill:#F2C230,stroke:#8A6D00,stroke-width:2px,color:#1A1A1A
     class B3,C4,D1,D2 agentic
@@ -202,20 +202,14 @@ Edit handling is one mechanism, not three. Always re-solve from C5, then compare
 
 Terminal states: approved, approved with exclusions, rejected.
 
-### Phase E: Dispatch
-
-**E1. Purchase labels.**
-Only after explicit approval, and only if the clamped authority level permits it. One idempotency key per shipment so a crashed or re-run process cannot double-buy.
-
-Open question on timing, see section 10.
+### Phase E: Record
 
 **E2. Write ledger.**
-Append-only JSONL in the repo. See section 7.
+Append-only JSONL in the repo, on approval. See section 7. The approved plan is the deliverable; the operator buys labels from it by hand.
 
-**E3. Backfill actuals.**
-A single tracking call per shipment, some days after dispatch, writing actual delivery time into the existing ledger row. No model, no alerting, no loop, no separate schedule.
+**E1 (purchase labels) and E3 (backfill actuals) were removed.** See section 9. Section 1 always stopped at "a reviewable work package that a human approves before any money is spent" — dispatch was the one part of the pipeline that went past the stated purpose, and cutting it costs the system nothing it was built to do.
 
-This exists only to preserve the thermal calibration path described in section 5. Active in-transit monitoring was considered and rejected: the realistic response to a stalled frozen package is limited, carriers already push exception notifications, and a persistent poller was the only component in the system that would have run independently of a run.
+The consequences are real and are recorded where they land: section 5 loses its calibration path, section 6.5's authority machinery no longer gates anything that exists, and section 7's illustration of a deferred append needed a different example.
 
 ---
 
@@ -246,7 +240,11 @@ At this product weight, a larger box means more surface area, higher heat loss, 
 
 ### Status
 
-Classical physics with stated assumptions, adequate for the demo. There is a clean swap point for calibrated UA values once E3 has accumulated enough real transit data to fit against. If E3 is dropped, this section should be amended to say the model will not be calibrated rather than implying it eventually will be.
+Classical physics with stated assumptions, adequate for the demo. **The model will not be calibrated.** E3 was the only source of real transit and arrival data and it was removed with the rest of dispatch (section 9), so the swap point for fitted UA values stays a swap point with nothing to fit against.
+
+This paragraph previously said the opposite, and instructed a future editor to amend it if E3 were ever dropped. Doing so is the honest outcome: the numbers here are computed from geometry and material properties, they are stated rather than measured, and nothing downstream should be read as though they had been validated against a real shipment.
+
+What remains improvable without any data is the *ambient* assumption, which is an assumption either way — see section 10.
 
 The 4.4C threshold is a permission-level constraint, not a model parameter. It does not move when the model is recalibrated.
 
@@ -269,7 +267,7 @@ LaunchDarkly is a delivery layer for values. It does not execute anything. The d
 | Stage sequencing, retries, error handling | Python |
 | Thermal gate and the 4.4C threshold | Python constant |
 | Configuration enumeration and pair solve | Python |
-| Ledger writes, Shippo calls, label purchase | Python |
+| Ledger writes, Shippo calls | Python |
 | `authority-level` and the ceiling | Repo config |
 | `pipeline-kill-switch` | Repo config |
 
@@ -320,6 +318,10 @@ Moving instruction text to LD breaks the guarantee that instructions and tool si
 LD's core virtue is that changes are immediate and easy. That is precisely the property that should not apply to the flag governing whether the system can spend money. `authority-level` and `authority_ceiling` live in a committed config file, so changing one shows up in `git log`.
 
 Python clamps whatever LD serves against the repo ceiling. LD can lower authority. It can never raise it. A stale cached payload or a misconfigured targeting rule cannot expand what the system is permitted to do.
+
+**Since dispatch was removed (section 9), `authority-level` gates nothing that exists.** Label purchase was the only stage that read it. It is kept anyway, for two reasons worth separating from inertia. The clamp is the demonstrated mechanism, and a permission that has never been exercised is not evidence that the mechanism works; it is resolved, clamped, recorded on the run row and tested on every run, so if an acting stage is ever added the ceiling is already load-bearing rather than retrofitted. And the ceiling is what makes "the human stays in the send loop" checkable in `git log` rather than merely true by absence — the guarantee should not quietly depend on nobody having written the code yet.
+
+What it must not become is decorative. A reader should be able to tell that nothing consults it today, which is why this paragraph exists.
 
 ### 6.6 Context model
 
@@ -423,11 +425,13 @@ One file per record type, under `ledger/`. The cache is dropped and rebuilt in f
 
 ### A line is a partial update, not a row
 
-Append-only storage and E3's backfill of `actual_arrival` into an existing row cannot both be literally true. The resolution is that a line is not a row, it is a partial update to one.
+Append-only storage and a run record that gains its cost and its outcome long after it was opened cannot both be literally true. The resolution is that a line is not a row, it is a partial update to one.
 
 Every append carries its merge key plus whatever fields are known at that moment, and null fields are omitted from the line entirely. The derived table folds all appends for a key by taking the last non-null value of each field in `seq` order. `seq` is a per-file monotonic counter assigned by the writer; it exists because JSONL has no inherent order a query can rely on.
 
-One rule then covers every deferred write in the pipeline. A1 opens a run record with `started_at`, the closing append adds `total_cost` and `completed_at`, and E3 adds `actual_arrival` to a shipment days later. None of them mutate a byte already on disk, and each append reads as a legible diff in `git log`.
+One rule then covers every deferred write in the pipeline. A1 opens a run record with `started_at`, planning appends the packet count, carrier set and proposed total, and D2's approval appends `completed_at`. None of them mutate a byte already on disk, and each append reads as a legible diff in `git log`.
+
+`actual_arrival`, `tracking_number` and `idempotency_key` remain on the shipment record and are now unfillable, since the stages that would have set them were removed. They are left in place deliberately: dropping columns is a schema change with test churn and no benefit, and an operator who buys a label by hand may yet want somewhere to record it. Nothing in the pipeline writes them.
 
 The consequence worth knowing: a field can never be un-set once written, only overwritten with another non-null value.
 
@@ -521,13 +525,19 @@ The recipient list is an explicit instruction. It is hand-written by the operato
 
 Within-run deduplication and same-address consolidation are not rejected on the same grounds — those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. They are deferred instead, for the separate reason in section 4's B4 entry. What matters here is that dropping the cross-run check removes the only prior-state dependency from the deterministic spine, whether or not B4 is ever built.
 
+**Dispatch.** Removed, having been designed and specified but never built. E1 bought labels, E2 wrote the shipment rows, E3 backfilled actual arrival times some days later.
+
+Section 1 already drew the line here: the purpose is "a reviewable work package that a human approves *before any money is spent or any label is purchased*". Dispatch was the only part of the pipeline that went past that sentence. Cutting it removes the one component that could spend money, the one that made an irreversible external call, and the one that needed a live Shippo token rather than a test one — for an experimental project at three to five runs a year, buying three to five sets of labels by hand from an approved manifest is not the bottleneck worth automating.
+
+E2 survives in reduced form: approval still writes the shipment rows, because a plan that was approved and then not recorded would leave the ledger unable to answer what any run actually decided.
+
+Two consequences are worth naming rather than discovering later. The thermal model loses its calibration path, since E3 was the only source of real arrival data — section 5 now says the model will not be calibrated. And the authority machinery in 6.5 no longer gates anything that exists; it is kept, and why is explained there.
+
 **Dry ice.** Rejected. Gel packs avoid hazmat classification and keep all four carriers available.
 
 ---
 
 ## 10. Open questions
-
-**Label purchase timing.** Since ship dates are per shipment, a run can span three drop-off days. Buying every label at approval keeps E1 a single atomic step, but a Tuesday label sits purchased for three days and cancellation becomes a refund request rather than a non-event. Deferring each date's purchase to that morning is safer and splits E1 into three gated steps.
 
 **Ambient temperature assumptions.** Currently lane-based and static. Seasonal adjustment is likely needed, but there is no calibration data yet.
 
@@ -548,7 +558,7 @@ That is the stated intent — 2 to 4 day services working *sometimes*, at high g
 
 What remains is that `DEFAULT_LANE` is 22C, and at 22C the table above tops out at 2 days however many gel packs go in. So every shipment without an explicit lane leans on the expensive end — not because the physics is wrong, but because one static number stands in for every destination. That makes the lane ambient the *first* candidate to fix rather than the last, which reorders the list this entry used to give.
 
-Fixing it is the adjacent open question below, and it needs no E3 data: a zone-based or seasonal ambient is an assumption like the current one, stated rather than fitted. Calibrating UA against real transit data stays step 4's job and stays blocked on E3.
+Fixing it needs no measured data: a zone-based or seasonal ambient is an assumption like the current one, stated rather than fitted, and it is the adjacent open question below. Calibrating UA against real transit data is no longer on the table at all — E3 was removed with the rest of dispatch, and section 5 now says the model will not be calibrated. That makes the ambient assumption the only thermal lever left, which is a reason to state it carefully rather than to widen it.
 
 `TestThermalGate` pins the *properties* rather than the numbers — more gel packs never arrives warmer, the larger box is never thermally better, zero gel packs never survives. Those should survive recalibration; no constant should, which is why none is pinned.
 
@@ -575,14 +585,14 @@ Sequenced so that each step de-risks the next.
 1. **Ledger and run record.** Schema, JSONL writer, DuckDB rebuild. Everything else writes here. *Done.*
 2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, proposed overrides, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy. *Done*, including the invocation itself, which waited on step 3 for a manifest to check.
 3. **Deterministic spine, no models.** B2, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls. *Done.* `run plan` is the entry point; the recipient list is `recipients.yaml`, gitignored because it holds home addresses, with `recipients.example.yaml` as the committed template.
-4. **Thermal model.** Slot into C3 behind the interface the spine already expects.
+4. **Thermal model.** Slot into C3 behind the interface the spine already expects. *Done*, in the sense the step meant: `LumpedCapacitanceModel` is C3's default and `TestThermalGate` pins the properties that must survive recalibration. Calibration itself is not coming — section 5 — so what is left is the lane ambient in section 10, which is an assumption rather than a fit.
 5. **Extraction.** B1, screenshots to records.
 6. **Tool contract assertion.** The startup check from 6.4, before any tool-using agent exists. Building it first means it is never retrofitted onto a system that has already drifted.
 7. **Repair loop.** B3, the first tool-using agent, and the one with the clearest payoff.
-8. **Review interface.** D2, including the re-solve and pair-comparison logic, plus the `review-narrator` agent.
-9. **Dispatch.** E1 and E2, with idempotency.
-10. **Backfill.** E3.
-11. **Infeasibility remediation.** C4, last because it is the rarest path.
-12. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. The module is already written and tested in `recipients/dedupe.py`; picking this up means wiring it between B2 and C1, nothing more. Until then it has no caller.
+8. **Review interface.** D2, including the re-solve and pair-comparison logic, plus the `review-narrator` agent. Terminal states write E2's shipment rows.
+9. **Infeasibility remediation.** C4, last because it is the rarest path.
+10. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. The module is already written and tested in `recipients/dedupe.py`; picking this up means wiring it between B2 and C1, nothing more. Until then it has no caller.
 
-Steps 1 through 3 produce a system that is useful on its own: it will plan a run correctly and hand over a manifest, with the operator supplying addresses by hand. Everything after that reduces manual effort rather than adding capability.
+Dispatch and backfill were steps 9 and 10 and are gone; section 9 records why.
+
+Steps 1 through 4 produce a system that is useful on its own: it will plan a run correctly, verify the plan, and hand over a manifest, with the operator supplying addresses by hand. Everything after that reduces manual effort rather than adding capability, and the pipeline's last word is an approved document either way.

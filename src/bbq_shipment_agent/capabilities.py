@@ -65,7 +65,14 @@ class VerificationMode(StrEnum):
 
 
 class AuthorityLevel(StrEnum):
-    """Ordered. `rank` is what the ceiling clamp compares."""
+    """Ordered. `rank` is what the ceiling clamp compares.
+
+    Nothing consults the resolved value: `purchase_labels` named a stage that
+    was removed rather than built (design 9), so the system has no action to
+    authorize. Both members are kept because the *clamp* is the mechanism
+    worth having proven — a ceiling that has never had to refuse anything is
+    not evidence that it works. Design 6.5 sets out the full argument.
+    """
 
     PROPOSE_ONLY = "propose_only"
     PURCHASE_LABELS = "purchase_labels"

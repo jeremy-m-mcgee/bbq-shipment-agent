@@ -9,7 +9,7 @@ Full design: @docs/design.md
 - 4.4C arrival threshold is a constant in code. Never a flag, CLI arg, or env var.
 - authority_ceiling lives in config/capabilities.yaml. LD can lower authority, never raise it.
 - Max 2 carriers per run.
-- No label purchase without explicit human approval.
+- The system spends no money. Dispatch (E1/E3) was removed — design 9. Nothing consults `authority` today; it stays resolved, clamped and recorded so the mechanism is not retrofitted later.
 - Ledger is append-only JSONL. DuckDB is derived and rebuildable. Never write DuckDB as source of truth.
 - A ledger line is a partial update, not a row. To change a value, append another record with the same merge key. Never edit or delete a line.
 - Ledger timestamps are UTC. Naive datetimes are rejected, not assumed.
@@ -36,8 +36,11 @@ See docs/design.md section 11. Steps 1, 2 and 3 are done. `run plan` runs
 A1 → B2 → C1–C6 → D1 from `recipients.yaml` and prints a verified manifest.
 Everything through C6 makes no model call; D1 is the one agent, gated by
 `verification-enabled` and strictly downstream of the manifest. B4 is written
-and tested but deferred to step 12 and has no caller. Next is step 4, the
-thermal model — see the calibration open question in design 10.
+and tested but deferred to step 10 and has no caller. Step 4 is done in the
+sense the step meant: `LumpedCapacitanceModel` is C3's default. Calibration
+is not coming — E3 was removed, so design 5 now says the model will not be
+calibrated, and the lane ambient in design 10 is the only thermal lever left.
+Remaining: 5 (B1), 6 (tool contract), 7 (B3), 8 (D2), 9 (C4), 10 (B4).
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)

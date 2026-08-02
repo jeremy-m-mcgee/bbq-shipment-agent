@@ -2,17 +2,17 @@
 
 Three record streams, one JSONL file each, all append-only.
 
-Append-only storage and the design's "backfill actuals into the existing
-ledger row" (E3) cannot both be literally true, so a line is not a row: it is
-a *partial update* to a row. Every append carries its merge key plus whatever
-fields are known at the time, and null fields are omitted entirely. The
-derived table folds all appends for a key by taking the last non-null value of
-each field in `seq` order.
+Append-only storage and a run record that gains its cost and its outcome long
+after it was opened cannot both be literally true, so a line is not a row: it
+is a *partial update* to a row. Every append carries its merge key plus
+whatever fields are known at the time, and null fields are omitted entirely.
+The derived table folds all appends for a key by taking the last non-null
+value of each field in `seq` order.
 
 That one rule covers every deferred write in the pipeline. A1 opens a run
-record with `started_at`; the run's closing append adds `total_cost` and
-`completed_at`; E3 adds `actual_arrival` to a shipment days later. None of
-them mutate a byte already on disk, and the ledger stays a clean `git` diff.
+record with `started_at`; planning appends the packet count, carrier set and
+proposed total; approval appends `completed_at`. None of them mutate a byte
+already on disk, and the ledger stays a clean `git` diff.
 
 The consequence to know about: a field can never be un-set once written, only
 overwritten with another non-null value.
@@ -217,7 +217,14 @@ class RunRecord(LedgerRecord):
 
 @dataclass(kw_only=True)
 class ShipmentRecord(LedgerRecord):
-    """One shipment within a run. `actual_arrival` arrives via E3 backfill."""
+    """One shipment within a run, written when a plan is approved.
+
+    `actual_arrival`, `tracking_number` and `idempotency_key` are unfillable:
+    the dispatch stages that would have set them were removed (design 9). They
+    are kept rather than dropped because removing columns is a schema change
+    with test churn and no benefit, and an operator buying a label by hand may
+    yet want somewhere to record it. Nothing in the pipeline writes them.
+    """
 
     stream: ClassVar[str] = "shipments"
     merge_key: ClassVar[tuple[str, ...]] = ("run_id", "recipient_key")

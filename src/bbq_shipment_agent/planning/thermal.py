@@ -24,9 +24,14 @@ on: hold time falls as surface area rises, so the larger box is strictly worse
 at this product weight, with no compensating ballast because the mass is not
 there.
 
-The constants are nominal. Step 4 slots a calibrated model in behind
-`ThermalModel` without touching this gate, and design 5 notes the calibration
-path depends on E3 accumulating real transit data.
+The constants are nominal and will stay nominal. `ThermalModel` remains the
+swap point, but design 5 now says plainly that the model will not be
+calibrated: E3 was the only source of real arrival data and it was removed
+with the rest of dispatch (design 9). Nothing downstream should read these
+numbers as though they had been validated against a real shipment.
+
+The one thermal input still worth improving needs no measurement, because it
+is an assumption either way: `Lane.ambient_c`. See design 10.
 
 ## Margins vary, but only just
 
