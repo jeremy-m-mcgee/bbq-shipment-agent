@@ -6,7 +6,7 @@ LaunchDarkly and the snapshot is committed.
 | Field | Value |
 |---|---|
 | Config key | `review-narrator` |
-| Variation key | `standard-prompt` |
+| Variation key | anything non-empty — see below |
 | Model | `claude-sonnet-5` |
 | Model parameters | `{"max_tokens": 4096}` |
 | Tools declared | *none yet* — see README |

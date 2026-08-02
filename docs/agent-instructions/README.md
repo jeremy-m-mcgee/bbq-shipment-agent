@@ -28,6 +28,26 @@ character for character:
 For each, set: the instruction text, the model, and (optionally) model
 parameters. Python reads all three off the config and holds none of its own.
 
+## Variation keys are yours to name
+
+Only the *config key* has to match anything. The variation key is pass-through
+everywhere it appears — parsed from `_ldMeta.variationKey`, stored on the
+config, written to the snapshot, recorded as `instruction_variation_key` on
+the ledger line, and handed to the metrics tracker. Nothing compares it to a
+literal, and `standard-prompt` is a name the first config happened to get, not
+a convention the code enforces.
+
+It must be non-empty: `launchdarkly_metrics` returns `NoMetrics()` when the
+variation key or version is missing, so an unnamed variation silently loses
+console-side attribution.
+
+Prefer names that describe the *difference*. Two `address-repair` variations
+called `strict-escalation` and `lenient-escalation` tell you something in a
+metrics comparison; `standard-prompt` and `variation-2` do not. Per-variant
+attribution without a code change is one of the reasons design 6.1 gives for
+putting instruction text in LaunchDarkly at all, and it is only worth
+anything if the names carry meaning.
+
 ## Leave the tools list empty for now
 
 Every draft here names the tools its agent expects, because the instructions

@@ -6,7 +6,7 @@ LaunchDarkly and the snapshot is committed.
 | Field | Value |
 |---|---|
 | Config key | `infeasibility-remediation` |
-| Variation key | `standard-prompt` |
+| Variation key | anything non-empty — see below |
 | Model | `claude-sonnet-5` |
 | Model parameters | `{"temperature": 0, "max_tokens": 4096}` |
 | Tools declared | *none yet* — see README |

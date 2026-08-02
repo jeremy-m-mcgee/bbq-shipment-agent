@@ -6,7 +6,7 @@ LaunchDarkly and the snapshot is committed.
 | Field | Value |
 |---|---|
 | Config key | `address-repair` |
-| Variation key | `standard-prompt` |
+| Variation key | anything non-empty — see below |
 | Model | `claude-sonnet-5` |
 | Model parameters | `{"temperature": 0, "max_tokens": 2048}` |
 | Tools declared | *none yet* — see README |
