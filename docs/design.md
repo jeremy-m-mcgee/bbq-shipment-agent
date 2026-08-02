@@ -126,6 +126,8 @@ Runs only on the correctable and failed set. Re-reads the source image region, p
 
 With `memory-mode` at `read` or higher, recipients with prior extraction failures are pre-flagged before validation rather than after.
 
+B3 proposes and the validator adjudicates. The failure mode worth designing against is not a bad repair but a *good-looking* one: a model that infers a house number from context can produce an address that validates cleanly for the wrong doorstep, and nothing downstream can distinguish that from a correct one. So the loop reports what it read from the image separately from what it proposes, and escalation is a normal successful outcome rather than a failed repair.
+
 Output: repaired records plus an escalation list.
 
 **B4. Dedupe and suppress.** *Deferred. See section 11, step 12.*
@@ -199,6 +201,8 @@ Edit handling is one mechanism, not three. Always re-solve from C5, then compare
 | Optimal pair unchanged | Re-solve silently, show the delta on the affected row |
 | Optimal pair moved | Stop and confirm, since one edit would otherwise rewrite service and cost across the whole run |
 | Edit violates the thermal gate | Refuse, explain, offer the nearest feasible alternative. No confirmation prompt, since the gate is not the operator's to override |
+
+The table is control flow and belongs to Python. `review-narrator` triggers a re-solve; Python re-solves, compares the new optimal pair against the previous one, and classifies the outcome as one of the three rows; the agent narrates the classification it is handed. It does not decide whether an edit needs confirming, and it does not adjudicate the thermal gate — a 4.4C constant the operator cannot override is not one the narrator should be interpreting either.
 
 Terminal states: approved, approved with exclusions, rejected.
 
