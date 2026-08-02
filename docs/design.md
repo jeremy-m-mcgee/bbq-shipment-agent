@@ -550,7 +550,7 @@ What remains is that `DEFAULT_LANE` is 22C, and at 22C the table above tops out 
 
 Fixing it is the adjacent open question below, and it needs no E3 data: a zone-based or seasonal ambient is an assumption like the current one, stated rather than fitted. Calibrating UA against real transit data stays step 4's job and stays blocked on E3.
 
-`TestPlaceholderArtefact` pins the current behaviour so the change has to be deliberate.
+`TestThermalGate` pins the *properties* rather than the numbers — more gel packs never arrives warmer, the larger box is never thermally better, zero gel packs never survives. Those should survive recalibration; no constant should, which is why none is pinned.
 
 **Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
