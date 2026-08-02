@@ -1,0 +1,51 @@
+{
+  "1 infinite loop|cupertino|ca|95014|us": {
+    "city": "Cupertino",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CA",
+    "street1": "1 Infinite Loop",
+    "zip": "95014-2083"
+  },
+  "1600 pennsylvania ave nw|washington|dc|20500|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "DC",
+    "street1": "1600 Pennsylvania Ave NW",
+    "zip": "20500-0005"
+  },
+  "64 divisadero st|san francisco|ca|94110|us": {
+    "city": "San Francisco",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "CA",
+    "street1": "64 Divisadero St",
+    "zip": "94117-3211"
+  },
+  "64 divisadero st|san francisco|ca|94117|us": {
+    "city": "San Francisco",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CA",
+    "street1": "64 Divisadero St",
+    "zip": "94117-3211"
+  },
+  "99999 nowhere blvd|fargo|nd|58102|us": {
+    "city": "FARGO",
+    "country": "US",
+    "is_valid": false,
+    "messages": [
+      "Unable to find a valid city, state or 5-digit zip. Please check the accuracy of the submitted address."
+    ],
+    "state": "ND",
+    "street1": "99999 NOWHERE BLVD",
+    "zip": "58102"
+  }
+}

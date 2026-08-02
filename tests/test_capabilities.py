@@ -28,11 +28,13 @@ BASE = """
       baseline:
         planner: "off"
         memory: "off"
+        validation: "standard"
         verification: "off"
         authority: "propose_only"
       full:
         planner: "on"
         memory: "read_write"
+        validation: "strict"
         verification: "on"
         authority: "purchase_labels"
     default_profile: "baseline"
@@ -80,6 +82,7 @@ class TestYamlBooleanTrap:
               baseline:
                 planner: off
                 memory: off
+                validation: standard
                 verification: on
                 authority: "propose_only"
             default_profile: baseline
@@ -263,15 +266,15 @@ class TestPrerequisites:
 class TestFingerprint:
     def test_same_capabilities_same_fingerprint(self):
         a = CapabilitySet.from_mapping(
-            {"planner": "off", "memory": "off", "verification": "off",
+            {"planner": "off", "memory": "off", "validation": "standard", "verification": "off",
              "authority": "propose_only"}, source="a")
         b = CapabilitySet.from_mapping(
             {"authority": "propose_only", "verification": "off", "memory": "off",
-             "planner": "off"}, source="b")
+             "validation": "standard", "planner": "off"}, source="b")
         assert a.fingerprint() == b.fingerprint()
 
     def test_any_difference_changes_it(self):
-        base = {"planner": "off", "memory": "off", "verification": "off",
+        base = {"planner": "off", "memory": "off", "validation": "standard", "verification": "off",
                 "authority": "propose_only"}
         a = CapabilitySet.from_mapping(base, source="a")
         b = CapabilitySet.from_mapping({**base, "memory": "read"}, source="b")

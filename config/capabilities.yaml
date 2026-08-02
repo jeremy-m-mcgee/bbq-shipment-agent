@@ -14,18 +14,21 @@ profiles:
   baseline:
     planner: "off"            # python sequences the stages
     memory: "off"
+    validation: "standard"     # b2 applies validator corrections
     verification: "off"
     authority: "propose_only"
 
   planner_trial:
     planner: "shadow"         # runs, output logged not used
     memory: "read"
+    validation: "standard"
     verification: "on"
     authority: "propose_only"
 
   full:
     planner: "on"
     memory: "read_write"
+    validation: "strict"      # correctable addresses go to a human
     verification: "on"
     authority: "propose_only" # still
 

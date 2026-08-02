@@ -43,6 +43,22 @@ class MemoryMode(StrEnum):
     READ_WRITE = "read_write"
 
 
+class ValidationMode(StrEnum):
+    """B2's strictness. Not a boolean, for the same reason `planner` is not.
+
+    The interesting question is not whether validation runs, it is who
+    adjudicates a *correctable* address -- one the validator can fix but did
+    not receive correctly. `standard` lets the correction stand; `strict`
+    sends it to a human. That is a real operational dial: strict for a first
+    run against an unfamiliar recipient list, standard once the data is
+    trusted, and neither should need a deploy.
+    """
+
+    OFF = "off"
+    STANDARD = "standard"
+    STRICT = "strict"
+
+
 class VerificationMode(StrEnum):
     OFF = "off"
     ON = "on"
@@ -72,6 +88,7 @@ _AUTHORITY_ORDER: tuple[AuthorityLevel, ...] = (
 CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
     "planner": PlannerMode,
     "memory": MemoryMode,
+    "validation": ValidationMode,
     "verification": VerificationMode,
     "authority": AuthorityLevel,
 }
@@ -104,10 +121,11 @@ def _coerce_yaml_scalar(name: str, value: Any) -> str:
 
 @dataclass(frozen=True)
 class CapabilitySet:
-    """The four capability values a run actually operates under."""
+    """The capability values a run actually operates under."""
 
     planner: PlannerMode
     memory: MemoryMode
+    validation: ValidationMode
     verification: VerificationMode
     authority: AuthorityLevel
 
@@ -142,7 +160,7 @@ class CapabilitySet:
     def fingerprint(self) -> str:
         """Stable identity for this exact capability set.
 
-        Names the equivalence class "these four values", deliberately ignoring
+        Names the equivalence class "these values", deliberately ignoring
         how they were arrived at. `ResolvedCapabilities.reasons` varies
         independently -- two runs can reach the same capabilities by different
         routes -- so folding reasons in would split a class that is genuinely

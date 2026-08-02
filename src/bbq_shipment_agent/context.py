@@ -23,6 +23,7 @@ from ldclient import Context
 #: identifiers, not an agent registry -- `carrier_selection` is a stage that
 #: has no agent, and targeting it is the point.
 STAGE_RUN_INIT = "run_init"
+STAGE_ADDRESS_VALIDATION = "address_validation"
 STAGE_ADDRESS_REPAIR = "address_repair"
 STAGE_INFEASIBILITY_REMEDIATION = "infeasibility_remediation"
 STAGE_MANIFEST_VERIFICATION = "manifest_verification"

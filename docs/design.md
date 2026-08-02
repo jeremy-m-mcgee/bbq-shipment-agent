@@ -116,9 +116,11 @@ Screenshots in, structured recipient records out, via a vision model. Not OCR. E
 Model call, single shot. Not an agent loop.
 
 **B2. Validate.**
-Each record through Shippo address validation. Three-way outcome: clean, correctable, failed.
+Each record through Shippo address validation. Three-way outcome: clean, correctable, failed. Gated by `validation-mode`, which decides who adjudicates a *correctable* address: `standard` applies the validator's correction, `strict` escalates it to a human, `off` skips validation entirely.
 
-Deterministic.
+Runs before C2, and the corrected address is the one that gets quoted. A carrier will happily price a parcel to a mistyped ZIP and return a real rate and transit estimate for the wrong destination, so every cost on a manifest built from unvalidated addresses rests on the operator having typed them correctly. Measured against the live validator, one test address came back with a different 5-digit ZIP — a different neighbourhood and a different lane.
+
+Deterministic. The model-driven stage that reasons about a broken address is B3, which is offered validation as a tool.
 
 **B3. Repair.** *Agent loop. Gated by `planner-mode` and `memory-mode`.*
 Runs only on the correctable and failed set. Re-reads the source image region, proposes a correction, re-validates through Shippo, retries within a bounded budget. Records that still fail are escalated to a human queue, never silently dropped.
@@ -291,7 +293,7 @@ Each model-driven loop is a separate agent config. They share no context, hand n
 
 Separating them is justified independently of LD ergonomics: they differ on tools, on model requirements, on success criteria, and on rollout timeline. A single fused agent would mean a vision model performing a read-only critique pass and one instruction set covering four unrelated jobs.
 
-The flag set does not multiply. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, five flags.
+The flag set does not multiply with the agent count. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, six flags — and the sixth, `validation-mode`, belongs to a deterministic stage rather than an agent, which is the point: LaunchDarkly serves runtime behaviour, not just agent instructions.
 
 ### 6.3 What is not an agent
 
@@ -339,7 +341,7 @@ Memory is on for `address_repair` and off for `carrier_selection` because a targ
 
 ### 6.7 Profiles
 
-Five independent flags is 32 combinations, which will not be tested. Use named profiles with per-flag override.
+Six independent flags is 64 combinations, which will not be tested. Use named profiles with per-flag override.
 
 ```yaml
 # config/capabilities.yaml
@@ -378,6 +380,7 @@ kill_switch: false
 | `planner-mode` | experiment | temporary, sunset date |
 | `memory-mode` | release | temporary until proven |
 | `verification-enabled` | release | temporary until proven |
+| `validation-mode` | operational | permanent |
 | `authority-level` | permission | permanent |
 | `pipeline-kill-switch` | operational | permanent |
 

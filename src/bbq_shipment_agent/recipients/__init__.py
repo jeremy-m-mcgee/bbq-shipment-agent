@@ -1,0 +1,33 @@
+"""Phase B: recipient resolution. Design section 4.
+
+B2 (validate) lives here; B4 (dedupe and suppress) will join it. Both are
+deterministic — design 4 marks them so, and the model-driven repair loop that
+sits between them is B3, which arrives at build order step 7.
+
+Kept apart from `planning` because the phases answer different questions:
+Phase B decides *who* is shipped to, Phase C decides *how*.
+"""
+
+from .validation import (
+    AddressValidationUnavailable,
+    AddressValidator,
+    RecordedAddressValidator,
+    ShippoAddressValidator,
+    ValidationOutcome,
+    ValidationReport,
+    ValidationResult,
+    classify,
+    validate_shipments,
+)
+
+__all__ = [
+    "AddressValidationUnavailable",
+    "AddressValidator",
+    "RecordedAddressValidator",
+    "ShippoAddressValidator",
+    "ValidationOutcome",
+    "ValidationReport",
+    "ValidationResult",
+    "classify",
+    "validate_shipments",
+]

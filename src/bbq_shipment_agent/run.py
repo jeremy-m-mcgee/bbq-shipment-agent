@@ -49,6 +49,7 @@ from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc
 CAPABILITY_FLAGS: dict[str, str] = {
     "planner-mode": "planner",
     "memory-mode": "memory",
+    "validation-mode": "validation",
     "verification-enabled": "verification",
 }
 
