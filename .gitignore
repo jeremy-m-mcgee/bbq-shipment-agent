@@ -16,3 +16,13 @@ __pycache__/
 # Real quotes captured as a test fixture live in tests/fixtures/ instead.
 rate-cache*.json
 rc*.json
+
+# Live Shippo answers cached by `run plan`. A cache of an API, not a run
+# artifact: delete it and the next run re-fetches.
+.cache/
+
+# The real recipient list holds names and home addresses.
+# recipients.example.yaml is the committed template — keep it tracked.
+recipients.yaml
+recipients.*.yaml
+!recipients.example.yaml

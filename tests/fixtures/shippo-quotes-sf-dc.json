@@ -1,4 +1,2468 @@
 {
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@1.18": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 109.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 18.35,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 12.94,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 39.96,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 79.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 72.12,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 8.05,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 72.04,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 12.54,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 44.53,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 17.96,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@1.88": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 15.26,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 39.96,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 23.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 15.31,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 88.35,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 72.12,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 44.53,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 79.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 25.86,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 11.27,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 109.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@2.58": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 17.02,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 44.53,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 39.96,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 109.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 28.27,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 79.76,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 16.85,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 72.12,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 18.48,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 26.84,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 96.77,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@3.28": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 18.86,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 76.46,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 31.52,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 84.1,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 16.85,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 33.04,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 43.09,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 113.73,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 48.3,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 19.17,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 114.1,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@3.98": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 35.14,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 52.06,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 80.82,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 122.21,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 19.9,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 46.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 88.44,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 16.85,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 118.44,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 33.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 19.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@4.68": {
+    "attempts": 4,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 20.48,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 16.85,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 24.03,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 59.6,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 97.14,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 52.43,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 38.11,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 39.04,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 136.73,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 127.14,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 89.5,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#25.0x25.0x25.0@5.38": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 16.85,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 101.47,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 21.52,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 40.98,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 142.78,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 131.47,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 40.23,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 93.83,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 25.04,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 63.38,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 55.56,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@1.58": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@2.28": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@2.98": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@3.68": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@4.38": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@5.08": {
+    "attempts": 5,
+    "messages": [
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      }
+    ]
+  },
+  "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500-0005|us#35.0x35.0x35.0@5.78": {
+    "attempts": 1,
+    "messages": [
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account COURIERSPLEASE_SHIPPO_TIER_1 doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_canada_post_master doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_hermes_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_chronopost_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "UPS",
+        "text": "Shipment origin is out of service area for UPS Master account from CA"
+      },
+      {
+        "code": "110971",
+        "source": "UPS",
+        "text": "RatedShipmentAlert: Your invoice may vary from the displayed reference rates"
+      },
+      {
+        "code": "",
+        "source": "ShippoCommon",
+        "text": "Shipment origin or destination state is out of the service area for LSO."
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_uk_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "DHLExpress",
+        "text": "Shippo's DHL Express master account doesn't support shipments to inside of the US"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_correos_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_colissimo_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_dpd_de_account doesn't support one or more shipment options"
+      },
+      {
+        "code": "",
+        "source": "Shippo",
+        "text": "Carrier account shippo_deutsche_post_account doesn't support one or more shipment options"
+      }
+    ],
+    "rates": [
+      {
+        "amount": 33.44,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery in 2 to 5 days.",
+        "estimated_days": 5,
+        "service_name": "Ground Advantage",
+        "service_token": "usps_ground_advantage"
+      },
+      {
+        "amount": 71.16,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the second business day.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air\u00ae",
+        "service_token": "ups_second_day_air"
+      },
+      {
+        "amount": 115.55,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 3:00 or 4:30 p.m. for commercial destinations and by end of day for residentail destinations.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air Saver\u00ae",
+        "service_token": "ups_next_day_air_saver"
+      },
+      {
+        "amount": 31.69,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery times vary. Delivered usually in 1-5 business days.",
+        "estimated_days": 4,
+        "service_name": "Ground",
+        "service_token": "ups_ground"
+      },
+      {
+        "amount": 123.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 10:30 a.m., 12:00 noon, or end of day, depending on destination.",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae",
+        "service_token": "ups_next_day_air"
+      },
+      {
+        "amount": 50.85,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery by the end of the third business day.",
+        "estimated_days": 3,
+        "service_name": "3 Day Select\u00ae",
+        "service_token": "ups_3_day_select"
+      },
+      {
+        "amount": 191.33,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Overnight delivery to most U.S. locations.",
+        "estimated_days": 2,
+        "service_name": "Priority Mail Express",
+        "service_token": "usps_priority_express"
+      },
+      {
+        "amount": 153.18,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Next business day delivery by 8:30 a.m., 9:00 a.m., or 9:30 a.m. ",
+        "estimated_days": 1,
+        "service_name": "Next Day Air\u00ae Early",
+        "service_token": "ups_next_day_air_early_am"
+      },
+      {
+        "amount": 26.65,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "",
+        "estimated_days": 5,
+        "service_name": "Ground Saver",
+        "service_token": "ups_ground_saver"
+      },
+      {
+        "amount": 60.31,
+        "carrier": "USPS",
+        "currency": "USD",
+        "duration_terms": "Delivery within 1, 2,\u00a0or 3 days\u00a0based on where your package started and where it\u2019s being sent.",
+        "estimated_days": 3,
+        "service_name": "Priority Mail",
+        "service_token": "usps_priority"
+      },
+      {
+        "amount": 82.2,
+        "carrier": "UPS",
+        "currency": "USD",
+        "duration_terms": "Delivery on the second business day by 10:30 a.m. or 12:00 noon to most commercial destinations.",
+        "estimated_days": 2,
+        "service_name": "2nd Day Air A.M.\u00ae",
+        "service_token": "ups_second_day_air_am"
+      }
+    ]
+  },
   "64 divisadero st|san francisco|ca|94117|us>1600 pennsylvania ave nw|washington|dc|20500|us#25.0x25.0x25.0@1.18": {
     "attempts": 1,
     "messages": [

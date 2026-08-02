@@ -37,14 +37,15 @@ invocation itself — capabilities, clamp, prerequisites, context, A1, live LD
 provider, AI Config retrieval, instruction hash, run-start snapshot.
 `record_agent_invocation` is written and tested but has no caller: nothing
 invokes `manifest-verification` until step 3's spine produces a manifest to
-check. Step 3's stages are all built — B2, C1–C6. What is left is the wiring:
-one entry point that runs A1 → B2 → C1–C6 from a recipient file and writes
-the manifest. B4 is written and tested but deferred to step 12 and has no
-caller.
+check. Step 3 is done: `run plan` runs A1 → B2 → C1–C6 from `recipients.yaml`
+and prints a manifest, with zero model calls. B4 is written and tested but
+deferred to step 12 and has no caller. Next is step 4, the thermal model —
+see the calibration open question in design 10.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
-- `src/bbq_shipment_agent/recipients/` — validation.py (B2), dedupe.py (B4, deferred, no caller)
+- `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → C1–C6
+- `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4, deferred, no caller)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
 - `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes
@@ -54,7 +55,9 @@ caller.
 - `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
-- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`
+- `recipients.yaml` — the run input. Gitignored (home addresses); `recipients.example.yaml` is the template.
+- `.cache/` — live Shippo answers, gitignored. A cache of an API, not a run artifact.
+- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`, `uv run bbq-shipment-agent run init|plan`
 
 ## Capability rules
 - A provider proposes; the repo decides. Order is fixed: profile → flag overrides → ceiling clamp → prerequisites.

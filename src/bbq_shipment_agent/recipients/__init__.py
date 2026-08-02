@@ -12,6 +12,13 @@ Phase B decides *who* is shipped to, Phase C decides *how*.
 """
 
 from .dedupe import SuppressionReport, dedupe_shipments
+from .roster import (
+    DEFAULT_ROSTER_PATH,
+    Roster,
+    RosterError,
+    default_ship_dates,
+    load_roster,
+)
 from .validation import (
     AddressValidationUnavailable,
     AddressValidator,
@@ -25,9 +32,12 @@ from .validation import (
 )
 
 __all__ = [
+    "DEFAULT_ROSTER_PATH",
     "AddressValidationUnavailable",
     "AddressValidator",
     "RecordedAddressValidator",
+    "Roster",
+    "RosterError",
     "ShippoAddressValidator",
     "SuppressionReport",
     "ValidationOutcome",
@@ -35,5 +45,7 @@ __all__ = [
     "ValidationResult",
     "classify",
     "dedupe_shipments",
+    "default_ship_dates",
+    "load_roster",
     "validate_shipments",
 ]

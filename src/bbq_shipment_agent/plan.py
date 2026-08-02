@@ -1,0 +1,191 @@
+"""The spine, end to end. Build order step 3.
+
+A1 -> B2 -> C1 -> C2 -> C3 -> C5 -> C6, with zero model calls. Design 11 says
+steps 1 through 3 "produce a system that is useful on its own: it will plan a
+run correctly and hand over a manifest, with the operator supplying addresses
+by hand". Every stage existed before this module; none of them had a caller,
+which meant the claim was true of the parts and not of the whole.
+
+B4 is not in the sequence -- design 11 moved it to step 12. B3 (repair) and
+D1 (verify) are steps 7 and 2's unwired remainder respectively, so a failed
+address escalates rather than being repaired, and the manifest goes straight
+to the operator without a verification pass.
+
+## What this module is and is not
+
+It is composition. Every decision belongs to the stage that owns it, and
+nothing here computes a cost, a temperature or a ranking. The two judgement
+calls it does make are stated below because they are not in any stage:
+
+* **A run that covers nobody is not an exception.** `assemble_manifest`
+  refuses to build from a partial plan, and it is right to -- but that is
+  C4's cue, and C4 is build order step 11. Until then the honest output is
+  the solve itself, with its partial plans, so the operator can see what
+  stranded and why. `PlanResult.manifest` is None in that case.
+* **Planning results are appended to the run record, without `completed_at`.**
+  Design 7 makes a ledger line a partial update, so the counts and the
+  proposed total cost land on the run row opened at A1. `completed_at` is
+  deliberately absent: planning is not a terminal state, dispatch is, and
+  `count_shadow_runs` counts only completed runs.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from .capabilities import ValidationMode
+from .ledger import LedgerWriter, RunRecord
+from .planning import (
+    Address,
+    Excluded,
+    Manifest,
+    RateQuoter,
+    Solve,
+    ThermalModel,
+    assemble_manifest,
+    solve_carriers,
+)
+from .recipients import (
+    AddressValidationUnavailable,
+    AddressValidator,
+    Roster,
+    ValidationReport,
+    validate_shipments,
+)
+from .run import Run
+
+
+class _NoValidator:
+    """Stands in when `validation-mode` is off, and says so if it is called.
+
+    `validate_shipments` short-circuits before touching the validator in that
+    mode, so constructing a live one would open a Shippo connection for a run
+    that has decided not to validate. If this ever raises, the short-circuit
+    has been broken.
+    """
+
+    def validate(self, address: Address):
+        raise AddressValidationUnavailable(
+            "validation-mode is off, so no validator was constructed, but one "
+            "was called. B2's short-circuit is broken."
+        )
+
+
+@dataclass(frozen=True)
+class PlanResult:
+    """Everything the spine produced, whether or not it produced a manifest."""
+
+    run: Run
+    roster: Roster
+    validation: ValidationReport
+    solve: Solve
+    manifest: Manifest | None
+    #: Why there is no manifest, when there is none.
+    reason: str | None = None
+
+    @property
+    def escalated(self) -> tuple[Excluded, ...]:
+        return self.validation.escalated
+
+
+def plan_run(
+    run: Run,
+    roster: Roster,
+    *,
+    ledger_root: Path | str,
+    quoter: RateQuoter,
+    validator: AddressValidator | None = None,
+    model: ThermalModel | None = None,
+    ship_dates: tuple[date, ...] | None = None,
+) -> PlanResult:
+    """B2 through C6 against an already-initialized run.
+
+    A1 is the caller's, not this function's: `initialize_run` writes the run
+    record and needs the LaunchDarkly wiring the CLI assembles, and keeping
+    the two apart means a test can plan against a fixed capability set without
+    going near a provider.
+
+    The validator is only constructed by the caller when it will be used --
+    `validation-mode` decides that, and it is read off the run's resolved
+    capabilities rather than passed in, so the flag cannot be bypassed here.
+    """
+    mode = run.capabilities.validation
+    validation = validate_shipments(
+        roster.shipments,
+        validator if validator is not None else _NoValidator(),
+        mode,
+    )
+
+    solve = solve_carriers(
+        validation.eligible,
+        roster.origin,
+        ship_dates or roster.ship_dates,
+        quoter,
+        model,
+    )
+
+    manifest: Manifest | None = None
+    reason: str | None = None
+    try:
+        manifest = assemble_manifest(
+            run.run_id,
+            solve,
+            escalated=validation.escalated,
+            cap_fingerprint=run.cap_fingerprint,
+        )
+    except ValueError as exc:
+        # No covering carrier subset. See the module docstring: this is C4's
+        # cue, and C4 does not exist yet, so it is reported rather than raised.
+        reason = str(exc)
+
+    _record_planning(ledger_root, run, roster, validation, solve, manifest, mode)
+
+    return PlanResult(
+        run=run,
+        roster=roster,
+        validation=validation,
+        solve=solve,
+        manifest=manifest,
+        reason=reason,
+    )
+
+
+def _record_planning(
+    ledger_root: Path | str,
+    run: Run,
+    roster: Roster,
+    validation: ValidationReport,
+    solve: Solve,
+    manifest: Manifest | None,
+    mode: ValidationMode,
+) -> None:
+    """Append what planning learned to the run row opened at A1.
+
+    A partial update, per design 7: same merge key, only the fields known now,
+    and no `completed_at` because the run has not reached a terminal state.
+    `carrier_pair` and `total_cost` describe the *proposed* plan -- nothing has
+    been approved or purchased, and E1 is build order step 9.
+    """
+    reasons = run.evaluation_reasons()
+    reasons["validation_mode"] = mode.value
+    reasons["validation_corrected"] = validation.corrected_count
+    reasons["available_carriers"] = sorted(solve.available_carriers)
+    if solve.messages:
+        reasons["carrier_messages"] = [
+            f"{m.source}: {m.text}" for m in solve.messages[:20]
+        ]
+
+    LedgerWriter(ledger_root).append(
+        RunRecord(
+            run_id=run.run_id,
+            packet_count=roster.packet_count,
+            carrier_pair=list(manifest.carriers) if manifest else None,
+            total_cost=manifest.total_cost if manifest else None,
+            suppressed_count=0,  # B4 is deferred; nothing suppresses today.
+            escalated_count=len(validation.escalated),
+            stranded_count=len(manifest.stranded) if manifest else None,
+            evaluation_reasons=reasons,
+        )
+    )

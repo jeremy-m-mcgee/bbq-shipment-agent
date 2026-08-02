@@ -99,9 +99,14 @@ class ManifestRow:
             cost=configuration.cost,
             # Elapsed days, resolved per carrier. See the module docstring.
             expected_arrival=configuration.ship_date + timedelta(days=transit),
+            # `+ 0.0` normalizes the negative zero that rounding a value a
+            # hair below freezing produces. A manifest reading "-0.00C" looks
+            # like a defect to the operator reading it, and the packet that
+            # arrives with gel packs still mid-phase-change is the *good* case.
             predicted_arrival_temp_c=round(
                 assignment.evaluated.predicted_arrival_temp_c, 2
-            ),
+            )
+            + 0.0,
             thermal_margin_c=round(assignment.evaluated.thermal_margin_c, 2),
         )
 

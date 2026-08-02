@@ -1,0 +1,66 @@
+# The run input file. Copy to recipients.yaml (gitignored) and edit.
+#
+#   uv run bbq-shipment-agent run plan --recipients recipients.yaml
+#
+# The real file holds names and home addresses, which is why only this
+# template is committed — same arrangement as .env.example.
+
+# Where every packet ships from. Required: every cost and every transit
+# estimate on the manifest is measured from here, so there is no default.
+origin:
+  name: BBQ HQ
+  street1: 64 Divisadero St
+  city: San Francisco
+  state: CA
+  zip: "94117"
+
+# Candidate ship dates. Optional — omit and the run uses the next Saturday,
+# Monday and Tuesday. Set them explicitly for a run you want to reproduce
+# later, since the default moves with the calendar.
+#
+# Saturday, Monday and Tuesday only (design 3). Any other weekday is refused
+# by name rather than silently skipped.
+ship_dates:
+  - 2026-08-15   # Saturday
+  - 2026-08-17   # Monday
+  - 2026-08-18   # Tuesday
+
+# Ambient assumptions, referenced by key from a recipient below. Optional;
+# anything without a lane gets the default 22C. Design 5 keeps ambient a
+# stated assumption rather than a computed value, so state it here.
+lanes:
+  gulf:
+    ambient_c: 32.0
+    zone: 4
+  mountain:
+    ambient_c: 14.0
+    zone: 7
+
+recipients:
+  # `key` is optional — it defaults to a slug of the name. Give one explicitly
+  # if two people share a name, or if you want the ledger key to stay stable
+  # while the display name changes.
+  - name: Ana Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"          # quote it: YAML reads 02134 as octal
+
+  - key: bo-nakamura
+    name: Bo Nakamura
+    street1: 233 S Wacker Dr
+    city: Chicago
+    state: IL
+    zip: "60606"
+    lane: mountain
+
+  # An operator pin. This is the only way a Saturday shipment can enter the
+  # plan, and one Saturday shipment forces USPS into the carrier set for the
+  # whole run (design 3). The manifest says so when it happens.
+  - name: Cass Delgado
+    street1: 700 Louisiana St
+    city: Houston
+    state: TX
+    zip: "77002"
+    lane: gulf
+    ship_date: 2026-08-15
