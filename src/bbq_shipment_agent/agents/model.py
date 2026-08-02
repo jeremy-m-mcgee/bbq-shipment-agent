@@ -61,6 +61,12 @@ class Completion:
     input_tokens: int = 0
     output_tokens: int = 0
     stop_reason: str | None = None
+    #: The model that actually answered, as the API reported it. Kept beside
+    #: the model LaunchDarkly asked for so the two can be compared: an alias
+    #: that resolves elsewhere, or a name silently remapped by the provider,
+    #: is otherwise invisible, and the ledger would record an attribution that
+    #: was never true. Legitimate when they differ; worth saying so.
+    model: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -182,6 +188,7 @@ class AnthropicModel:
             input_tokens=getattr(message.usage, "input_tokens", 0),
             output_tokens=getattr(message.usage, "output_tokens", 0),
             stop_reason=message.stop_reason,
+            model=getattr(message, "model", None),
         )
 
 
@@ -222,4 +229,5 @@ class RecordedModel:
             input_tokens=row.get("input_tokens", 0),
             output_tokens=row.get("output_tokens", 0),
             stop_reason=row.get("stop_reason"),
+            model=row.get("model"),
         )

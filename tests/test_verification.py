@@ -417,3 +417,49 @@ class TestMetrics:
             metrics=spy,
         )
         assert spy.events == ["success"]
+
+
+class TestWhichModelAnswered:
+    def test_the_requested_and_responding_models_are_both_recorded(self, tmp_path):
+        class Echo:
+            def complete(self, invocation, prompt):
+                return Completion(text='{"findings": []}', model=invocation.model)
+
+        run = make_run(tmp_path)
+        manifest, _ = make_manifest(tmp_path, run)
+        result = verify_manifest(
+            run, manifest, ledger_root=tmp_path / "ledger", model=Echo()
+        )
+        served = run.agent_configs[AGENT_KEY].model
+        assert result.model_requested == served
+        assert result.model_responded == served
+        assert not result.model_drifted
+
+    def test_a_provider_answering_with_a_different_model_is_surfaced(self, tmp_path):
+        # An alias resolving to a dated snapshot is legitimate. It still has to
+        # be visible: the ledger records what LaunchDarkly served, and if that
+        # is not what ran, the record names an attribution nobody can reproduce.
+        class Remapping:
+            def complete(self, invocation, prompt):
+                return Completion(text='{"findings": []}', model="something-else-5")
+
+        run = make_run(tmp_path)
+        manifest, _ = make_manifest(tmp_path, run)
+        result = verify_manifest(
+            run, manifest, ledger_root=tmp_path / "ledger", model=Remapping()
+        )
+        assert result.model_drifted
+        # The ledger still attributes the run to what LaunchDarkly served.
+        assert result.record.model == run.agent_configs[AGENT_KEY].model
+
+    def test_no_drift_is_claimed_when_the_provider_reports_nothing(self, tmp_path):
+        run = make_run(tmp_path)
+        manifest, _ = make_manifest(tmp_path, run)
+        result = verify_manifest(
+            run,
+            manifest,
+            ledger_root=tmp_path / "ledger",
+            model=StubModel('{"findings": []}'),
+        )
+        assert result.model_responded is None
+        assert not result.model_drifted

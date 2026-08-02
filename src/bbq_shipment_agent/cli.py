@@ -351,9 +351,17 @@ def _print_verification(verification) -> bool:
     print(f"\nD1  {verification.describe()}")
     if verification.ran:
         print(
-            f"    {verification.iterations} iteration(s), "
+            f"    {verification.model_requested} — "
+            f"{verification.iterations} iteration(s), "
             f"{verification.input_tokens}+{verification.output_tokens} tokens"
         )
+        if verification.model_drifted:
+            # The ledger records what LaunchDarkly served. If that is not what
+            # answered, say so here rather than leaving the record to imply it.
+            print(
+                f"    note: LaunchDarkly served {verification.model_requested}, "
+                f"but {verification.model_responded} answered."
+            )
     for finding in verification.findings:
         print(f"    {finding.describe()}")
         if finding.evidence:

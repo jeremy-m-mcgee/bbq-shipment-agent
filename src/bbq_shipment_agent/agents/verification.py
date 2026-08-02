@@ -95,6 +95,11 @@ class Verification:
     reason: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    #: What LaunchDarkly asked for, and what actually answered. Equal on a
+    #: normal run. Carried separately because they are two different claims
+    #: and only the first one is what the ledger attributes the run to.
+    model_requested: str | None = None
+    model_responded: str | None = None
     #: The reply as received, kept when it could not be parsed so the operator
     #: can see what the model actually said rather than only that it failed.
     raw: str | None = None
@@ -107,6 +112,21 @@ class Verification:
     @property
     def blockers(self) -> tuple[Finding, ...]:
         return tuple(f for f in self.findings if f.blocking)
+
+    @property
+    def model_drifted(self) -> bool:
+        """Whether something other than the requested model answered.
+
+        Not an error -- an alias resolving to a dated snapshot is normal and
+        expected. It is worth surfacing because the ledger records the model
+        LaunchDarkly served, and if that is not what ran, the record names an
+        attribution nobody can reproduce.
+        """
+        return bool(
+            self.model_requested
+            and self.model_responded
+            and self.model_requested != self.model_responded
+        )
 
     def describe(self) -> str:
         if not self.ran:
@@ -312,7 +332,7 @@ def verify_manifest(
     else:
         reporter.track_success()
 
-    return _result(run, ledger_root, attempts)
+    return _result(run, ledger_root, attempts, invocation)
 
 
 def _parse(text: str) -> dict[str, Any] | str:
@@ -375,7 +395,10 @@ def _findings(parsed: dict[str, Any]) -> list[Finding]:
 
 
 def _result(
-    run: Run, ledger_root: Path | str, attempts: list[_Attempt]
+    run: Run,
+    ledger_root: Path | str,
+    attempts: list[_Attempt],
+    invocation: Invocation,
 ) -> Verification:
     """Assemble the result and write the ledger record."""
     last = attempts[-1]
@@ -405,6 +428,8 @@ def _result(
         reason=last.error,
         input_tokens=tokens_in,
         output_tokens=tokens_out,
+        model_requested=invocation.model,
+        model_responded=last.completion.model if last.completion else None,
         raw=last.completion.text if last.parsed is None and last.completion else None,
         record=record,
     )
