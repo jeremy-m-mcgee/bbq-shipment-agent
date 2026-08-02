@@ -77,11 +77,10 @@ Ship dates are chosen per shipment, independently. A single Saturday shipment th
 flowchart TD
     A1[A1 Initialize run] --> B1[B1 Extract from screenshots]
     B1 --> B2[B2 Validate addresses]
-    B2 -->|clean| B4[B4 Dedupe and suppress]
+    B2 -->|clean| C1[C1 Define load]
     B2 -->|correctable or failed| B3[B3 Repair loop]
-    B3 -->|repaired| B4
+    B3 -->|repaired| C1
     B3 -->|exhausted| ESC[Escalation list]
-    B4 --> C1[C1 Define load]
     C1 --> C2[C2 Enumerate configurations]
     C2 --> C3[C3 Thermal gate]
     C3 -->|feasible| C5[C5 Solve carrier pairs]
@@ -129,10 +128,12 @@ With `memory-mode` at `read` or higher, recipients with prior extraction failure
 
 Output: repaired records plus an escalation list.
 
-**B4. Dedupe and suppress.**
+**B4. Dedupe and suppress.** *Deferred. See section 11, step 12.*
 Within-run duplicates, then same-address consolidation. No cross-run check — see section 9.
 
-Deterministic, and a pure function of its input: B4 reads no prior state, so the same recipient list always produces the same eligible set. Output: eligible set, plus an explicit suppression reason for everyone excluded.
+Not part of the spine. At ~22 packets on a hand-written list the operator is looking at the duplicates as they type them, so the stage automates a check that is already cheap to do by eye, and the same-address case needs a judgement call — one parcel or two — that the operator can make faster than a rule can. Deferring it costs nothing structural: the pipeline runs B2 straight into C1, and D1's duplicate-destination check still catches a doubled doorstep before a human sees the manifest.
+
+If it is picked up: deterministic, and a pure function of its input — B4 reads no prior state, so the same recipient list always produces the same eligible set. Output: eligible set, plus an explicit suppression reason for everyone excluded.
 
 ### Phase C: Planning
 
@@ -518,7 +519,7 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 The recipient list is an explicit instruction. It is hand-written by the operator, or extracted from screenshots of people actually asking, and either way a name on it is a deliberate act. Excluding someone because a previous run served them overrides that instruction on the strength of a date, and at three to five runs a year a repeat is far more likely to be intentional — a second cook, a second occasion — than an accident. The window default was never set, which was the tell: nobody had an intuition for a number because the rule had no natural value.
 
-Within-run deduplication and same-address consolidation stay. Those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. Dropping the cross-run check also removes the only prior-state dependency from the deterministic spine, so B4 becomes a pure function of its input.
+Within-run deduplication and same-address consolidation are not rejected on the same grounds — those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. They are deferred instead, for the separate reason in section 4's B4 entry. What matters here is that dropping the cross-run check removes the only prior-state dependency from the deterministic spine, whether or not B4 is ever built.
 
 **Dry ice.** Rejected. Gel packs avoid hazmat classification and keep all four carriers available.
 
@@ -552,7 +553,7 @@ Sequenced so that each step de-risks the next.
 
 1. **Ledger and run record.** Schema, JSONL writer, DuckDB rebuild. Everything else writes here. *Done.*
 2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, proposed overrides, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy.
-3. **Deterministic spine, no models.** B2, B4, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls.
+3. **Deterministic spine, no models.** B2, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls.
 4. **Thermal model.** Slot into C3 behind the interface the spine already expects.
 5. **Extraction.** B1, screenshots to records.
 6. **Tool contract assertion.** The startup check from 6.4, before any tool-using agent exists. Building it first means it is never retrofitted onto a system that has already drifted.
@@ -561,5 +562,6 @@ Sequenced so that each step de-risks the next.
 9. **Dispatch.** E1 and E2, with idempotency.
 10. **Backfill.** E3.
 11. **Infeasibility remediation.** C4, last because it is the rarest path.
+12. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. The module is already written and tested in `recipients/dedupe.py`; picking this up means wiring it between B2 and C1, nothing more. Until then it has no caller.
 
 Steps 1 through 3 produce a system that is useful on its own: it will plan a run correctly and hand over a manifest, with the operator supplying addresses by hand. Everything after that reduces manual effort rather than adding capability.

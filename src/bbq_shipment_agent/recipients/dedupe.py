@@ -3,6 +3,12 @@
 "Within-run duplicates, then same-address consolidation. No cross-run check --
 see section 9."
 
+Deferred, and therefore unwired: design 4 moved B4 out of the spine to build
+order step 12, on the grounds that at ~22 packets on a hand-written list the
+operator sees the duplicates as they type them. The pipeline runs B2 straight
+into C1. This module is complete and tested; picking the stage up means
+calling `dedupe_shipments` between the two, and nothing else.
+
 Two passes, in that order, because they answer different questions. The first
 catches the same recipient key listed twice: an operator scrolling a list and
 pasting a row again. The second catches two *different* recipients resolving
