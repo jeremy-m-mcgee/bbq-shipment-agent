@@ -127,9 +127,13 @@ class TestTheGate:
         assert not result.ran
 
     def test_a_config_declaring_tools_refuses_to_run(self, tmp_path):
-        # Design 6.4 mitigation 1: an instruction referencing a tool Python
-        # does not offer must not fail mid-run. This agent is offered none.
-        config = AgentConfig(
+        # Defence in depth. A1's contract assertion normally catches this
+        # first (see test_tools), so the config is swapped in *after* the run
+        # exists to reach D1's own check -- which matters because
+        # `verify_manifest` takes a Run and cannot assume it came from A1.
+        run = make_run(tmp_path)
+        manifest, _ = make_manifest(tmp_path, run)
+        run.agent_configs[AGENT_KEY] = AgentConfig(
             agent_key=AGENT_KEY,
             enabled=True,
             instructions="check the manifest",
@@ -138,8 +142,6 @@ class TestTheGate:
             source="launchdarkly",
             reason="FALLTHROUGH",
         )
-        run = make_run(tmp_path, agent_source=StubAgentConfigs(config))
-        manifest, _ = make_manifest(tmp_path, run)
         result = verify_manifest(
             run, manifest, ledger_root=tmp_path / "ledger", model=StubModel()
         )

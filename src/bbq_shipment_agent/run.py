@@ -36,6 +36,7 @@ from .capabilities import (
     ResolvedCapabilities,
     resolve,
 )
+from .agents.tools import assert_tool_contract
 from .context import STAGE_RUN_INIT, build_context, reason_code, to_ld_context
 from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc_now
 
@@ -286,6 +287,13 @@ def initialize_run(
     run.agent_configs = fetch_agent_configs(
         agent_source or OfflineAgentConfigs(), run.context_for_stage
     )
+
+    # Design 6.4 mitigation 1, the highest-value one: an instruction naming a
+    # tool Python does not offer becomes a startup error rather than a
+    # mid-run surprise. Deliberately before the snapshot write and the ledger
+    # append -- a run that cannot legally proceed should leave neither a
+    # cached config nor a half-open row behind.
+    assert_tool_contract(run.agent_configs)
 
     # Design 6.4 mitigation 3, and the offline cache of 6.10 in one artifact.
     # Skipped when nothing usable came back: `write_snapshot` already refuses
