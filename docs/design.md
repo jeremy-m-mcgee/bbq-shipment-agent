@@ -130,9 +130,9 @@ With `memory-mode` at `read` or higher, recipients with prior extraction failure
 Output: repaired records plus an escalation list.
 
 **B4. Dedupe and suppress.**
-Within-run duplicates first, then against the ledger for anyone already served inside the suppression window. Same-address consolidation happens here.
+Within-run duplicates, then same-address consolidation. No cross-run check — see section 9.
 
-Deterministic. Output: eligible set, plus an explicit suppression reason for everyone excluded.
+Deterministic, and a pure function of its input: B4 reads no prior state, so the same recipient list always produces the same eligible set. Output: eligible set, plus an explicit suppression reason for everyone excluded.
 
 ### Phase C: Planning
 
@@ -485,10 +485,6 @@ outcome, timestamp
 
 The capability fingerprint and snapshot are not optional. Without them, the question of why one run behaved differently from another produces anecdotes rather than data. The instruction hash carries the same weight under the medium split, for the reasons in 6.4.
 
-### Suppression window
-
-Configurable. Governs how long after a shipment a recipient is excluded from a subsequent run.
-
 ---
 
 ## 8. Metrics
@@ -518,6 +514,12 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 **Raising the authority ceiling.** Not a future milestone. The human stays in the send loop.
 
+**Time-based suppression.** Rejected. The original design excluded anyone already served inside a configurable window, checked against the ledger.
+
+The recipient list is an explicit instruction. It is hand-written by the operator, or extracted from screenshots of people actually asking, and either way a name on it is a deliberate act. Excluding someone because a previous run served them overrides that instruction on the strength of a date, and at three to five runs a year a repeat is far more likely to be intentional — a second cook, a second occasion — than an accident. The window default was never set, which was the tell: nobody had an intuition for a number because the rule had no natural value.
+
+Within-run deduplication and same-address consolidation stay. Those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. Dropping the cross-run check also removes the only prior-state dependency from the deterministic spine, so B4 becomes a pure function of its input.
+
 **Dry ice.** Rejected. Gel packs avoid hazmat classification and keep all four carriers available.
 
 ---
@@ -541,8 +543,6 @@ This is a calibration problem, not a structural one: the monotonicity properties
 Three readings, and they imply different tool grants. The agent reports and the Python spine re-solves and re-invokes, which matches the read-only grant and needs no change. Or the agent revises its own findings across iterations rather than the manifest, which also fits. Or the agent proposes corrections, which needs a tool grant it does not have and puts a model one step closer to the plan than section 2's "agency is a cost" principle allows.
 
 The instruction text shipped in `config/ld-snapshot.json` assumes the first reading, because it is the one consistent with the tool grant. Recorded here because a future editor of that text will hit the same ambiguity.
-
-**Suppression window default.** Not yet set.
 
 ---
 

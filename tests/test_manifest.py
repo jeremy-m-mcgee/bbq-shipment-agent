@@ -58,8 +58,8 @@ class TestAssembly:
         assert row.thermal_margin_c == pytest.approx(4.4 - row.predicted_arrival_temp_c, abs=0.01)
 
     def test_expected_arrival_is_ship_date_plus_transit(self, quoter):
-        # Calendar days. See the module docstring: carriers usually quote
-        # business days, which would make this optimistic.
+        # Elapsed days, resolved per carrier: UPS quotes business days, USPS
+        # calendar. See Configuration.elapsed_transit_days.
         manifest = manifest_for(quoter, shipments(1))
         row = manifest.rows[0]
         assert row.expected_arrival > row.ship_date
@@ -128,7 +128,7 @@ class TestAccounting:
         manifest = manifest_for(
             quoter,
             shipments(3),
-            suppressed=(Excluded("s1", "Suppressed", "inside window"),),
+            suppressed=(Excluded("s1", "Suppressed", "duplicate of r0"),),
             escalated=(Excluded("e1", "Escalated", "address unresolved"),),
         )
         accounted = manifest.accounted_for()
@@ -138,10 +138,10 @@ class TestAccounting:
         manifest = manifest_for(
             quoter,
             shipments(1),
-            suppressed=(Excluded("s1", "Suppressed", "inside window"),),
+            suppressed=(Excluded("s1", "Suppressed", "duplicate of r0"),),
             escalated=(Excluded("e1", "Escalated", "address unresolved"),),
         )
-        assert manifest.suppressed[0].reason == "inside window"
+        assert manifest.suppressed[0].reason == "duplicate of r0"
         assert manifest.escalated[0].name == "Escalated"
 
 
@@ -181,7 +181,7 @@ class TestRender:
         manifest = manifest_for(
             quoter,
             shipments(1),
-            suppressed=(Excluded("s1", "Barbara Liskov", "inside window"),),
+            suppressed=(Excluded("s1", "Barbara Liskov", "duplicate of r0"),),
             escalated=(Excluded("e1", "Edsger Dijkstra", "address unresolved"),),
         )
         text = render(manifest)

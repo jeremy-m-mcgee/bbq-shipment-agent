@@ -46,11 +46,12 @@ from .solve import Assignment, CarrierPlan, Solve
 class Excluded:
     """A recipient deliberately not in the plan, and why.
 
-    Covers both of design 4's lists. B4 produces suppressions (already served
-    inside the window, consolidated to another address); B3 produces
-    escalations (address could not be repaired). Neither stage exists yet, so
-    these arrive as inputs -- but the manifest has a place for them from the
-    start, because design 4 is explicit that nobody is silently dropped.
+    Covers both of design 4's lists. B4 produces suppressions (a within-run
+    duplicate, or consolidated onto another shipment to the same address);
+    B2 and B3 produce escalations (address could not be validated or
+    repaired). Design 9 records why there is no time-based suppression: a name
+    on the recipient list is a deliberate instruction, not something to
+    override on the strength of a date.
     """
 
     recipient_key: str
