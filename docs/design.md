@@ -531,11 +531,26 @@ Within-run deduplication and same-address consolidation are not rejected on the 
 
 **Ambient temperature assumptions.** Currently lane-based and static. Seasonal adjustment is likely needed, but there is no calibration data yet.
 
-**Thermal constants rule out multi-day transit.** The step 3 placeholder constants make 3-day ground infeasible in every configuration, and 2-day feasible only in the small box at 6 gel packs. Every plan therefore leans on overnight service, which is the expensive end, and two of the four carriers contribute almost nothing to the pair solve. The intended envelope is that 2 to 4 day services work *sometimes* — at high gel pack counts, or on a cooler lane — so that the cost tradeoff C5 exists to surface is a real one.
+**The static lane ambient, not the thermal constants, is what collapses the envelope.** This entry previously said the placeholder constants ruled out multi-day transit and that no 4-day service existed. Both claims were measured against live quotes and the current gate, and both are wrong now.
 
-Which constant is wrong is not yet established. Candidates, roughly in order of how much they move the answer: wall thickness, gel pack mass, EPS conductivity, and the lane ambient. A 4-day option also does not exist yet — `SERVICES` currently tops out at 3-day ground — so covering that range means adding an economy service as well as retuning.
+Maximum elapsed days clearing 4.4C, small box, by ambient and gel pack count:
 
-This is a calibration problem, not a structural one: the monotonicity properties the spine relies on already hold, and step 4 fitting against E3 data is the real fix. `TestPlaceholderArtefact` pins the current behaviour so the change has to be deliberate.
+| Ambient | 2 gel | 3 gel | 4 gel | 5 gel | 6 gel |
+|---|---|---|---|---|---|
+| 10C | 2 | 3 | 4 | 5 | 5 |
+| 14C | 1 | 2 | 3 | 3 | 4 |
+| 18C | 1 | 1 | 2 | 3 | 3 |
+| 22C | 1 | 1 | 2 | 2 | 2 |
+| 27C | 0 | 1 | 1 | 2 | 2 |
+| 32C | 0 | 1 | 1 | 2 | 2 |
+
+That is the stated intent — 2 to 4 day services working *sometimes*, at high gel pack counts or on a cooler lane — already satisfied. The service side is satisfied too: `SERVICES` no longer exists, and live quoting on one test lane returns 1, 2, 3, 4, 5 and 6 day options across UPS Ground, UPS Ground Saver and USPS Ground Advantage.
+
+What remains is that `DEFAULT_LANE` is 22C, and at 22C the table above tops out at 2 days however many gel packs go in. So every shipment without an explicit lane leans on the expensive end — not because the physics is wrong, but because one static number stands in for every destination. That makes the lane ambient the *first* candidate to fix rather than the last, which reorders the list this entry used to give.
+
+Fixing it is the adjacent open question below, and it needs no E3 data: a zone-based or seasonal ambient is an assumption like the current one, stated rather than fitted. Calibrating UA against real transit data stays step 4's job and stays blocked on E3.
+
+`TestPlaceholderArtefact` pins the current behaviour so the change has to be deliberate.
 
 **Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
