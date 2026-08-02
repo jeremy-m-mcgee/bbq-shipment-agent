@@ -1,0 +1,15 @@
+origin:
+  name: BBQ HQ
+  street1: 64 Divisadero St
+  city: San Francisco
+  state: CA
+  zip: "94117"
+ship_dates:
+  - 2026-08-17
+recipients:
+  - key: ana
+    name: Ana Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"

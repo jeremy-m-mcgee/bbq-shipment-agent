@@ -32,19 +32,17 @@ address-repair (B3) | infeasibility-remediation (C4)
 manifest-verification (D1) | review-narrator (D2)
 
 ## Build order
-See docs/design.md section 11. Step 1 (ledger) done. Step 2 done bar the
-invocation itself — capabilities, clamp, prerequisites, context, A1, live LD
-provider, AI Config retrieval, instruction hash, run-start snapshot.
-`record_agent_invocation` is written and tested but has no caller: nothing
-invokes `manifest-verification` until step 3's spine produces a manifest to
-check. Step 3 is done: `run plan` runs A1 → B2 → C1–C6 from `recipients.yaml`
-and prints a manifest, with zero model calls. B4 is written and tested but
-deferred to step 12 and has no caller. Next is step 4, the thermal model —
-see the calibration open question in design 10.
+See docs/design.md section 11. Steps 1, 2 and 3 are done. `run plan` runs
+A1 → B2 → C1–C6 → D1 from `recipients.yaml` and prints a verified manifest.
+Everything through C6 makes no model call; D1 is the one agent, gated by
+`verification-enabled` and strictly downstream of the manifest. B4 is written
+and tested but deferred to step 12 and has no caller. Next is step 4, the
+thermal model — see the calibration open question in design 10.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
-- `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → C1–C6
+- `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → C1–C6 → D1
+- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), verification.py (D1)
 - `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4, deferred, no caller)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
@@ -67,6 +65,14 @@ see the calibration open question in design 10.
 - An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
 - Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
+
+## Agent invocation
+- LD supplies instructions, model name, and model parameters. Nothing in `agents/` hardcodes a prompt or a model.
+- Identity for the ledger record and the LD metric both come from the config captured at A1. Never a fresh lookup at invocation time.
+- The rendered template goes to the model; the un-rendered one is what gets hashed and snapshotted.
+- An unknown model parameter from LD is dropped, not forwarded. A console typo must not become a TypeError mid-run.
+- `verification-enabled` off is a normal run, not a degraded one. Skipping writes no invocation record; an invocation that *ran* is always recorded, including when its reply could not be parsed.
+- LD metric success is about the invocation, not the manifest. An agent reporting six blockers succeeded.
 
 ## Agent configs
 - Hash and snapshot the *un-rendered* template. Rendered text carries `ldctx` (recipient data) into committed files, and its hash differs every run, so it discriminates nothing.

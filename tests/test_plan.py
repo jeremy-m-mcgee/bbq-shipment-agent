@@ -22,6 +22,8 @@ from bbq_shipment_agent.run import initialize_run
 FIXTURES = Path(__file__).parent / "fixtures"
 QUOTES = FIXTURES / "shippo-quotes-sf-dc.json"
 VALIDATIONS = FIXTURES / "shippo-addresses.json"
+COMPLETIONS = FIXTURES / "d1-completions.json"
+SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
 
 CONFIG = """
     profiles:
@@ -29,7 +31,7 @@ CONFIG = """
         planner: "off"
         memory: "off"
         validation: "{validation}"
-        verification: "off"
+        verification: "{verification}"
         authority: "propose_only"
     default_profile: "baseline"
     authority_ceiling: "propose_only"
@@ -61,16 +63,29 @@ recipients:
 @pytest.fixture
 def workspace(tmp_path):
     (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG).format(validation="standard"), encoding="utf-8"
+        textwrap.dedent(CONFIG).format(validation="standard", verification="off"),
+        encoding="utf-8",
     )
     (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
     return tmp_path
 
 
-def run_plan(workspace, *, validation=None, roster_text=None):
-    if validation is not None:
+def run_plan(
+    workspace,
+    *,
+    validation=None,
+    verification=None,
+    roster_text=None,
+    verifier=None,
+    agent_source=None,
+):
+    if validation is not None or verification is not None:
         (workspace / "capabilities.yaml").write_text(
-            textwrap.dedent(CONFIG).format(validation=validation), encoding="utf-8"
+            textwrap.dedent(CONFIG).format(
+                validation=validation or "standard",
+                verification=verification or "off",
+            ),
+            encoding="utf-8",
         )
     if roster_text is not None:
         (workspace / "recipients.yaml").write_text(roster_text, encoding="utf-8")
@@ -79,6 +94,7 @@ def run_plan(workspace, *, validation=None, roster_text=None):
     run = initialize_run(
         ledger_root=workspace / "ledger",
         config_path=workspace / "capabilities.yaml",
+        agent_source=agent_source,
         snapshot_path=workspace / "snapshot.json",
         packet_count=roster.packet_count,
     )
@@ -88,6 +104,7 @@ def run_plan(workspace, *, validation=None, roster_text=None):
         ledger_root=workspace / "ledger",
         quoter=RecordedQuoter.from_file(QUOTES),
         validator=RecordedAddressValidator.from_file(VALIDATIONS),
+        verifier=verifier,
     )
 
 
@@ -208,10 +225,11 @@ class TestTheLedger:
         assert reasons["validation_mode"] == "standard"
 
 
-class TestNoModelsRan:
-    def test_the_spine_invokes_no_agents(self, workspace):
+class TestTheAgentBoundary:
+    def test_the_deterministic_spine_invokes_no_agents(self, workspace):
         # Design 11 step 3: "This should produce a complete manifest with zero
-        # model calls." The ledger is where that claim is checkable.
+        # model calls." The ledger is where that claim is checkable, and it
+        # stays true with verification off however many agents exist.
         from bbq_shipment_agent.ledger import AgentInvocationRecord
 
         run_plan(workspace)
@@ -219,6 +237,53 @@ class TestNoModelsRan:
             iter_records(workspace / "ledger", AgentInvocationRecord)
         )
         assert invocations == []
+
+    def test_d1_runs_and_is_recorded_when_verification_is_on(self, workspace):
+        from bbq_shipment_agent.agents import AGENT_KEY, RecordedModel
+        from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+        from bbq_shipment_agent.ledger import AgentInvocationRecord
+
+        result = run_plan(
+            workspace,
+            verification="on",
+            agent_source=SnapshotAgentConfigs(SNAPSHOT),
+            verifier=RecordedModel.from_file(COMPLETIONS),
+        )
+        assert result.verification.ran
+        records = list(iter_records(workspace / "ledger", AgentInvocationRecord))
+        assert [r.agent_key for r in records] == [AGENT_KEY]
+
+    def test_d1_cannot_change_the_manifest_it_reviews(self, workspace):
+        # Design 10 settles the read-only contradiction this way: the agent
+        # reports, the spine acts. The same plan with and without the critique
+        # pass must be byte-identical.
+        from bbq_shipment_agent.agents import RecordedModel
+        from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+
+        without = run_plan(workspace)
+        with_d1 = run_plan(
+            workspace,
+            verification="on",
+            agent_source=SnapshotAgentConfigs(SNAPSHOT),
+            verifier=RecordedModel.from_file(COMPLETIONS),
+        )
+        assert with_d1.verification.findings
+        assert with_d1.manifest.rows == without.manifest.rows
+        assert with_d1.manifest.carriers == without.manifest.carriers
+
+    def test_a_manifest_that_does_not_exist_is_not_sent_to_the_agent(self, workspace):
+        # A missing manifest is not a manifest with problems. Asking a
+        # read-only critic to review nothing burns a call to learn what the
+        # caller already knows.
+        roster = ROSTER.replace(
+            '    street1: 1600 Pennsylvania Ave NW\n    city: Washington\n'
+            '    state: DC\n    zip: "20500"\n',
+            '    street1: 99999 Nowhere Blvd\n    city: Fargo\n'
+            '    state: ND\n    zip: "58102"\n',
+        )
+        result = run_plan(workspace, verification="on", roster_text=roster)
+        assert result.manifest is None
+        assert result.verification is None
 
 
 class TestShipDates:

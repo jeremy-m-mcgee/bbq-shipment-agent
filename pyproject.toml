@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.120.2",
+    "chevron>=0.14.0",
     "duckdb>=1.5.5",
     "launchdarkly-server-sdk>=9.16.1",
     "launchdarkly-server-sdk-ai>=1.2.0",

@@ -1,0 +1,8 @@
+{
+  "manifest-verification#d6b15a9d48feb67a": {
+    "input_tokens": 1170,
+    "output_tokens": 181,
+    "stop_reason": "end_turn",
+    "text": "```json\n{\n  \"findings\": [\n    {\n      \"check\": \"Thin thermal margins\",\n      \"severity\": \"warning\",\n      \"shipments\": [\"ana\"],\n      \"evidence\": \"thermal_margin: 0.59\u00b0C, predicted_arrival_temp_c: 3.81\u00b0C, with 4 gel packs in small box\",\n      \"problem\": \"Thermal margin of 0.59\u00b0C is below 0.5\u00b0C and leaves minimal buffer against temperature excursion.\"\n    }\n  ],\n  \"clean\": [\n    \"Accounting\",\n    \"Duplicate destinations\",\n    \"Cost outliers\",\n    \"Arrival feasibility\",\n    \"Carrier count\",\n    \"Box size\"\n  ]\n}\n```"
+  }
+}

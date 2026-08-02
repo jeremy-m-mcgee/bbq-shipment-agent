@@ -25,11 +25,19 @@ from .agent_configs import (
     OfflineAgentConfigs,
     SnapshotAgentConfigs,
 )
+from .agents import (
+    AGENT_KEY,
+    AnthropicModel,
+    ModelUnavailable,
+    RecordedModel,
+    launchdarkly_metrics,
+)
 from .capabilities import (
     DEFAULT_CONFIG_PATH,
     CapabilityConfigError,
     KillSwitchEngaged,
     ValidationMode,
+    VerificationMode,
 )
 from .context import ContextError
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
@@ -238,15 +246,39 @@ def _validator(args: argparse.Namespace, mode: ValidationMode):
     return ShippoAddressValidator(cache_path=args.cache / "shippo-addresses.json")
 
 
-def _cmd_run_plan(args: argparse.Namespace) -> int:
-    """A1 through C6: a roster in, a manifest out, no model calls.
+def _verifier(args: argparse.Namespace, mode: VerificationMode):
+    """None when `verification-enabled` is off, so nothing connects needlessly."""
+    if mode is not VerificationMode.ON:
+        return None
+    if args.completions:
+        return RecordedModel.from_file(args.completions)
+    return AnthropicModel()
 
-    Build order step 3's deliverable. Exits non-zero when no carrier subset
-    covers the run -- there is a plan to look at either way, but a partial one
-    is not something to hand over as though it were complete.
+
+def _metrics(client, run):
+    """Report D1's invocation back to LaunchDarkly, when there is an LD to
+    report to. Built from the config A1 captured, not a fresh lookup."""
+    config = run.agent_configs.get(AGENT_KEY)
+    if client is None or config is None:
+        from .agents import NoMetrics
+
+        return NoMetrics()
+    return launchdarkly_metrics(client, run, config)
+
+
+def _cmd_run_plan(args: argparse.Namespace) -> int:
+    """A1 through C6, then D1: a roster in, a verified manifest out.
+
+    Build order step 3's deliverable plus the agent step 2 left unwired.
+    Exits non-zero when no carrier subset covers the run, or when D1 raised a
+    blocker -- there is a plan to look at either way, but neither is something
+    to hand over as though it were finished.
     """
     roster = load_roster(args.recipients)
     client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
+    # Held open through planning rather than closed after A1: D1 reports its
+    # metrics against the variation LaunchDarkly served, and that needs the
+    # same client. Closing early would silently drop every AI Config metric.
     try:
         connection, provider, agent_source = _flag_sources(args, client)
         before = args.snapshot.read_bytes() if args.snapshot.exists() else None
@@ -261,23 +293,28 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
             packet_count=roster.packet_count,
         )
         _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
+
+        mode = run.capabilities.validation
+        verification = run.capabilities.verification
+        print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
+        print(f"  ship dates   {', '.join(d.isoformat() for d in roster.ship_dates)}")
+        print(f"  validation   {mode.value}")
+        print(f"  verification {verification.value}")
+        print(f"  quotes       {args.quotes or 'live (Shippo)'}\n")
+
+        result = plan_run(
+            run,
+            roster,
+            ledger_root=args.ledger,
+            quoter=_quoter(args),
+            validator=_validator(args, mode),
+            verifier=_verifier(args, verification),
+            metrics=_metrics(client, run),
+        )
     finally:
+        # The SDK runs a background thread. Leaving it open hangs the CLI.
         if client is not None:
             client.close()
-
-    mode = run.capabilities.validation
-    print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
-    print(f"  ship dates   {', '.join(d.isoformat() for d in roster.ship_dates)}")
-    print(f"  validation   {mode.value}")
-    print(f"  quotes       {args.quotes or 'live (Shippo)'}\n")
-
-    result = plan_run(
-        run,
-        roster,
-        ledger_root=args.ledger,
-        quoter=_quoter(args),
-        validator=_validator(args, mode),
-    )
 
     # Corrections only. The validator's advisory messages on a *clean* address
     # are captured on the result and printed nowhere -- design 10 records that
@@ -293,10 +330,37 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
         return 1
 
     print("\n" + render(result.manifest))
+    blocked = _print_verification(result.verification)
     if args.out:
         args.out.write_text(render(result.manifest) + "\n", encoding="utf-8")
         print(f"\nwritten to {args.out}")
-    return 0
+    return 1 if blocked else 0
+
+
+def _print_verification(verification) -> bool:
+    """Print D1's report. Returns whether it raised a blocker.
+
+    A blocker means a hard constraint is violated on a manifest that was about
+    to be handed to a human for approval, so the command exits non-zero. The
+    manifest is still printed: design 4 sends D1's output *to* the review, and
+    hiding the plan would make the finding harder to act on, not easier.
+    """
+    if verification is None:
+        return False
+
+    print(f"\nD1  {verification.describe()}")
+    if verification.ran:
+        print(
+            f"    {verification.iterations} iteration(s), "
+            f"{verification.input_tokens}+{verification.output_tokens} tokens"
+        )
+    for finding in verification.findings:
+        print(f"    {finding.describe()}")
+        if finding.evidence:
+            print(f"             evidence: {finding.evidence}")
+    if verification.raw:
+        print(f"    raw reply: {verification.raw[:400]}")
+    return bool(verification.blockers)
 
 
 def _print_partial(solve) -> None:
@@ -404,6 +468,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay recorded address validations instead of calling Shippo",
     )
     plan.add_argument(
+        "--completions",
+        type=Path,
+        default=None,
+        help="replay a recorded D1 reply instead of calling the model",
+    )
+    plan.add_argument(
         "--cache",
         type=Path,
         default=DEFAULT_CACHE_DIR,
@@ -442,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         CapabilityConfigError,
         ContextError,
         KillSwitchEngaged,
+        ModelUnavailable,
         QuotingUnavailable,
         RosterError,
     ) as exc:

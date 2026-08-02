@@ -1,15 +1,19 @@
-"""The spine, end to end. Build order step 3.
+"""The spine, end to end. Build order step 3, plus D1.
 
-A1 -> B2 -> C1 -> C2 -> C3 -> C5 -> C6, with zero model calls. Design 11 says
-steps 1 through 3 "produce a system that is useful on its own: it will plan a
-run correctly and hand over a manifest, with the operator supplying addresses
-by hand". Every stage existed before this module; none of them had a caller,
-which meant the claim was true of the parts and not of the whole.
+A1 -> B2 -> C1 -> C2 -> C3 -> C5 -> C6 -> D1. Design 11 says steps 1 through 3
+"produce a system that is useful on its own: it will plan a run correctly and
+hand over a manifest, with the operator supplying addresses by hand". Every
+stage existed before this module; none of them had a caller, which meant the
+claim was true of the parts and not of the whole.
 
-B4 is not in the sequence -- design 11 moved it to step 12. B3 (repair) and
-D1 (verify) are steps 7 and 2's unwired remainder respectively, so a failed
-address escalates rather than being repaired, and the manifest goes straight
-to the operator without a verification pass.
+Everything through C6 is deterministic and makes no model call. D1 is the one
+agent in the sequence, it is gated by `verification-enabled`, and it is
+strictly downstream: it reads the finished manifest and reports, and cannot
+alter a single field on it (design 10 settles that reading). A run with
+verification off is the same run without the critique pass.
+
+B4 is not in the sequence -- design 11 moved it to step 12. B3 (repair) is
+step 7, so a failed address escalates rather than being repaired.
 
 ## What this module is and is not
 
@@ -35,6 +39,13 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from .agents import (
+    AgentMetrics,
+    ModelClient,
+    ModelUnavailable,
+    Verification,
+    verify_manifest,
+)
 from .capabilities import ValidationMode
 from .ledger import LedgerWriter, RunRecord
 from .planning import (
@@ -55,6 +66,23 @@ from .recipients import (
     validate_shipments,
 )
 from .run import Run
+
+
+class _NoModel:
+    """Stands in when no verifier was injected.
+
+    `verify_manifest` checks `verification-enabled` before it calls anything,
+    so with verification off this is never reached. With verification *on* and
+    no model supplied, raising here is right: the run asked for a critique pass
+    and did not get one, and D1 records that as `unavailable` with this reason
+    rather than quietly reporting a clean manifest.
+    """
+
+    def complete(self, invocation, prompt):
+        raise ModelUnavailable(
+            f"verification-enabled is on but no model client was injected for "
+            f"{invocation.agent_key}. The CLI builds one from ANTHROPIC_API_KEY."
+        )
 
 
 class _NoValidator:
@@ -84,6 +112,10 @@ class PlanResult:
     manifest: Manifest | None
     #: Why there is no manifest, when there is none.
     reason: str | None = None
+    #: D1's report. Always present: "skipped" is a result, not an absence, and
+    #: a caller should not have to distinguish "verification is off" from
+    #: "verification ran and found nothing" by checking for None.
+    verification: Verification | None = None
 
     @property
     def escalated(self) -> tuple[Excluded, ...]:
@@ -99,6 +131,8 @@ def plan_run(
     validator: AddressValidator | None = None,
     model: ThermalModel | None = None,
     ship_dates: tuple[date, ...] | None = None,
+    verifier: ModelClient | None = None,
+    metrics: AgentMetrics | None = None,
 ) -> PlanResult:
     """B2 through C6 against an already-initialized run.
 
@@ -142,6 +176,20 @@ def plan_run(
 
     _record_planning(ledger_root, run, roster, validation, solve, manifest, mode)
 
+    # D1 runs only when there is something to verify. A missing manifest is
+    # not a manifest with problems, and asking a read-only critic to review
+    # nothing would burn a model call to learn what the caller already knows.
+    verification = None
+    if manifest is not None:
+        verification = verify_manifest(
+            run,
+            manifest,
+            ledger_root=ledger_root,
+            model=verifier or _NoModel(),
+            input_recipients=tuple(s.recipient_key for s in roster.shipments),
+            metrics=metrics,
+        )
+
     return PlanResult(
         run=run,
         roster=roster,
@@ -149,6 +197,7 @@ def plan_run(
         solve=solve,
         manifest=manifest,
         reason=reason,
+        verification=verification,
     )
 
 
