@@ -279,6 +279,9 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
         validator=_validator(args, mode),
     )
 
+    # Corrections only. The validator's advisory messages on a *clean* address
+    # are captured on the result and printed nowhere -- design 10 records that
+    # as open, along with what should be done about it.
     if result.validation.corrected_count:
         print(f"B2 corrected {result.validation.corrected_count} address(es).")
     for excluded in result.escalated:

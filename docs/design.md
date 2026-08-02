@@ -537,6 +537,12 @@ Which constant is wrong is not yet established. Candidates, roughly in order of 
 
 This is a calibration problem, not a structural one: the monotonicity properties the spine relies on already hold, and step 4 fitting against E3 data is the real fix. `TestPlaceholderArtefact` pins the current behaviour so the change has to be deliberate.
 
+**Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
+
+Measured against the live validator, one address came back *"Street address (directional or suffix only) was corrected to validate the address. Please check this correction prior to using address."* while the returned `street1` was byte-identical to what was submitted. Shippo says it corrected something; the fields say nothing changed. The classification is right either way, but the operator never sees the claim.
+
+The work is deciding what to do with it, not how to plumb it — the messages are already on `ValidationResult`. Options, roughly: surface them on the manifest against the affected row; count them in the run summary the way corrections are counted; or treat "validator claims a correction the fields do not show" as its own outcome distinct from clean. The last is the most honest and the most disruptive, since it puts a fourth value on a three-way enum that design 4 fixes at three.
+
 **Escalation queue interface.** B3 failures need somewhere to go. Whether that is a section of the D2 review or a separate step before planning is unresolved.
 
 **D1 revises, but has no tools to revise with.** Section 4 says the D1 loop "revises and re-checks within a bounded budget". Section 6.2 grants `manifest-verification` "manifest read, read-only". A read-only agent cannot revise a manifest, so one of the two is wrong.
