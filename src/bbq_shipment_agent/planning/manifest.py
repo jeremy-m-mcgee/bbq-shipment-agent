@@ -20,17 +20,17 @@ numbers it worked out itself.
 
 ## Expected arrival is derived, and the derivation is worth questioning
 
-`expected_arrival` is ship date plus the carrier's `estimated_days`, treated
-as calendar days. Carriers usually quote transit in *business* days, which
-would make this optimistic -- a two-day service dropped on Saturday may not
-arrive Monday.
+`expected_arrival` is ship date plus `Configuration.elapsed_transit_days`,
+which resolves the carriers' disagreement about what they are quoting: UPS
+says "second business day", USPS says "delivery in 2 to 5 days". Both arrive
+as a bare integer, and treating them alike understated UPS transit whenever
+the journey crossed a weekend.
 
-That matters beyond presentation: C3 gates on the same `transit_days` figure
-as though it were elapsed time, so if these are business days the thermal
-model is understating how long the gel packs must last, and the error is worst
-for exactly the Saturday shipments design 3 already calls the highest-leverage
-case. Recorded here rather than silently assumed; resolving it needs a
-carrier-calendar source this stage does not have.
+That mattered beyond presentation -- C3 gates on the same figure as elapsed
+time, so the thermal model was asking the gel packs to last longer than it
+thought, worst for exactly the Saturday shipments design 3 calls the
+highest-leverage case. Saturday *delivery* is still not modelled, which errs
+long; for a food-safety gate that is the safe direction.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ class ManifestRow:
     def from_assignment(cls, assignment: Assignment) -> ManifestRow:
         configuration = assignment.evaluated.configuration
         shipment = assignment.shipment
-        transit = configuration.transit_days or 0
+        transit = configuration.elapsed_transit_days or 0
         return cls(
             recipient_key=shipment.recipient_key,
             name=shipment.name,
@@ -96,7 +96,7 @@ class ManifestRow:
             carrier=configuration.carrier,
             service=configuration.service_name,
             cost=configuration.cost,
-            # See the module docstring: calendar days, and possibly optimistic.
+            # Elapsed days, resolved per carrier. See the module docstring.
             expected_arrival=configuration.ship_date + timedelta(days=transit),
             predicted_arrival_temp_c=round(
                 assignment.evaluated.predicted_arrival_temp_c, 2

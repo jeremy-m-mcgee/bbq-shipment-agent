@@ -18,7 +18,8 @@ Full design: @docs/design.md
 - Secrets live in `.env` (gitignored). `.env.example` is the committed template and holds no real values.
 - Never in `config/capabilities.yaml` — that file is committed on purpose so authority changes show up in `git log`.
 - Never in LD agent instruction text. The run-start snapshot commits that text to the repo.
-- Never in a ledger record, especially `cap_snapshot`. The ledger is committed and append-only, so a secret written there cannot be removed by a later append. Snapshot resolved capability values and the payload hash, not the raw LD payload.
+- Never in a ledger record, especially `cap_snapshot`. The ledger is committed and append-only, so a secret written there cannot be removed by a later append.
+- `flag_payload` records the *parsed* capability overrides, never the raw LD payload. `resolve` rejects unknown keys and coerces every value through a `StrEnum`, so the recorded dict is structurally incapable of carrying free text. A test pins that: adding a capability whose values are not an enum breaks it rather than silently widening what reaches the ledger.
 - `UV_ENV_FILE` (devcontainer) makes `uv run` load `.env`, and setup.sh seeds `.env` from `.env.example`. So an unconfigured key is present-but-empty, not absent: check `if not os.environ.get("LD_SDK_KEY")`, never `is None`. Treat empty as unconfigured and take the `baseline` offline fallback rather than handing `""` to the LD SDK.
 
 ## Boundaries

@@ -39,7 +39,7 @@ The candidate configuration space per shipment is small enough to enumerate exha
 
 **Capability and authority are different things.** Capability flags (planning, memory, verification) can be toggled freely because the worst case is a weaker proposal in a document being reviewed anyway. Authority flags change what happens in the world if the code is wrong, and are subject to a ceiling that no runtime configuration can raise.
 
-**Every run is reconstructible.** The resolved capability set, the flag payload hash, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
+**Every run is reconstructible.** The resolved capability set, the capability overrides the flag layer proposed, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
 
 **Irreversible actions require explicit approval.** Label purchase is the only stage that spends money, and it happens once, after a human says yes.
 
@@ -104,7 +104,7 @@ Yellow nodes are model-driven loops. Everything else is deterministic.
 ### Phase A: Run setup
 
 **A1. Initialize run.**
-Generate a run ID. Read the kill switch from repo config and abort if set. Evaluate the flag payload against the run context, clamp `authority-level` against the repo ceiling, and record the resolved capability set plus the payload hash on the run record.
+Generate a run ID. Read the kill switch from repo config and abort if set. Evaluate the flag payload against the run context, clamp `authority-level` against the repo ceiling, and record the resolved capability set plus the proposed overrides on the run record.
 
 Output: run record with capability fingerprint.
 
@@ -402,7 +402,7 @@ Treat unreachable as a normal path:
 
 1. Bootstrap from a cached payload on disk, written by the run-start snapshot in 6.4
 2. Refresh opportunistically, never blocking
-3. Record the payload hash on the run record
+3. Record the proposed capability overrides on the run record
 4. Fall back to `baseline` profile if no cache exists
 
 Step 4 degrades cleanly by construction. `baseline` has `planner: off`, `memory: off`, and `verification: off`, so a run with no instructions available falls back to the deterministic spine and a manually reviewed manifest. The system gets less helpful and does not get less correct.
@@ -446,7 +446,7 @@ Per-run row:
 ```
 run_id, profile, cap_fingerprint, cap_snapshot, packet_count,
 carrier_pair, total_cost, suppressed_count, escalated_count,
-stranded_count, flag_payload_hash, evaluation_reasons,
+stranded_count, flag_payload, evaluation_reasons,
 started_at, completed_at
 ```
 
@@ -533,6 +533,12 @@ This is a calibration problem, not a structural one: the monotonicity properties
 
 **Escalation queue interface.** B3 failures need somewhere to go. Whether that is a section of the D2 review or a separate step before planning is unresolved.
 
+**D1 revises, but has no tools to revise with.** Section 4 says the D1 loop "revises and re-checks within a bounded budget". Section 6.2 grants `manifest-verification` "manifest read, read-only". A read-only agent cannot revise a manifest, so one of the two is wrong.
+
+Three readings, and they imply different tool grants. The agent reports and the Python spine re-solves and re-invokes, which matches the read-only grant and needs no change. Or the agent revises its own findings across iterations rather than the manifest, which also fits. Or the agent proposes corrections, which needs a tool grant it does not have and puts a model one step closer to the plan than section 2's "agency is a cost" principle allows.
+
+The instruction text shipped in `config/ld-snapshot.json` assumes the first reading, because it is the one consistent with the tool grant. Recorded here because a future editor of that text will hit the same ambiguity.
+
 **Suppression window default.** Not yet set.
 
 ---
@@ -542,7 +548,7 @@ This is a calibration problem, not a structural one: the monotonicity properties
 Sequenced so that each step de-risks the next.
 
 1. **Ledger and run record.** Schema, JSONL writer, DuckDB rebuild. Everything else writes here. *Done.*
-2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, payload hash, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy.
+2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, proposed overrides, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy.
 3. **Deterministic spine, no models.** B2, B4, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls.
 4. **Thermal model.** Slot into C3 behind the interface the spine already expects.
 5. **Extraction.** B1, screenshots to records.

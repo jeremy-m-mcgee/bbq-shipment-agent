@@ -32,7 +32,7 @@ and should survive recalibration.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 
 LB_PER_KG = 2.20462
@@ -181,3 +181,32 @@ GEL_PACK_MASS_KG = 0.7
 GEL_PACK_LATENT_HEAT_J_KG = 334_000
 #: Gel packs hold at their melting point while any solid fraction remains.
 GEL_PACK_PHASE_TEMP_C = 0.0
+
+
+def add_business_days(start: date, count: int) -> date:
+    """Move `count` business days forward from `start`, skipping weekends."""
+    when = start
+    moved = 0
+    while moved < count:
+        when += timedelta(days=1)
+        if when.weekday() < 5:
+            moved += 1
+    return when
+
+
+def elapsed_transit_days(ship_date: date, estimated_days: int, business_days: bool) -> int:
+    """Calendar days a shipment is actually in transit.
+
+    Carriers do not agree on what they are quoting. UPS says "second business
+    day"; USPS says "delivery in 2 to 5 days". Treating both as calendar days
+    understates UPS transit whenever the journey crosses a weekend -- and C3
+    gates on this figure as elapsed time, so understating it means the gel
+    packs are asked to last longer than the model thinks.
+
+    Saturday delivery is not modelled. Some services offer it, which would
+    make this an overestimate for those; erring long is the safe direction for
+    a food-safety gate.
+    """
+    if not business_days:
+        return estimated_days
+    return (add_business_days(ship_date, estimated_days) - ship_date).days

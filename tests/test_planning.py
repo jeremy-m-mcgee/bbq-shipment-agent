@@ -1,6 +1,6 @@
 """C1-C3 against real recorded Shippo quotes.
 
-The fixture is 430 quotes really returned by the live API for one lane. It is
+The fixture is 154 quotes really returned by the live API for one lane. It is
 a *recording*, not a rate table: nothing in these tests is a number anyone
 chose, which is the property the live-rates rework existed to establish.
 """
@@ -128,6 +128,32 @@ class TestEnumeration:
         # Real services land on more than the optimistic 1/2/3 that was
         # originally assumed.
         assert len(days) >= 4
+
+    def test_business_day_estimates_become_elapsed_days(self, load, quoter):
+        # UPS quotes "1-5 business days"; USPS quotes "delivery in 2 to 5
+        # days". Treating both as calendar understated UPS transit whenever
+        # the journey crossed a weekend -- and C3 gates on this as elapsed
+        # time, so it was asking the gel packs to last longer than it thought.
+        stretched = {
+            (c.carrier, c.service_name, c.transit_days, c.elapsed_transit_days)
+            for c in enumerate_all(load, quoter).configurations
+            if c.transit_days != c.elapsed_transit_days
+        }
+        assert ("UPS", "Ground", 5, 7) in stretched
+
+    def test_a_carrier_that_states_no_terms_is_read_as_calendar(self, load, quoter):
+        # Known gap, and the reason it is tolerable: UPS Ground Saver comes
+        # back with an empty duration_terms, so it is treated as calendar days
+        # and its transit is understated by two. It never clears the thermal
+        # gate at six days, so nothing currently rides on it -- but a carrier
+        # that quotes business days silently would be a real hole.
+        quiet = [
+            c
+            for c in enumerate_all(load, quoter).configurations
+            if not c.quote.duration_terms
+        ]
+        assert quiet
+        assert all(c.transit_days == c.elapsed_transit_days for c in quiet)
 
     def test_saturday_is_usps_only(self, load, quoter):
         saturday = [

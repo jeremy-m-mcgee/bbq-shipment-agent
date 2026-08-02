@@ -34,7 +34,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from .catalog import BOXES, MAX_GEL_PACKS, Box, BoxSize, ShipDay, ship_day_for
+from .catalog import (
+    BOXES,
+    MAX_GEL_PACKS,
+    Box,
+    BoxSize,
+    ShipDay,
+    elapsed_transit_days,
+    ship_day_for,
+)
 from .load import Load
 from .rates import (
     SATURDAY_CARRIERS,
@@ -78,6 +86,21 @@ class Configuration:
         """Carrier estimate. `None` when the quote carried none, which C3
         treats as ungateable rather than guessing a number."""
         return self.quote.estimated_days
+
+    @property
+    def elapsed_transit_days(self) -> int | None:
+        """Calendar days in transit, which is what C3 actually needs.
+
+        `transit_days` is the carrier's own figure and the carriers disagree
+        about what it counts -- UPS quotes business days, USPS calendar. This
+        resolves that against the ship date, so a UPS two-day service leaving
+        on a Saturday is three elapsed days rather than two.
+        """
+        if self.quote.estimated_days is None:
+            return None
+        return elapsed_transit_days(
+            self.ship_date, self.quote.estimated_days, self.quote.business_days
+        )
 
     @property
     def ship_day(self) -> ShipDay:

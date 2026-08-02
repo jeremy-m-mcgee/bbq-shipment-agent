@@ -2,8 +2,8 @@
 
 Generate a run ID, read the kill switch from repo config and abort if set,
 evaluate the flag payload against the run context, clamp authority against the
-repo ceiling, and record the resolved capability set plus the payload hash on
-the run record.
+repo ceiling, and record the resolved capability set plus what the flag layer
+proposed on the run record.
 
 The flag layer sits behind `CapabilityProvider`. `OfflineProvider` is not a
 degraded stand-in for the real thing -- section 6.10 makes unreachable a normal
@@ -37,7 +37,6 @@ from .capabilities import (
     resolve,
 )
 from .context import STAGE_RUN_INIT, build_context, reason_code, to_ld_context
-from .hashing import canonical_hash
 from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc_now
 
 #: LD flag key -> the capability it proposes. Design 6.1 and 6.8.
@@ -54,22 +53,11 @@ CAPABILITY_FLAGS: dict[str, str] = {
 }
 
 
-def payload_hash(payload: dict[str, Any]) -> str:
-    """Stable hash of a flag payload.
-
-    Hashes the payload even when it is empty, so the offline path still records
-    a real, comparable value rather than a magic string. `FlagPayload.source`
-    is what says where it came from.
-    """
-    return canonical_hash(payload)
-
-
 @dataclass(frozen=True)
 class FlagPayload:
     """What the flag layer proposed, and where it came from."""
 
     overrides: dict[str, str] = field(default_factory=dict)
-    hash: str = field(default_factory=lambda: payload_hash({}))
     #: "launchdarkly" | "cache" | "unavailable"
     source: str = "unavailable"
     reason: str = "OFFLINE"
@@ -126,7 +114,6 @@ class LaunchDarklyProvider:
             overrides[capability] = str(detail.value)
         return FlagPayload(
             overrides=overrides,
-            hash=payload_hash(overrides),
             source="launchdarkly",
             reason=" ".join(reasons) if reasons else "NO_FLAGS",
         )
@@ -314,7 +301,7 @@ def initialize_run(
             cap_fingerprint=run.cap_fingerprint,
             cap_snapshot=resolved.to_snapshot(),
             packet_count=packet_count,
-            flag_payload_hash=payload.hash,
+            flag_payload=dict(payload.overrides),
             evaluation_reasons=run.evaluation_reasons(),
             started_at=run.started_at,
         )

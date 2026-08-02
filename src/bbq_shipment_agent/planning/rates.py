@@ -154,6 +154,23 @@ class Quote:
     currency: str
     estimated_days: int | None
     parcel: ParcelSpec
+    #: Carrier's own words about the estimate, e.g. "Delivery by the end of
+    #: the second business day". The only signal distinguishing a business-day
+    #: quote from a calendar-day one.
+    duration_terms: str = ""
+
+    @property
+    def business_days(self) -> bool:
+        """Whether `estimated_days` counts business days rather than calendar.
+
+        Inferred from the carrier's prose because there is no structured
+        field for it. Defaults to calendar when the carrier says nothing,
+        which matches USPS and errs toward the shorter transit -- so a missing
+        `duration_terms` on a business-day service would understate transit.
+        Worth revisiting if a carrier appears that quotes business days
+        silently.
+        """
+        return "business" in self.duration_terms.lower()
 
     @property
     def key(self) -> str:
@@ -369,6 +386,7 @@ class ShippoQuoter:
                 amount=float(r.amount),
                 currency=r.currency,
                 estimated_days=r.estimated_days,
+                duration_terms=getattr(r, "duration_terms", "") or "",
                 parcel=parcel,
             )
             for r in (shipment.rates or [])
@@ -457,6 +475,7 @@ def _result_to_dict(result: QuoteResult) -> dict[str, Any]:
                 "amount": q.amount,
                 "currency": q.currency,
                 "estimated_days": q.estimated_days,
+                "duration_terms": q.duration_terms,
             }
             for q in result.quotes
         ],
@@ -475,6 +494,7 @@ def _result_from_dict(data: dict[str, Any], parcel: ParcelSpec) -> QuoteResult:
                 amount=row["amount"],
                 currency=row["currency"],
                 estimated_days=row["estimated_days"],
+                duration_terms=row.get("duration_terms", ""),
                 parcel=parcel,
             )
             for row in data.get("rates", [])

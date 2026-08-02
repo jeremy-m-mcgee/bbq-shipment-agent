@@ -168,7 +168,7 @@ def test_a_run_is_reconstructible_from_the_ledger_alone(writer, ledger):
     # later from the committed JSONL and nothing else.
     writer.append(
         RunRecord(
-            run_id="r1", profile="planner_trial", flag_payload_hash="deadbeef",
+            run_id="r1", profile="planner_trial", flag_payload={"planner": "on"},
             cap_fingerprint="cap-v1", cap_snapshot={"planner": "shadow"},
             evaluation_reasons={"planner-mode": "TARGET_MATCH"},
         )
@@ -186,14 +186,18 @@ def test_a_run_is_reconstructible_from_the_ledger_alone(writer, ledger):
     )
 
     connection = rebuild(ledger)
-    # The shipment carries the fingerprint and nothing else: the capabilities
-    # it names are read off the run row it points at. Joining on the
-    # fingerprint rather than on run_id is what exercises that.
+    # Two things at once. The shipment carries the fingerprint and nothing
+    # else, so the capabilities it names are read off the run row it points at
+    # -- joining on the fingerprint rather than run_id is what exercises that.
+    # And flag_payload says LD proposed `on` while cap_snapshot says the run
+    # operated in `shadow`: the prerequisite demoted it. A digest could not
+    # have told that story, which is why the payload is stored rather than
+    # hashed.
     assert connection.execute(
-        "SELECT r.profile, r.flag_payload_hash, "
+        "SELECT r.profile, json_extract_string(r.flag_payload, '$.planner'), "
         "json_extract_string(r.cap_snapshot, '$.planner'), "
         "a.instruction_variation_key, a.instruction_version, a.instruction_hash "
         "FROM shipments s "
         "JOIN runs r ON r.cap_fingerprint = s.cap_fingerprint "
         "JOIN agent_invocations a ON a.run_id = s.run_id"
-    ).fetchone() == ("planner_trial", "deadbeef", "shadow", "v3", 7, "cafe1234")
+    ).fetchone() == ("planner_trial", "on", "shadow", "v3", 7, "cafe1234")

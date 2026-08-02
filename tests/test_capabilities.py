@@ -1,10 +1,12 @@
 import textwrap
 
 import pytest
+from enum import StrEnum
 
 from bbq_shipment_agent.capabilities import (
     DEFAULT_CONFIG_PATH,
     AuthorityLevel,
+    CAPABILITY_TYPES,
     CapabilityConfig,
     CapabilityConfigError,
     CapabilitySet,
@@ -118,6 +120,32 @@ class TestAuthorityClamp:
     def test_authority_levels_order_by_rank_not_alphabetically(self):
         assert AuthorityLevel.PROPOSE_ONLY < AuthorityLevel.PURCHASE_LABELS
         assert not (AuthorityLevel.PURCHASE_LABELS < AuthorityLevel.PROPOSE_ONLY)
+
+
+class TestFlagPayloadCannotCarryFreeText:
+    """The guard behind recording `flag_payload` instead of hashing it.
+
+    CLAUDE.md forbids raw LD payload in the committed, append-only ledger.
+    Storing the *parsed* overrides is safe only because every capability value
+    is enum-constrained -- structurally incapable of carrying a secret. That
+    is a property of `CAPABILITY_TYPES`, so it is pinned here: adding a
+    capability whose values are free text breaks this test rather than
+    silently widening what reaches the ledger.
+    """
+
+    def test_every_capability_is_enum_constrained(self):
+        for name, enum_type in CAPABILITY_TYPES.items():
+            assert issubclass(enum_type, StrEnum), (
+                f"{name} is not a StrEnum, so an override for it could be "
+                "arbitrary text. Either constrain it or stop recording "
+                "flag_payload verbatim."
+            )
+
+    def test_an_override_outside_the_enum_never_reaches_the_record(self, tmp_path):
+        config = CapabilityConfig.load(write_config(tmp_path, BASE))
+        resolved = resolve(config, overrides={"planner": "sk-live-secret"})
+        assert resolved.capabilities.planner is PlannerMode.OFF
+        assert "sk-live-secret" in resolved.reasons["planner"]
 
 
 class TestUnusableOverrides:

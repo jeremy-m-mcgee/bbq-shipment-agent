@@ -117,12 +117,13 @@ class LumpedCapacitanceModel:
         self, load: Load, configuration: Configuration, lane: Lane
     ) -> float:
         ua = configuration.box.ua_w_k
-        if configuration.transit_days is None:
+        if configuration.elapsed_transit_days is None:
             raise ValueError(
                 f"{configuration.describe()} has no transit estimate; C3 drops "
                 "these rather than gating them."
             )
-        transit_s = configuration.transit_days * SECONDS_PER_DAY
+        # Elapsed, not the carrier's raw figure: see Configuration.
+        transit_s = configuration.elapsed_transit_days * SECONDS_PER_DAY
 
         # Time constant of the load alone. The product is minimal ballast at
         # 1.5 lb, so this is short and the gate is sharp once gel is gone.
@@ -204,13 +205,13 @@ def evaluate_configurations(
         # No transit estimate means no arrival temperature. Dropping is the
         # honest move; guessing a duration would put an invented number back
         # underneath every downstream cost.
-        if configuration.transit_days is not None
+        if configuration.elapsed_transit_days is not None
     )
 
 
 def ungateable(configurations: tuple[Configuration, ...]) -> tuple[Configuration, ...]:
     """Configurations C3 cannot assess, because their quote carried no ETA."""
-    return tuple(c for c in configurations if c.transit_days is None)
+    return tuple(c for c in configurations if c.elapsed_transit_days is None)
 
 
 def thermal_gate(

@@ -204,7 +204,12 @@ class RunRecord(LedgerRecord):
     suppressed_count: int | None = _opt("INTEGER")
     escalated_count: int | None = _opt("INTEGER")
     stranded_count: int | None = _opt("INTEGER")
-    flag_payload_hash: str | None = _opt("VARCHAR")
+    # The parsed capability overrides LaunchDarkly proposed, before the clamp
+    # and the prerequisites ran. Stored rather than hashed: a hash cannot be
+    # inverted, so "what did LD ask for on the run that behaved oddly" was
+    # unanswerable from a digest. These are enum-validated values, not the raw
+    # payload -- see the secrets note in CLAUDE.md.
+    flag_payload: dict[str, Any] | None = _opt("JSON")
     evaluation_reasons: dict[str, Any] | None = _opt("JSON")
     started_at: str | None = _opt("TIMESTAMP")
     completed_at: str | None = _opt("TIMESTAMP")

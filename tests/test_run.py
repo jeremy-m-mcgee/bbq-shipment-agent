@@ -25,7 +25,6 @@ from bbq_shipment_agent.run import (
     count_shadow_runs,
     initialize_run,
     launchdarkly_client,
-    payload_hash,
     record_agent_invocation,
 )
 
@@ -85,7 +84,6 @@ class StubProvider:
         self.seen = context
         return FlagPayload(
             overrides=self.overrides,
-            hash="payload-abc",
             source="launchdarkly",
             reason="TARGET_MATCH",
         )
@@ -171,10 +169,10 @@ class TestOfflinePath:
         assert reasons["flag_payload_source"] == "unavailable"
         assert reasons["flag_payload_reason"] == "NO_SDK_KEY"
 
-    def test_offline_still_records_a_real_payload_hash(self, ledger, config_path):
-        # A comparable value, not a magic string — `source` says where it came from.
+    def test_offline_proposes_nothing_and_says_so(self, ledger, config_path):
         run = initialize_run(ledger_root=ledger, config_path=config_path)
-        assert run.payload.hash == payload_hash({})
+        assert run.payload.overrides == {}
+        assert run.payload.source == "unavailable"
 
     def test_a_custom_offline_reason_is_carried_through(self, ledger, config_path):
         run = initialize_run(
@@ -234,14 +232,13 @@ class TestLedgerRecording:
         connection = rebuild(ledger)
         row = connection.execute(
             "SELECT run_id, profile, cap_fingerprint, packet_count, "
-            "flag_payload_hash, started_at IS NOT NULL FROM runs"
+            "started_at IS NOT NULL FROM runs"
         ).fetchone()
         assert row == (
             run.run_id,
             "baseline",
             run.cap_fingerprint,
             22,
-            run.payload.hash,
             True,
         )
 
@@ -371,12 +368,14 @@ class TestLaunchDarklyProvider:
         assert "planner-mode:RULE_MATCH:r-9" in payload.reason
         assert "memory-mode:RULE_MATCH:r-9" in payload.reason
 
-    def test_the_hash_covers_what_was_proposed(self, ledger, config_path):
+    def test_the_proposal_is_recorded_verbatim(self, ledger, config_path):
+        # A hash could not answer "what did LD ask for before the clamp" --
+        # digests do not invert. The values are four enum strings; store them.
         client = FlagClient({"memory-mode": "read"})
         payload = LaunchDarklyProvider(client).fetch(
             self._context(ledger, config_path)
         )
-        assert payload.hash == payload_hash({"memory": "read"})
+        assert payload.overrides == {"memory": "read"}
 
     def test_a_proposal_still_cannot_raise_authority(self, ledger, config_path):
         # Defense in depth: even if a provider proposed one, the clamp runs.
