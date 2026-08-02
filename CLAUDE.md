@@ -37,10 +37,14 @@ invocation itself — capabilities, clamp, prerequisites, context, A1, live LD
 provider, AI Config retrieval, instruction hash, run-start snapshot.
 `record_agent_invocation` is written and tested but has no caller: nothing
 invokes `manifest-verification` until step 3's spine produces a manifest to
-check. Next is step 3, the deterministic spine.
+check. Step 3's stages are all built — B2, B4, C1–C6. What is left is the
+wiring: one entry point that runs A1 → B2 → B4 → C1–C6 from a recipient file
+and writes the manifest.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
+- `src/bbq_shipment_agent/recipients/` — validation.py (B2), dedupe.py (B4)
+- `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
 - `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
