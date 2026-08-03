@@ -29,7 +29,7 @@ a surprising suppression is explained entirely by the list in front of you.
 ## Why the ship-date pin survives consolidation
 
 Design 3 calls the Saturday interaction "the highest-leverage interaction in
-the planning stage", and `Shipment.required_ship_date` is the only way it can
+the planning stage", and `Recipient.required_ship_date` is the only way it can
 arise. Folding a pinned shipment onto an unpinned one at the same address
 would silently discard that pin and change which carriers the run can use, so
 consolidation groups by address *and* pin: same doorstep, same date is one
@@ -44,14 +44,14 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..planning.manifest import Excluded
-from ..planning.shipment import Shipment
+from .record import Recipient
 
 
 @dataclass(frozen=True)
 class SuppressionReport:
     """B4's output: who ships, who does not, and why."""
 
-    eligible: tuple[Shipment, ...]
+    eligible: tuple[Recipient, ...]
     suppressed: tuple[Excluded, ...]
     #: Kept recipient key -> the keys consolidated onto it. Empty for a run
     #: with no shared addresses. Carried separately from `suppressed` because
@@ -68,7 +68,7 @@ class SuppressionReport:
         return sum(len(keys) for keys in self.consolidated.values())
 
 
-def dedupe_shipments(shipments: tuple[Shipment, ...]) -> SuppressionReport:
+def dedupe_recipients(recipients: tuple[Recipient, ...]) -> SuppressionReport:
     """B4. Collapse the recipient list to one shipment per doorstep.
 
     Input order is preserved and decides which shipment is kept, so a caller
@@ -77,22 +77,22 @@ def dedupe_shipments(shipments: tuple[Shipment, ...]) -> SuppressionReport:
     design 4 requires an explicit reason for every exclusion, and "duplicate"
     on its own does not tell the operator which row survived.
     """
-    kept, suppressed = _drop_duplicate_keys(shipments)
+    kept, suppressed = _drop_duplicate_keys(recipients)
     return _consolidate_addresses(kept, suppressed)
 
 
 def _drop_duplicate_keys(
-    shipments: tuple[Shipment, ...],
-) -> tuple[list[Shipment], list[Excluded]]:
+    shipments: tuple[Recipient, ...],
+) -> tuple[list[Recipient], list[Excluded]]:
     """Pass one: the same recipient key listed more than once."""
-    kept: list[Shipment] = []
+    kept: list[Recipient] = []
     suppressed: list[Excluded] = []
-    seen: dict[str, Shipment] = {}
+    seen: dict[str, Recipient] = {}
 
     for shipment in shipments:
-        first = seen.get(shipment.recipient_key)
+        first = seen.get(shipment.key)
         if first is None:
-            seen[shipment.recipient_key] = shipment
+            seen[shipment.key] = shipment
             kept.append(shipment)
             continue
 
@@ -108,7 +108,7 @@ def _drop_duplicate_keys(
         )
         suppressed.append(
             Excluded(
-                recipient_key=shipment.recipient_key,
+                recipient_key=shipment.key,
                 name=shipment.name,
                 reason=f"duplicate of {first.name} already in this run{conflict}",
             )
@@ -118,7 +118,7 @@ def _drop_duplicate_keys(
 
 
 def _consolidate_addresses(
-    shipments: list[Shipment], suppressed: list[Excluded]
+    shipments: list[Recipient], suppressed: list[Excluded]
 ) -> SuppressionReport:
     """Pass two: distinct recipients resolving to the same doorstep.
 
@@ -128,27 +128,27 @@ def _consolidate_addresses(
     take its own parcel, and listed after it would fold in. The whole group is
     in hand before any of it is resolved.
     """
-    groups: dict[str, list[Shipment]] = {}
+    groups: dict[str, list[Recipient]] = {}
     for shipment in shipments:
         groups.setdefault(shipment.address_key(), []).append(shipment)
 
-    holder_of: dict[str, Shipment] = {}
+    holder_of: dict[str, Recipient] = {}
     for group in groups.values():
         holder_of.update(_assign_holders(group))
 
     consolidated: dict[str, list[str]] = {}
-    eligible: list[Shipment] = []
+    eligible: list[Recipient] = []
 
     for shipment in shipments:
-        holder = holder_of[shipment.recipient_key]
-        if holder.recipient_key == shipment.recipient_key:
+        holder = holder_of[shipment.key]
+        if holder.key == shipment.key:
             eligible.append(shipment)
             continue
 
-        consolidated.setdefault(holder.recipient_key, []).append(shipment.recipient_key)
+        consolidated.setdefault(holder.key, []).append(shipment.key)
         suppressed.append(
             Excluded(
-                recipient_key=shipment.recipient_key,
+                recipient_key=shipment.key,
                 name=shipment.name,
                 reason=(
                     f"same address as {holder.name}; consolidated onto that "
@@ -164,7 +164,7 @@ def _consolidate_addresses(
     )
 
 
-def _assign_holders(group: list[Shipment]) -> dict[str, Shipment]:
+def _assign_holders(group: list[Recipient]) -> dict[str, Recipient]:
     """Which shipment each member of one address group ships under.
 
     A shipment that holds its own slot maps to itself. See the module
@@ -174,7 +174,7 @@ def _assign_holders(group: list[Shipment]) -> dict[str, Shipment]:
     satisfied by that date -- and otherwise fold together onto the first of
     their own kind, since joining one of two pinned dates would be a guess.
     """
-    by_pin: dict[date | None, Shipment] = {}
+    by_pin: dict[date | None, Recipient] = {}
     # Pinned shipments claim their slot first. If an unpinned one could claim
     # it, a list that happened to put the unpinned row first would leave the
     # pinned shipment folded onto a shipment with no pin, which is precisely
@@ -185,7 +185,7 @@ def _assign_holders(group: list[Shipment]) -> dict[str, Shipment]:
 
     pins = list(by_pin)
 
-    def slot(shipment: Shipment) -> date | None:
+    def slot(shipment: Recipient) -> date | None:
         if shipment.required_ship_date is not None:
             return shipment.required_ship_date
         return pins[0] if len(pins) == 1 else None
@@ -194,4 +194,4 @@ def _assign_holders(group: list[Shipment]) -> dict[str, Shipment]:
         if shipment.required_ship_date is None:
             by_pin.setdefault(slot(shipment), shipment)
 
-    return {s.recipient_key: by_pin[slot(s)] for s in group}
+    return {s.key: by_pin[slot(s)] for s in group}

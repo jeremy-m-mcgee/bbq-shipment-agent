@@ -355,7 +355,7 @@ class TestDedupeIsInTheSpine:
 """
         result = run_plan(workspace, roster_text=roster)
         assert set(result.manifest.accounted_for()) == {
-            s.recipient_key for s in result.roster.shipments
+            r.key for r in result.roster.recipients
         }
 
     def test_the_suppression_count_reaches_the_ledger(self, workspace):

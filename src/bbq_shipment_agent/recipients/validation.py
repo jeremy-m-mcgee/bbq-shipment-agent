@@ -49,7 +49,7 @@ from typing import Any, Protocol
 from ..capabilities import ValidationMode
 from ..planning.manifest import Excluded
 from ..planning.rates import Address
-from ..planning.shipment import Shipment
+from .record import Recipient
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -90,6 +90,25 @@ class ValidationResult:
     def usable(self) -> Address:
         """The address to quote against."""
         return self.corrected
+
+    @property
+    def advisory(self) -> bool:
+        """The validator said something about an address it did not change.
+
+        Measured live: Shippo returned *"Street address (directional or suffix
+        only) was corrected to validate the address. Please check this
+        correction prior to using address."* while returning a `street1` byte
+        for byte identical to what was sent. It claims a correction; the
+        fields show none.
+
+        `classify` is right to call that CLEAN -- no material field moved, and
+        treating enrichment as a correction would route every run to a human.
+        But the claim is worth showing, and it was going nowhere: the messages
+        sat on this record and nothing read them. Design 10 records the three
+        options; this is the one that keeps the three-way enum intact and puts
+        the text where the operator is already looking.
+        """
+        return self.outcome is ValidationOutcome.CLEAN and bool(self.messages)
 
 
 def _normalize(value: str) -> str:
@@ -240,8 +259,13 @@ def _result_from_dict(submitted: Address, row: dict[str, Any]) -> ValidationResu
 class ValidationReport:
     """B2's output: who may proceed, who needs a human, and why."""
 
-    eligible: tuple[Shipment, ...]
+    eligible: tuple[Recipient, ...]
     escalated: tuple[Excluded, ...]
+    #: The same escalations as full records, carrying provenance. `escalated`
+    #: is the human-facing list and cannot be re-read; this is what B3 works
+    #: on, because repairing an address means going back to the image it came
+    #: from and `Excluded` is three strings.
+    for_repair: tuple[Recipient, ...]
     #: recipient key -> what the validator said. Kept for every shipment,
     #: including the ones that passed, because "this address was checked and
     #: was already correct" is a different claim from "this address was never
@@ -256,9 +280,22 @@ class ValidationReport:
             if r.outcome is ValidationOutcome.CORRECTABLE
         )
 
+    def advisories(self) -> dict[str, tuple[str, ...]]:
+        """Recipient key -> what the validator said about a clean address.
 
-def validate_shipments(
-    shipments: tuple[Shipment, ...],
+        Only the clean ones: a correctable address already surfaces its
+        messages through the correction itself, and a failed one through the
+        escalation reason. These are the ones that would otherwise vanish.
+        """
+        return {
+            key: result.messages
+            for key, result in self.results.items()
+            if result.advisory
+        }
+
+
+def validate_recipients(
+    recipients: tuple[Recipient, ...],
     validator: AddressValidator,
     mode: ValidationMode = ValidationMode.STANDARD,
 ) -> ValidationReport:
@@ -271,27 +308,29 @@ def validate_shipments(
     """
     if mode is ValidationMode.OFF:
         return ValidationReport(
-            eligible=shipments,
+            eligible=recipients,
             escalated=(),
+            for_repair=(),
             results={
-                s.recipient_key: ValidationResult(
+                s.key: ValidationResult(
                     submitted=s.address,
                     corrected=s.address,
                     outcome=ValidationOutcome.SKIPPED,
                     messages=("validation-mode is off; address used as supplied",),
                 )
-                for s in shipments
+                for s in recipients
             },
             mode=mode,
         )
 
-    eligible: list[Shipment] = []
+    eligible: list[Recipient] = []
     escalated: list[Excluded] = []
+    for_repair: list[Recipient] = []
     results: dict[str, ValidationResult] = {}
 
-    for shipment in shipments:
+    for shipment in recipients:
         result = validator.validate(shipment.address)
-        results[shipment.recipient_key] = result
+        results[shipment.key] = result
 
         escalate = result.outcome is ValidationOutcome.FAILED or (
             mode is ValidationMode.STRICT
@@ -301,11 +340,12 @@ def validate_shipments(
             detail = "; ".join(result.messages) or "no detail from the validator"
             escalated.append(
                 Excluded(
-                    recipient_key=shipment.recipient_key,
+                    recipient_key=shipment.key,
                     name=shipment.name,
                     reason=f"address {result.outcome.value}: {detail}",
                 )
             )
+            for_repair.append(shipment)
             continue
 
         # The corrected address is what gets quoted. Replacing it here rather
@@ -318,6 +358,7 @@ def validate_shipments(
     return ValidationReport(
         eligible=tuple(eligible),
         escalated=tuple(escalated),
+        for_repair=tuple(for_repair),
         results=results,
         mode=mode,
     )

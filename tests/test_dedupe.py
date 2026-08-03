@@ -2,16 +2,16 @@
 
 from datetime import date
 
-from bbq_shipment_agent.planning import Address, Shipment
-from bbq_shipment_agent.recipients import dedupe_shipments
+from bbq_shipment_agent.planning import Address
+from bbq_shipment_agent.recipients import Recipient, dedupe_recipients
 
 SATURDAY = date(2026, 8, 15)
 TUESDAY = date(2026, 8, 18)
 
 
 def shipment(key, street, name=None, city="Austin", zip_="78701", pin=None):
-    return Shipment(
-        recipient_key=key,
+    return Recipient(
+        key=key,
         name=name or key,
         address=Address(name or key, street, city, "TX", zip_),
         required_ship_date=pin,
@@ -21,8 +21,8 @@ def shipment(key, street, name=None, city="Austin", zip_="78701", pin=None):
 class TestDuplicateKeys:
     def test_the_same_recipient_listed_twice_ships_once(self):
         ships = (shipment("r1", "1 Main St"), shipment("r1", "1 Main St"))
-        report = dedupe_shipments(ships)
-        assert [s.recipient_key for s in report.eligible] == ["r1"]
+        report = dedupe_recipients(ships)
+        assert [s.key for s in report.eligible] == ["r1"]
         assert report.duplicate_count == 1
 
     def test_the_first_occurrence_is_the_one_kept(self):
@@ -31,19 +31,19 @@ class TestDuplicateKeys:
             shipment("r1", "1 Main St", name="Ana"),
             shipment("r1", "1 Main St", name="Ana (dupe)"),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert report.eligible[0].name == "Ana"
 
     def test_a_repeated_key_with_a_different_address_says_so(self):
         # B4 does not get to decide which row is right, but the reviewer
         # cannot decide either unless the conflict is on the manifest.
         ships = (shipment("r1", "1 Main St"), shipment("r1", "2 Other Ave"))
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert "addresses differ" in report.suppressed[0].reason
 
     def test_distinct_keys_at_distinct_addresses_all_survive(self):
         ships = (shipment("r1", "1 Main St"), shipment("r2", "2 Other Ave"))
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert len(report.eligible) == 2
         assert report.suppressed == ()
 
@@ -54,8 +54,8 @@ class TestSameAddressConsolidation:
             shipment("r1", "1 Main St", name="Ana"),
             shipment("r2", "1 Main St", name="Bo"),
         )
-        report = dedupe_shipments(ships)
-        assert [s.recipient_key for s in report.eligible] == ["r1"]
+        report = dedupe_recipients(ships)
+        assert [s.key for s in report.eligible] == ["r1"]
         assert report.consolidated == {"r1": ("r2",)}
 
     def test_the_suppression_reason_names_who_it_folded_onto(self):
@@ -63,7 +63,7 @@ class TestSameAddressConsolidation:
             shipment("r1", "1 Main St", name="Ana"),
             shipment("r2", "1 Main St", name="Bo"),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert "same address as Ana" in report.suppressed[0].reason
 
     def test_the_address_is_matched_case_insensitively(self):
@@ -74,7 +74,7 @@ class TestSameAddressConsolidation:
             shipment("r1", "1 Main St", city="Austin"),
             shipment("r2", "1 main st", city="AUSTIN"),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert len(report.eligible) == 1
 
     def test_a_third_at_the_same_address_folds_onto_the_same_shipment(self):
@@ -83,7 +83,7 @@ class TestSameAddressConsolidation:
             shipment("r2", "1 Main St"),
             shipment("r3", "1 Main St"),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert report.consolidated == {"r1": ("r2", "r3")}
         assert report.consolidated_count == 2
 
@@ -98,15 +98,15 @@ class TestShipDatePins:
             shipment("r1", "1 Main St"),
             shipment("r2", "1 Main St", pin=SATURDAY),
         )
-        report = dedupe_shipments(ships)
-        assert [s.recipient_key for s in report.eligible] == ["r2"]
+        report = dedupe_recipients(ships)
+        assert [s.key for s in report.eligible] == ["r2"]
         assert report.eligible[0].required_ship_date == SATURDAY
 
     def test_list_order_does_not_change_the_outcome(self):
-        forward = dedupe_shipments(
+        forward = dedupe_recipients(
             (shipment("r1", "1 Main St"), shipment("r2", "1 Main St", pin=SATURDAY))
         )
-        reverse = dedupe_shipments(
+        reverse = dedupe_recipients(
             (shipment("r2", "1 Main St", pin=SATURDAY), shipment("r1", "1 Main St"))
         )
         assert forward.eligible == reverse.eligible
@@ -116,8 +116,8 @@ class TestShipDatePins:
             shipment("r1", "1 Main St", pin=SATURDAY),
             shipment("r2", "1 Main St", pin=SATURDAY),
         )
-        report = dedupe_shipments(ships)
-        assert [s.recipient_key for s in report.eligible] == ["r1"]
+        report = dedupe_recipients(ships)
+        assert [s.key for s in report.eligible] == ["r1"]
         assert report.eligible[0].required_ship_date == SATURDAY
 
     def test_two_pinned_dates_at_one_address_are_two_deliveries(self):
@@ -125,7 +125,7 @@ class TestShipDatePins:
             shipment("r1", "1 Main St", pin=SATURDAY),
             shipment("r2", "1 Main St", pin=TUESDAY),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert len(report.eligible) == 2
         assert report.suppressed == ()
 
@@ -135,8 +135,8 @@ class TestShipDatePins:
             shipment("r1", "1 Main St", name="Ana", pin=SATURDAY),
             shipment("r2", "1 Main St", name="Bo"),
         )
-        report = dedupe_shipments(ships)
-        assert [s.recipient_key for s in report.eligible] == ["r1"]
+        report = dedupe_recipients(ships)
+        assert [s.key for s in report.eligible] == ["r1"]
         assert report.eligible[0].required_ship_date == SATURDAY
 
     def test_unpinned_shipments_do_not_guess_between_two_pins(self):
@@ -146,10 +146,10 @@ class TestShipDatePins:
             shipment("r3", "1 Main St"),
             shipment("r4", "1 Main St"),
         )
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         # The two pins keep their parcels, and the unpinned pair consolidates
         # with each other rather than joining either date arbitrarily.
-        assert [s.recipient_key for s in report.eligible] == ["r1", "r2", "r3"]
+        assert [s.key for s in report.eligible] == ["r1", "r2", "r3"]
         assert report.consolidated == {"r3": ("r4",)}
 
 
@@ -161,19 +161,19 @@ class TestReport:
             shipment("r2", "1 Main St"),
             shipment("r3", "9 Far Rd"),
         )
-        report = dedupe_shipments(ships)
-        accounted = [s.recipient_key for s in report.eligible] + [
+        report = dedupe_recipients(ships)
+        accounted = [s.key for s in report.eligible] + [
             e.recipient_key for e in report.suppressed
         ]
         assert sorted(accounted) == ["r1", "r1", "r2", "r3"]
 
     def test_every_suppression_carries_a_reason(self):
         ships = (shipment("r1", "1 Main St"), shipment("r2", "1 Main St"))
-        report = dedupe_shipments(ships)
+        report = dedupe_recipients(ships)
         assert all(e.reason for e in report.suppressed)
 
     def test_an_empty_list_is_not_an_error(self):
-        report = dedupe_shipments(())
+        report = dedupe_recipients(())
         assert report.eligible == () and report.suppressed == ()
 
     def test_it_reads_no_prior_state(self):
@@ -185,6 +185,6 @@ class TestReport:
             shipment("r2", "1 Main St"),
             shipment("r3", "9 Far Rd", pin=SATURDAY),
         )
-        first = dedupe_shipments(ships)
-        second = dedupe_shipments(ships)
+        first = dedupe_recipients(ships)
+        second = dedupe_recipients(ships)
         assert first == second

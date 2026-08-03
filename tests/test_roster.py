@@ -38,31 +38,31 @@ class TestParsing:
         roster = load_roster(write(tmp_path, MINIMAL))
         assert roster.packet_count == 1
         assert roster.origin.city == "San Francisco"
-        assert roster.shipments[0].name == "Ana Ruiz"
+        assert roster.recipients[0].name == "Ana Ruiz"
 
     def test_the_key_defaults_to_a_slug_of_the_name(self, tmp_path):
         roster = load_roster(write(tmp_path, MINIMAL))
-        assert roster.shipments[0].recipient_key == "ana-ruiz"
+        assert roster.recipients[0].key == "ana-ruiz"
 
     def test_an_explicit_key_wins(self, tmp_path):
         roster = load_roster(write(tmp_path, MINIMAL + "    key: ana-2026\n"))
-        assert roster.shipments[0].recipient_key == "ana-2026"
+        assert roster.recipients[0].key == "ana-2026"
 
     def test_a_recipient_with_no_lane_gets_the_stated_default(self, tmp_path):
         roster = load_roster(write(tmp_path, MINIMAL))
-        assert roster.shipments[0].lane is DEFAULT_LANE
+        assert roster.recipients[0].lane is DEFAULT_LANE
 
     def test_a_declared_lane_is_attached(self, tmp_path):
         text = MINIMAL.replace(
             "recipients:", "lanes:\n  gulf:\n    ambient_c: 32.0\n    zone: 4\nrecipients:"
         )
         roster = load_roster(write(tmp_path, text + "    lane: gulf\n"))
-        assert roster.shipments[0].lane.ambient_c == 32.0
-        assert roster.shipments[0].lane.zone == 4
+        assert roster.recipients[0].lane.ambient_c == 32.0
+        assert roster.recipients[0].lane.zone == 4
 
     def test_an_operator_pin_is_read_as_a_date(self, tmp_path):
         roster = load_roster(write(tmp_path, MINIMAL + "    ship_date: 2026-08-15\n"))
-        assert roster.shipments[0].required_ship_date == date(2026, 8, 15)
+        assert roster.recipients[0].required_ship_date == date(2026, 8, 15)
 
 
 class TestRefusals:
@@ -79,7 +79,7 @@ class TestRefusals:
             load_roster(write(tmp_path, text))
 
     def test_a_duplicate_key_is_refused(self, tmp_path):
-        # B4 is deferred, so nothing downstream would consolidate these.
+        # B4 would consolidate them silently; a repeated key is a typo.
         with pytest.raises(RosterError, match="appears twice"):
             load_roster(write(tmp_path, MINIMAL + MINIMAL.split("recipients:")[1]))
 

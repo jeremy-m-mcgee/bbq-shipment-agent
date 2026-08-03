@@ -49,8 +49,9 @@ Remaining: 5 (B1, needs screenshots) and 7 (B3, needs B1). Steps 6, 9 and 10 don
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
+- Phase B works on `Recipient` (address + provenance + confidence); `to_shipments` makes the `Shipment` phase C wants at the end of B4. Provenance never reaches planning.
 - `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
-- `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4)
+- `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), roster.py (the run input file), validation.py (B2), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint

@@ -11,7 +11,8 @@ Kept apart from `planning` because the phases answer different questions:
 Phase B decides *who* is shipped to, Phase C decides *how*.
 """
 
-from .dedupe import SuppressionReport, dedupe_shipments
+from .dedupe import SuppressionReport, dedupe_recipients
+from .record import Provenance, Recipient, Region, to_shipments
 from .roster import (
     DEFAULT_ROSTER_PATH,
     Roster,
@@ -28,14 +29,17 @@ from .validation import (
     ValidationReport,
     ValidationResult,
     classify,
-    validate_shipments,
+    validate_recipients,
 )
 
 __all__ = [
     "DEFAULT_ROSTER_PATH",
     "AddressValidationUnavailable",
     "AddressValidator",
+    "Provenance",
+    "Recipient",
     "RecordedAddressValidator",
+    "Region",
     "Roster",
     "RosterError",
     "ShippoAddressValidator",
@@ -44,8 +48,9 @@ __all__ = [
     "ValidationReport",
     "ValidationResult",
     "classify",
-    "dedupe_shipments",
+    "dedupe_recipients",
     "default_ship_dates",
     "load_roster",
-    "validate_shipments",
+    "to_shipments",
+    "validate_recipients",
 ]

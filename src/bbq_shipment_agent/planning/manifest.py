@@ -35,7 +35,7 @@ long; for a food-safety gate that is the safe direction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -155,6 +155,11 @@ class Manifest:
     #: name the recipient with only the boolean available, `review-narrator`
     #: named the wrong one and reasoned from it for two turns.
     saturday_only: tuple[str, ...] = ()
+    #: Recipient key -> what the address validator said about an address it
+    #: classified clean and did not change. Kept because the validator can
+    #: claim a correction while returning identical fields, and that claim was
+    #: captured and shown nowhere. Design 10.
+    advisories: dict[str, tuple[str, ...]] = field(default_factory=dict)
     cap_fingerprint: str | None = None
 
     @property
@@ -203,6 +208,7 @@ def assemble_manifest(
     solve: Solve,
     suppressed: tuple[Excluded, ...] = (),
     escalated: tuple[Excluded, ...] = (),
+    advisories: dict[str, tuple[str, ...]] | None = None,
     cap_fingerprint: str | None = None,
 ) -> Manifest:
     """C6. Turn the winning plan into the reviewable package.
@@ -232,6 +238,7 @@ def assemble_manifest(
         infeasible=solve.infeasible,
         forced_by_saturday=plan.forced_by_saturday,
         saturday_only=solve.saturday_only,
+        advisories=dict(advisories or {}),
         cap_fingerprint=cap_fingerprint,
     )
 
@@ -290,6 +297,16 @@ def render(manifest: Manifest) -> str:
                 f"    {'+'.join(other.carriers):<16} ${other.total_cost:>9,.2f}  "
                 f"(+${other.extra_cost:,.2f}){note}"
             )
+
+    if manifest.advisories:
+        # Against the row rather than in a summary count: the operator is
+        # deciding about that shipment, and "the validator said something it
+        # did not act on" is only useful next to the address it concerns.
+        lines.append("\n  validator notes")
+        for key, messages in sorted(manifest.advisories.items()):
+            name = next((r.name for r in manifest.rows if r.recipient_key == key), key)
+            for message in messages:
+                lines.append(f"    {name:<22} {message}")
 
     for label, excluded in (("suppressed", manifest.suppressed), ("escalated", manifest.escalated)):
         if excluded:

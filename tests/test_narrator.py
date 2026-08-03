@@ -21,7 +21,7 @@ from bbq_shipment_agent.agents.narrator import (
 from bbq_shipment_agent.agents.model import ModelUnavailable
 from bbq_shipment_agent.ledger import AgentInvocationRecord, iter_records
 from bbq_shipment_agent.planning import RecordedQuoter
-from bbq_shipment_agent.recipients import load_roster
+from bbq_shipment_agent.recipients import load_roster, to_shipments
 from bbq_shipment_agent.review import ReviewSession
 from bbq_shipment_agent.run import initialize_run
 
@@ -93,7 +93,7 @@ def session(tmp_path):
     )
     return run, ReviewSession(
         run,
-        roster.shipments,
+        to_shipments(roster.recipients),
         roster.origin,
         roster.ship_dates,
         ledger_root=tmp_path / "ledger",

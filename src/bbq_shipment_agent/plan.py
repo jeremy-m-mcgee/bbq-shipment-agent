@@ -76,8 +76,9 @@ from .recipients import (
     Roster,
     SuppressionReport,
     ValidationReport,
-    dedupe_shipments,
-    validate_shipments,
+    dedupe_recipients,
+    to_shipments,
+    validate_recipients,
 )
 from .run import Run
 
@@ -165,8 +166,8 @@ def plan_run(
     capabilities rather than passed in, so the flag cannot be bypassed here.
     """
     mode = run.capabilities.validation
-    validation = validate_shipments(
-        roster.shipments,
+    validation = validate_recipients(
+        roster.recipients,
         validator if validator is not None else _NoValidator(),
         mode,
     )
@@ -176,10 +177,15 @@ def plan_run(
     # *identical* once the validator has canonicalised both addresses to the
     # same ZIP+4. Deduping the submitted forms would miss a pair that differed
     # by a typo the validator was about to fix.
-    suppression = dedupe_shipments(validation.eligible)
+    suppression = dedupe_recipients(validation.eligible)
+
+    # The B4 -> C1 boundary. Provenance and confidence stop here: phase C has
+    # no business re-reading a screenshot, and cannot, because it is not
+    # holding one. See `recipients/record`.
+    shipments = to_shipments(suppression.eligible)
 
     solve = solve_carriers(
-        suppression.eligible,
+        shipments,
         roster.origin,
         ship_dates or roster.ship_dates,
         quoter,
@@ -189,7 +195,7 @@ def plan_run(
     # C4, and only when C3 left something with nothing feasible anywhere.
     # Deterministic since the demotion -- see planning/remediation.
     remediations = remediate_all(
-        suppression.eligible,
+        shipments,
         solve.infeasible,
         roster.origin,
         ship_dates or roster.ship_dates,
@@ -206,6 +212,7 @@ def plan_run(
             solve,
             suppressed=suppression.suppressed,
             escalated=validation.escalated,
+            advisories=validation.advisories(),
             cap_fingerprint=run.cap_fingerprint,
         )
     except ValueError as exc:
@@ -227,7 +234,7 @@ def plan_run(
             manifest,
             ledger_root=ledger_root,
             model=verifier or _NoModel(),
-            input_recipients=tuple(s.recipient_key for s in roster.shipments),
+            input_recipients=tuple(r.key for r in roster.recipients),
             metrics=metrics,
         )
 

@@ -13,7 +13,11 @@ import pytest
 
 from bbq_shipment_agent.ledger import RunRecord, ShipmentRecord, iter_records, rebuild
 from bbq_shipment_agent.planning import RecordedQuoter
-from bbq_shipment_agent.recipients import RecordedAddressValidator, load_roster
+from bbq_shipment_agent.recipients import (
+    RecordedAddressValidator,
+    load_roster,
+    to_shipments,
+)
 from bbq_shipment_agent.review import (
     Edit,
     EditKind,
@@ -87,7 +91,7 @@ def session(tmp_path):
     )
     return ReviewSession(
         run,
-        roster.shipments,
+        to_shipments(roster.recipients),
         roster.origin,
         roster.ship_dates,
         ledger_root=tmp_path / "ledger",
@@ -209,7 +213,7 @@ class TestRefusal:
         # A lane hot enough that nothing clears 4.4C on any date.
         blistering = tuple(
             replace(s, lane=Lane(key="blistering", ambient_c=95.0))
-            for s in roster.shipments
+            for s in to_shipments(roster.recipients)
         )
         run = initialize_run(
             ledger_root=tmp_path / "ledger",

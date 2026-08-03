@@ -168,6 +168,8 @@ def manifest_payload(
         # bound without saying whose, and an agent required to ground every
         # claim in a field will otherwise pick a shipment and be wrong.
         "saturday_only": list(manifest.saturday_only),
+        # What the validator said about addresses it left alone.
+        "validator_advisories": {k: list(v) for k, v in manifest.advisories.items()},
         "packet_count": manifest.packet_count,
         "total_cost": manifest.total_cost,
         "min_thermal_margin_c": manifest.min_thermal_margin_c,

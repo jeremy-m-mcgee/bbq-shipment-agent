@@ -20,10 +20,9 @@ Three failure modes are worth an error rather than a default:
   *octal*, which silently becomes 1116. A ZIP that parsed as a number is
   refused with the fix in the message. Same class of trap as `off`/`on` in
   `capabilities.yaml`.
-* **A duplicate recipient key.** B4 is deferred (design 11, step 12), so
-  nothing downstream consolidates. A repeated key in the file is a typo the
-  operator can see, and finding out here beats finding out from a manifest
-  with two rows for one person.
+* **A duplicate recipient key.** B4 would consolidate two entries sharing a
+  key, silently. A repeated key in a hand-written file is a typo, and finding
+  out here beats finding out from a manifest that is one packet short.
 * **A missing origin.** Every cost and every transit estimate is measured
   from it. Guessing a default would make the whole manifest quietly wrong.
 """
@@ -38,7 +37,8 @@ from typing import Any
 
 import yaml
 
-from ..planning import DEFAULT_LANE, Address, Lane, Shipment, ship_day_for
+from ..planning import DEFAULT_LANE, Address, Lane, ship_day_for
+from .record import Recipient
 
 DEFAULT_ROSTER_PATH = Path("recipients.yaml")
 
@@ -57,13 +57,13 @@ class Roster:
     """One run's input: the origin, the recipients, the candidate dates."""
 
     origin: Address
-    shipments: tuple[Shipment, ...]
+    recipients: tuple[Recipient, ...]
     ship_dates: tuple[date, ...]
     source: Path | None = None
 
     @property
     def packet_count(self) -> int:
-        return len(self.shipments)
+        return len(self.recipients)
 
 
 def default_ship_dates(after: date) -> tuple[date, ...]:
@@ -124,19 +124,18 @@ def load_roster(
     if not isinstance(entries, list) or not entries:
         raise RosterError(f"{path}: `recipients` must be a non-empty list.")
 
-    shipments: list[Shipment] = []
+    recipients_out: list[Recipient] = []
     seen: dict[str, str] = {}
     for index, entry in enumerate(entries, start=1):
-        shipment = _shipment(entry, f"{path}: recipients[{index}]", lanes)
-        if shipment.recipient_key in seen:
+        shipment = _recipient(entry, f"{path}: recipients[{index}]", lanes)
+        if shipment.key in seen:
             raise RosterError(
-                f"{path}: recipient key {shipment.recipient_key!r} appears twice "
-                f"({seen[shipment.recipient_key]} and {shipment.name}). "
-                "Deduplication is deferred (design 11, step 12), so fix the file "
-                "or give one of them an explicit `key`."
+                f"{path}: recipient key {shipment.key!r} appears twice "
+                f"({seen[shipment.key]} and {shipment.name}). "
+                "Fix the file, or give one of them an explicit `key`."
             )
-        seen[shipment.recipient_key] = shipment.name
-        shipments.append(shipment)
+        seen[shipment.key] = shipment.name
+        recipients_out.append(shipment)
 
     declared = raw.get("ship_dates")
     if declared is None:
@@ -152,7 +151,7 @@ def load_roster(
     # the file the operator just wrote, naming the day of the week.
     for when in ship_dates:
         ship_day_for(when)
-    for shipment in shipments:
+    for shipment in recipients_out:
         if shipment.required_ship_date is not None:
             ship_day_for(shipment.required_ship_date)
 
@@ -161,15 +160,18 @@ def load_roster(
         # comes off the month being shipped in. The earliest candidate date is
         # used for the whole run -- see `LaneBook.lane_for`.
         season = ship_dates[0]
-        shipments = [
+        recipients_out = [
             s
             if s.lane is not DEFAULT_LANE
             else replace(s, lane=lane_book.lane_for(s.address.state, season))
-            for s in shipments
+            for s in recipients_out
         ]
 
     return Roster(
-        origin=origin, shipments=tuple(shipments), ship_dates=ship_dates, source=path
+        origin=origin,
+        recipients=tuple(recipients_out),
+        ship_dates=ship_dates,
+        source=path,
     )
 
 
@@ -191,7 +193,7 @@ def _lanes(raw: Any, path: Path) -> dict[str, Lane]:
     return lanes
 
 
-def _shipment(entry: Any, where: str, lanes: dict[str, Lane]) -> Shipment:
+def _recipient(entry: Any, where: str, lanes: dict[str, Lane]) -> Recipient:
     if not isinstance(entry, dict):
         raise RosterError(f"{where}: expected a mapping, got {type(entry).__name__}.")
 
@@ -212,8 +214,8 @@ def _shipment(entry: Any, where: str, lanes: dict[str, Lane]) -> Shipment:
         )
 
     pin = entry.get("ship_date")
-    return Shipment(
-        recipient_key=str(entry["key"]) if entry.get("key") else slugify(name),
+    return Recipient(
+        key=str(entry["key"]) if entry.get("key") else slugify(name),
         name=name,
         address=_address(entry, where, default_name=name),
         lane=lane,
