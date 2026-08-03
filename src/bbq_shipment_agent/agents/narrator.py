@@ -42,6 +42,7 @@ from typing import Any
 
 from ..context import STAGE_REVIEW_NARRATOR
 from ..run import Run, record_agent_invocation
+from .metrics import metrics_for
 from .model import ConversingModel, Invocation, ModelUnavailable
 from .tools import Tool, ToolError, build_tools
 from .verification import render_instructions
@@ -107,6 +108,7 @@ class Narrator:
             config, render_instructions(config, context)
         )
         self.run = run
+        self.config = config
         self.session = session
         self.ledger_root = ledger_root
         self._model = model
@@ -123,6 +125,10 @@ class Narrator:
         """One operator turn, including any tools the model runs for it."""
         turn = Turn(prompt=text)
         self.messages.append({"role": "user", "content": text})
+        # One tracker per operator turn. A turn may span several model calls
+        # when tools are involved; a tracker records once, so the turn is the
+        # invocation -- the same unit `iterations` counts on the ledger line.
+        metrics = metrics_for(self.config)
 
         for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
             turn.iterations = iteration
@@ -131,6 +137,7 @@ class Narrator:
                     self.invocation, self.messages, self._tools
                 )
             except ModelUnavailable as exc:
+                metrics.track_error()
                 self._record("unavailable", turn)
                 raise NarratorUnavailable(str(exc)) from exc
 
@@ -162,6 +169,8 @@ class Narrator:
                 "ask again, or read the manifest directly)"
             )
 
+        metrics.track_tokens(turn.input_tokens, turn.output_tokens)
+        metrics.track_success()
         self._record("findings" if turn.tools_called else "clean", turn)
         self.turns.append(turn)
         return turn

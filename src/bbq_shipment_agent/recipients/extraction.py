@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Any
 
 from ..agent_configs import AgentConfig
+from ..agents.metrics import metrics_for
 from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.verification import render_instructions
 from ..context import STAGE_EXTRACTION
@@ -174,7 +175,11 @@ def extract_from_images(
 
     context = run.context_for_stage(STAGE_EXTRACTION)
     invocation = Invocation.from_config(config, render_instructions(config, context))
+    # One tracker for the batch: B1 is a single logical invocation of the
+    # extraction config, however many images it reads.
+    metrics = metrics_for(config)
 
+    metrics = metrics_for(config)
     recipients: list[Recipient] = []
     unresolved: list[Unresolved] = []
     unreadable: list[str] = []
@@ -191,6 +196,9 @@ def extract_from_images(
         found, missing = _records_from(parsed, path)
         recipients.extend(found)
         unresolved.extend(missing)
+
+    metrics.track_tokens(tokens_in, tokens_out)
+    metrics.track_error() if unreadable else metrics.track_success()
 
     record_agent_invocation(
         ledger_root,

@@ -47,6 +47,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from ..agents.metrics import metrics_for
 from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.tools import Tool, ToolError, ToolImage, build_tools
 from ..agents.verification import render_instructions
@@ -124,6 +125,7 @@ def repair_addresses(
     invocation = Invocation.from_config(config, render_instructions(config, context))
     tools = build_tools(CONFIG_KEY, validator=validator, screenshots=screenshots)
     by_name = {tool.name: tool for tool in tools}
+    metrics = metrics_for(config)
 
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": _brief(needing_repair)}
@@ -137,6 +139,7 @@ def repair_addresses(
         try:
             completion = model.converse(invocation, messages, tools)
         except ModelUnavailable as exc:
+            metrics.track_error()
             raise RepairUnavailable(str(exc)) from exc
         tokens_in += completion.input_tokens
         tokens_out += completion.output_tokens
@@ -159,6 +162,9 @@ def repair_addresses(
             called.append(call.name)
             results.append(_run(by_name, call))
         messages.append({"role": "user", "content": results})
+
+    metrics.track_tokens(tokens_in, tokens_out)
+    metrics.track_success() if parsed is not None else metrics.track_error()
 
     repaired, escalated, rejected = _adjudicate(needing_repair, parsed, validator)
 

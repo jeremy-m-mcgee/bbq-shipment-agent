@@ -18,6 +18,7 @@ decide what to do with the answer. No prompt text and no model name is written
 in this package.
 """
 
+from .metrics import InvocationMetrics, NoMetrics, SdkMetrics, metrics_for
 from .model import (
     DEFAULT_MAX_TOKENS,
     AnthropicModel,
@@ -54,6 +55,9 @@ __all__ = [
     "TOOL_NAMES",
     "AnthropicModel",
     "Completion",
+    "InvocationMetrics",
+    "NoMetrics",
+    "SdkMetrics",
     "ConversingModel",
     "Finding",
     "Invocation",
@@ -70,6 +74,7 @@ __all__ = [
     "Verification",
     "assert_tool_contract",
     "build_tools",
+    "metrics_for",
     "manifest_payload",
     "render_instructions",
     "verify_manifest",

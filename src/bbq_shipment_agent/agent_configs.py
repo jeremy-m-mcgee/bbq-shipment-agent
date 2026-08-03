@@ -43,7 +43,7 @@ there is no way to accidentally snapshot interpolated text.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -130,6 +130,14 @@ class AgentConfig:
     #: "launchdarkly" | "cache" | "unavailable"
     source: str = "unavailable"
     reason: str = "OFFLINE"
+    #: The AI SDK's tracker factory, from `LDAIClient.agent_config`. Each call
+    #: mints a fresh UUIDv4 run id, which is how LaunchDarkly correlates one
+    #: AI invocation's events. `None` offline, and never snapshotted -- it is
+    #: a live callable, not a fact about the config.
+    create_tracker: Any = None
+    #: Judges attached to this config in LaunchDarkly, as the SDK parsed them.
+    #: `None` offline.
+    judge_configuration: Any = None
 
     @property
     def instruction_hash(self) -> str | None:
@@ -313,16 +321,41 @@ class SnapshotAgentConfigs:
 
 
 class LaunchDarklyAgentConfigs:
-    """Retrieves AI Configs from LaunchDarkly.
+    """Retrieves AI Configs from LaunchDarkly, through both SDK layers.
 
-    Reads the raw flag value rather than going through `LDAIClient`, for the
-    variation key and the un-rendered guarantee described in the module
-    docstring. `LDAIClient.agent_config()` is still the right call at
-    invocation time, where rendered text is what you want.
+    **Raw for identity, the AI SDK for behaviour.** Neither alone is enough,
+    and which one answers which question is worth stating because it looks
+    like redundancy and is not.
+
+    `LDAIClient.agent_config()` returns a typed `AIAgentConfig` exposing
+    `enabled`, `model`, `provider`, rendered `instructions`, `tools`,
+    `judge_configuration` and `create_tracker`. It does **not** expose the
+    variation key or the version -- those are held privately on the tracker
+    with no public accessor -- and design 6.4 mitigation 2 requires both on
+    every ledger line, alongside a hash of the *un-rendered* template. So the
+    raw variation is read for identity and for the template.
+
+    Everything the SDK is the right home for is taken from the SDK: the
+    tracker factory, which mints a fresh run id per invocation and which this
+    codebase previously reimplemented badly, and the judge attachment.
+
+    Both layers are consulted at A1 only. Two evaluations per configured
+    stage at run start, none afterwards, so identity still comes from the
+    config captured at A1 rather than from anything looked up later.
     """
 
     def __init__(self, client: Any) -> None:
         self._client = client
+        self._ai: Any = None
+
+    def _ai_client(self) -> Any:
+        # Lazily, so constructing this source never imports the AI SDK on a
+        # path that will not use it.
+        if self._ai is None:
+            from ldai.client import LDAIClient
+
+            self._ai = LDAIClient(self._client)
+        return self._ai
 
     def fetch(self, agent_key: str, context: dict[str, Any]) -> AgentConfig:
         from .context import to_ld_context
@@ -335,9 +368,29 @@ class LaunchDarklyAgentConfigs:
             return AgentConfig(
                 agent_key=agent_key, source="unavailable", reason=reason
             )
-        return _from_variation(
+        config = _from_variation(
             agent_key, detail.value, source="launchdarkly", reason=reason
         )
+        return replace(config, **self._sdk_extras(agent_key, context))
+
+    def _sdk_extras(self, agent_key: str, context: dict[str, Any]) -> dict[str, Any]:
+        """What only the AI SDK can give: the tracker factory and the judges.
+
+        Best-effort. A run that planned a shipment correctly should not fail
+        because the AI SDK could not be consulted -- design 6.10 makes an
+        unreachable LaunchDarkly a normal path, and the raw fetch has already
+        produced everything the run strictly needs.
+        """
+        from .context import to_ld_context
+
+        try:
+            agent = self._ai_client().agent_config(agent_key, to_ld_context(context))
+        except Exception:  # noqa: BLE001 - see the docstring
+            return {}
+        return {
+            "create_tracker": getattr(agent, "create_tracker", None),
+            "judge_configuration": getattr(agent, "judge_configuration", None),
+        }
 
 
 class ChainedAgentConfigs:

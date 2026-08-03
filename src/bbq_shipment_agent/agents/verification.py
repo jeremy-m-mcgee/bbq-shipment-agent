@@ -48,6 +48,7 @@ from ..context import STAGE_MANIFEST_VERIFICATION
 from ..ledger import AgentInvocationRecord
 from ..planning import Manifest
 from ..run import Run, record_agent_invocation
+from .metrics import metrics_for
 from .model import Completion, Invocation, ModelClient, ModelUnavailable
 
 CONFIG_KEY = "manifest-verification"
@@ -290,6 +291,9 @@ def verify_manifest(
     payload = json.dumps(
         manifest_payload(manifest, input_recipients), indent=2, sort_keys=True
     )
+    # One tracker for this invocation. D1 is a single logical call even when
+    # a parse retry makes it two round trips.
+    metrics = metrics_for(config)
 
     attempts: list[_Attempt] = []
     prompt = payload
@@ -301,6 +305,7 @@ def verify_manifest(
         except ModelUnavailable as exc:
             # A model that cannot be reached at all is not a bounded-retry
             # case: the same call would fail the same way.
+            metrics.track_error()
             return Verification(
                 outcome="unavailable", reason=str(exc), iterations=len(attempts)
             )
@@ -322,6 +327,17 @@ def verify_manifest(
         attempt.findings = _findings(parsed)
         attempt.clean = [str(c) for c in parsed.get("clean") or []]
         break
+
+    tokens_in = sum(a.completion.input_tokens for a in attempts if a.completion)
+    tokens_out = sum(a.completion.output_tokens for a in attempts if a.completion)
+    metrics.track_tokens(tokens_in, tokens_out)
+    # Success is about the invocation, not the manifest: an agent that
+    # correctly reports six blockers did its job. Only an unparseable reply
+    # is a failed invocation.
+    if attempts[-1].parsed is None:
+        metrics.track_error()
+    else:
+        metrics.track_success()
 
     return _result(run, ledger_root, attempts, invocation)
 
