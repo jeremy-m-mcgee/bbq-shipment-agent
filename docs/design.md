@@ -254,7 +254,7 @@ Classical physics with stated assumptions, adequate for the demo. **The model wi
 
 This paragraph previously said the opposite, and instructed a future editor to amend it if E3 were ever dropped. Doing so is the honest outcome: the numbers here are computed from geometry and material properties, they are stated rather than measured, and nothing downstream should be read as though they had been validated against a real shipment.
 
-What remains improvable without any data is the *ambient* assumption, which is an assumption either way — see section 10.
+What was improvable without any data was the *ambient* assumption, which is an assumption either way, and it has been: `config/lanes.yaml` replaces one national 22C with a destination band plus a seasonal offset. That file is stated belief, not measurement, and it is committed so a surprising plan can be traced to the belief that produced it. See section 10.
 
 The 4.4C threshold is a permission-level constraint, not a model parameter. It does not move when the model is recalibrated.
 
@@ -549,9 +549,22 @@ Two consequences are worth naming rather than discovering later. The thermal mod
 
 ## 10. Open questions
 
-**Ambient temperature assumptions.** Currently lane-based and static. Seasonal adjustment is likely needed, but there is no calibration data yet.
+**Ambient temperature assumptions — resolved, and the resolution cost money.** `config/lanes.yaml` now maps destination state to a coarse climate band and adds a per-month offset, so ambient varies by where a packet is going and when it ships instead of one national 22C. An unmapped destination takes the *hottest* band deliberately: an unstated assumption must not be the optimistic one when a food safety gate depends on it, which is the same reasoning that leaves Saturday delivery unmodelled. Every number in that file is a stated guess, none of it measured, and section 5 explains why none of it ever will be.
 
-**The static lane ambient, not the thermal constants, is what collapses the envelope.** This entry previously said the placeholder constants ruled out multi-day transit and that no 4-day service existed. Both claims were measured against live quotes and the current gate, and both are wrong now.
+What it did to a real three-recipient run, against live quotes:
+
+| | lane | gel | cost | margin |
+|---|---|---|---|---|
+| before | `default` 22.0C | 4 | $46.20 | **0.59C** |
+| after | `DC:warm+Aug` 31.0C | 6 | $55.56 | 4.40C |
+
+The run went from $199.40 to $208.76. That is the honest direction: Washington in August is not a 22C problem, and the old plan was cheap because it assumed otherwise.
+
+It also settles something that had been written off as noise. `manifest-verification` flagged that 0.59C margin on two separate runs and it was dismissed here as an artifact of the placeholder default. It was not — it was the symptom of an optimistic ambient, and D1 was right both times. Worth remembering when section 8 asks whether `verification-enabled` earns its keep: the finding that looks like a false positive may be pointing at an assumption rather than at the plan.
+
+Still open: nothing calibrates these bands, and nothing will. The seasonal offsets in particular are a shape rather than a measurement.
+
+**Thermal constants: the envelope was never the problem.** This entry previously said the placeholder constants ruled out multi-day transit and that no 4-day service existed. Both claims were measured against live quotes and the current gate, and both are wrong.
 
 Maximum elapsed days clearing 4.4C, small box, by ambient and gel pack count:
 
@@ -566,9 +579,9 @@ Maximum elapsed days clearing 4.4C, small box, by ambient and gel pack count:
 
 That is the stated intent — 2 to 4 day services working *sometimes*, at high gel pack counts or on a cooler lane — already satisfied. The service side is satisfied too: `SERVICES` no longer exists, and live quoting on one test lane returns 1, 2, 3, 4, 5 and 6 day options across UPS Ground, UPS Ground Saver and USPS Ground Advantage.
 
-What remains is that `DEFAULT_LANE` is 22C, and at 22C the table above tops out at 2 days however many gel packs go in. So every shipment without an explicit lane leans on the expensive end — not because the physics is wrong, but because one static number stands in for every destination. That makes the lane ambient the *first* candidate to fix rather than the last, which reorders the list this entry used to give.
+What remained after that measurement was the single 22C default, and that is what `config/lanes.yaml` fixed — see the entry above. The physics was never wrong; one number standing in for every destination was.
 
-Fixing it needs no measured data: a zone-based or seasonal ambient is an assumption like the current one, stated rather than fitted, and it is the adjacent open question below. Calibrating UA against real transit data is no longer on the table at all — E3 was removed with the rest of dispatch, and section 5 now says the model will not be calibrated. That makes the ambient assumption the only thermal lever left, which is a reason to state it carefully rather than to widen it.
+Calibrating UA against real transit data is no longer on the table at all — E3 was removed with the rest of dispatch, and section 5 says the model will not be calibrated. The ambient assumption is therefore the only thermal lever left, which is a reason to state it carefully rather than to widen it.
 
 `TestThermalGate` pins the *properties* rather than the numbers — more gel packs never arrives warmer, the larger box is never thermally better, zero gel packs never survives. Those should survive recalibration; no constant should, which is why none is pinned.
 

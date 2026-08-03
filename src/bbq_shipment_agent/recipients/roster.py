@@ -31,7 +31,7 @@ Three failure modes are worth an error rather than a default:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -87,8 +87,23 @@ def slugify(name: str) -> str:
     return slug
 
 
-def load_roster(path: Path | str, *, today: date | None = None) -> Roster:
-    """Parse the run input file. See the module docstring for the strictness."""
+def load_roster(
+    path: Path | str,
+    *,
+    today: date | None = None,
+    lane_book: Any = None,
+) -> Roster:
+    """Parse the run input file. See the module docstring for the strictness.
+
+    `lane_book` supplies the ambient assumption for recipients that declare no
+    lane of their own. Without one they fall back to `DEFAULT_LANE`, which is
+    a single national number and the thing design 10 identified as collapsing
+    the thermal envelope — so the CLI always passes one.
+
+    An explicit `lane:` in the roster still wins. The book is the default, not
+    an override: an operator who has stated an ambient for a recipient knows
+    something the state code does not.
+    """
     path = Path(path)
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -140,6 +155,18 @@ def load_roster(path: Path | str, *, today: date | None = None) -> Roster:
     for shipment in shipments:
         if shipment.required_ship_date is not None:
             ship_day_for(shipment.required_ship_date)
+
+    if lane_book is not None:
+        # Applied after ship dates are resolved, because the seasonal offset
+        # comes off the month being shipped in. The earliest candidate date is
+        # used for the whole run -- see `LaneBook.lane_for`.
+        season = ship_dates[0]
+        shipments = [
+            s
+            if s.lane is not DEFAULT_LANE
+            else replace(s, lane=lane_book.lane_for(s.address.state, season))
+            for s in shipments
+        ]
 
     return Roster(
         origin=origin, shipments=tuple(shipments), ship_dates=ship_dates, source=path

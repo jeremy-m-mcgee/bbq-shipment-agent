@@ -1,0 +1,117 @@
+# Ambient temperature assumptions, per destination.
+#
+# EVERY NUMBER IN THIS FILE IS AN ASSUMPTION. None of it was measured, and
+# none of it will be: design section 5 gave up on calibration when E3 was
+# removed, so there is no fitted value to reach for. What this file is for is
+# making the assumption explicit, committed, and arguable — so a surprising
+# plan can be traced back to the belief that produced it.
+#
+# The bands are coarse on purpose. A thermal model with no calibration path
+# has not earned two-decimal ambients, and a file that looked precise would
+# invite exactly the false confidence the thermal record exists to prevent.
+#
+# This models ambient from the destination state, which is a *proxy* for the
+# lane. A parcel sits in trucks, warehouses and on a doorstep, and the ambient
+# that matters is a blend along the whole route. Better than one national
+# number; worse than instrumentation.
+
+# What an unmapped destination gets. Deliberately the hottest band: an
+# unstated assumption should not be the optimistic one when a food safety gate
+# depends on it. Marking a lane cool is how you earn a cheaper plan.
+#
+# Consequence, stated plainly: leaving this file alone makes plans MORE
+# expensive than the old single 22C default did, not less. That is the point.
+default_band: hot
+
+bands:
+  hot: 32.0
+  warm: 27.0
+  temperate: 22.0
+  cool: 16.0
+
+# Destination state -> band. Partial by design.
+#
+# Fill in the states you actually ship to and delete the rest; twenty-two
+# packets a few times a year will not touch most of this. The assignments
+# below are broad-region guesses, not climate data — if you know a lane, say
+# so here rather than trusting the default.
+states:
+  # Deep south / desert southwest
+  AL: hot
+  AR: hot
+  AZ: hot
+  FL: hot
+  GA: hot
+  LA: hot
+  MS: hot
+  NV: hot
+  OK: hot
+  SC: hot
+  TX: hot
+
+  # Mid-Atlantic, lower midwest, inland California
+  DC: warm
+  DE: warm
+  KS: warm
+  KY: warm
+  MD: warm
+  MO: warm
+  NC: warm
+  NJ: warm
+  TN: warm
+  VA: warm
+
+  # Northeast, upper midwest, Pacific coast
+  CA: temperate
+  CO: temperate
+  CT: temperate
+  IA: temperate
+  IL: temperate
+  IN: temperate
+  MA: temperate
+  MI: temperate
+  NE: temperate
+  NY: temperate
+  OH: temperate
+  OR: temperate
+  PA: temperate
+  RI: temperate
+  UT: temperate
+  WA: temperate
+  WI: temperate
+  WV: temperate
+
+  # Northern tier and high altitude
+  AK: cool
+  ID: cool
+  ME: cool
+  MN: cool
+  MT: cool
+  ND: cool
+  NH: cool
+  NM: cool
+  SD: cool
+  VT: cool
+  WY: cool
+
+# Degrees added to the band, by month of the ship date. Optional — delete the
+# whole section to ignore season. Design 10 asked for this and noted there is
+# no calibration data behind it; there still is not, so these are the same
+# kind of stated guess as the bands.
+#
+# Candidate ship dates in a run are a Saturday, Monday and Tuesday of one
+# week, so a run takes one offset. A run spanning a month boundary takes the
+# earlier month's, which is immaterial at this resolution.
+seasonal_offset_c:
+  1: -8
+  2: -7
+  3: -4
+  4: -1
+  5: 1
+  6: 3
+  7: 4
+  8: 4
+  9: 1
+  10: -2
+  11: -5
+  12: -7

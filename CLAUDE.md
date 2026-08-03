@@ -47,13 +47,15 @@ Remaining: 5 (B1), 6 (tool contract), 7 (B3), 8 (D2), 9 (C4), 10 (B4).
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → C1–C6 → D1
 - `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), verification.py (D1)
 - `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4, deferred, no caller)
-- `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), solve (C5), manifest (C6)
+- `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), solve (C5), manifest (C6)
+- `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
 - `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
 - `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
 - `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
 - `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
+- `config/lanes.yaml` — ambient per destination band + month. Stated assumptions, never measured; an unmapped state takes the *hottest* band on purpose.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
 - `recipients.yaml` — the run input. Gitignored (home addresses); `recipients.example.yaml` is the template.

@@ -34,6 +34,7 @@ from .configurations import (
     heaviest_variant,
     parcel_variants,
 )
+from .lanes import DEFAULT_LANES_PATH, LaneBook, LaneBookError
 from .load import Load, define_load
 from .manifest import (
     Excluded,
@@ -87,12 +88,15 @@ __all__ = [
     "CarrierPlan",
     "Configuration",
     "DEFAULT_LANE",
+    "DEFAULT_LANES_PATH",
     "Enumeration",
     "EvaluatedConfiguration",
     "Excluded",
     "GEL_PACK_LATENT_HEAT_J_KG",
     "GEL_PACK_MASS_KG",
     "Lane",
+    "LaneBook",
+    "LaneBookError",
     "Load",
     "LumpedCapacitanceModel",
     "MAX_ARRIVAL_TEMP_C",

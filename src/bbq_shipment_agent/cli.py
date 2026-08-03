@@ -42,7 +42,16 @@ from .capabilities import (
 from .context import ContextError
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
 from .plan import plan_run
-from .planning import QuotingUnavailable, RecordedQuoter, ShippoQuoter, render
+from .planning import (
+    DEFAULT_LANE,
+    DEFAULT_LANES_PATH,
+    LaneBook,
+    LaneBookError,
+    QuotingUnavailable,
+    RecordedQuoter,
+    ShippoQuoter,
+    render,
+)
 from .recipients import (
     DEFAULT_ROSTER_PATH,
     AddressValidationUnavailable,
@@ -219,6 +228,22 @@ def _cmd_run_init(args: argparse.Namespace) -> int:
             client.close()
 
 
+def _lane_book(args: argparse.Namespace):
+    """The committed ambient assumptions, or None to fall back to 22C.
+
+    A missing file is not an error: `DEFAULT_LANE` still works and is what
+    every test uses. It is worth saying out loud though, because one national
+    ambient is what design 10 identified as collapsing the thermal envelope.
+    """
+    if not args.lanes.exists():
+        print(
+            f"note: {args.lanes} not found; every destination assumed "
+            f"{DEFAULT_LANE.ambient_c}C. See design 10."
+        )
+        return None
+    return LaneBook.load(args.lanes)
+
+
 def _quoter(args: argparse.Namespace):
     """Recorded quotes if asked for, live Shippo otherwise.
 
@@ -274,7 +299,7 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
     blocker -- there is a plan to look at either way, but neither is something
     to hand over as though it were finished.
     """
-    roster = load_roster(args.recipients)
+    roster = load_roster(args.recipients, lane_book=_lane_book(args))
     client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
     # Held open through planning rather than closed after A1: D1 reports its
     # metrics against the variation LaunchDarkly served, and that needs the
@@ -344,7 +369,7 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
     that ends in approved, approved with exclusions, or rejected -- which is
     now the last thing that happens to a run, since dispatch was removed.
     """
-    roster = load_roster(args.recipients)
+    roster = load_roster(args.recipients, lane_book=_lane_book(args))
     client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
     try:
         connection, provider, agent_source = _flag_sources(args, client)
@@ -629,6 +654,10 @@ def build_parser() -> argparse.ArgumentParser:
             "--backoff", type=float, default=4.0,
             help="seconds between quote attempts, multiplied each time (default: 4)",
         )
+        sub.add_argument(
+            "--lanes", type=Path, default=DEFAULT_LANES_PATH,
+            help=f"ambient assumptions per destination (default: {DEFAULT_LANES_PATH})",
+        )
     review.set_defaults(handler=_cmd_run_review)
 
     # Neither takes a packet count: the number is knowable from the roster,
@@ -651,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
         CapabilityConfigError,
         ContextError,
         KillSwitchEngaged,
+        LaneBookError,
         ModelUnavailable,
         QuotingUnavailable,
         RosterError,
