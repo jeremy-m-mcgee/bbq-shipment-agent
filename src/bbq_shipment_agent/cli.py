@@ -60,6 +60,7 @@ from .recipients import (
     ShippoAddressValidator,
     extract_from_images,
     load_roster,
+    to_shipments,
 )
 from .run import (
     LaunchDarklyProvider,
@@ -566,9 +567,17 @@ def _review(args: argparse.Namespace, run, roster, result, client) -> int:
     # The deduped set, not B2's output: reviewing a plan that still contains
     # a doorstep's second recipient would offer the operator edits on a
     # shipment the manifest never had.
+    #
+    # Converted through `to_shipments`, because `suppression.eligible` is
+    # phase B's `Recipient` and D2 solves over phase C's `Shipment`. This
+    # crossed the B4 -> C1 boundary untranslated and `run review` died on
+    # `Recipient has no attribute recipient_key` the first time anyone drove
+    # the conversation end to end -- the tests built their session from
+    # `to_shipments(...)` by hand, so the seam the CLI actually uses was the
+    # one thing not covered.
     session = ReviewSession(
         run,
-        result.suppression.eligible,
+        to_shipments(result.suppression.eligible),
         roster.origin,
         roster.ship_dates,
         ledger_root=args.ledger,

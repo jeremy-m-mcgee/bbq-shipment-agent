@@ -451,3 +451,64 @@ class TestRepairIsInTheSpine:
         assert not result.applied_repairs
         # The escalations are B2's, untouched by what B3 would have done.
         assert result.escalated == result.validation.escalated
+
+
+class TestThePlanReviewSeam:
+    """What `run plan` produces is what `run review` consumes.
+
+    This is the one join the suite did not exercise. `test_review.py` builds
+    its `ReviewSession` from `to_shipments(roster.recipients)` by hand, and
+    `test_plan.py` stopped at the manifest, so the boundary the CLI actually
+    crosses -- `PlanResult` in, `ReviewSession` out -- was covered from both
+    sides and not in the middle.
+
+    It was broken the whole time. `_review` passed `suppression.eligible`
+    straight through, which is phase B's `Recipient`, to a session that solves
+    over phase C's `Shipment`; the first person to drive the conversation end
+    to end got `'Recipient' object has no attribute 'recipient_key'`. Both
+    types carry a name and an address and differ in one field name, which is
+    exactly the kind of near-miss a type boundary exists to catch and an
+    untested seam lets through.
+    """
+
+    def _session(self, workspace, result, roster):
+        from bbq_shipment_agent.recipients import to_shipments
+        from bbq_shipment_agent.review import ReviewSession
+
+        return ReviewSession(
+            result.run,
+            to_shipments(result.suppression.eligible),
+            roster.origin,
+            roster.ship_dates,
+            ledger_root=workspace / "ledger",
+            quoter=RecordedQuoter.from_file(QUOTES),
+            escalated=result.validation.escalated,
+            suppressed=result.suppression.suppressed,
+        )
+
+    def test_a_planned_run_opens_a_review(self, workspace):
+        result = run_plan(workspace)
+        roster = load_roster(workspace / "recipients.yaml")
+        session = self._session(workspace, result, roster)
+        assert session.manifest is not None
+        assert session.terminal is None
+
+    def test_the_review_solves_the_same_plan_the_manifest_showed(self, workspace):
+        # Not merely "it constructed": a session that silently solved a
+        # different set would be the same class of bug one layer deeper.
+        result = run_plan(workspace)
+        roster = load_roster(workspace / "recipients.yaml")
+        session = self._session(workspace, result, roster)
+        assert session.total_cost == result.manifest.total_cost
+        assert set(session.carriers) == set(result.manifest.carriers)
+        assert {s.recipient_key for s in session.shipments} == {
+            row.recipient_key for row in result.manifest.rows
+        }
+
+    def test_every_eligible_recipient_crossed_the_boundary(self, workspace):
+        result = run_plan(workspace)
+        roster = load_roster(workspace / "recipients.yaml")
+        session = self._session(workspace, result, roster)
+        assert {s.recipient_key for s in session.shipments} == {
+            r.key for r in result.suppression.eligible
+        }
