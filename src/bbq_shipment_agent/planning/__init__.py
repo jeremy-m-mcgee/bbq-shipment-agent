@@ -33,6 +33,7 @@ from .configurations import (
     enumerate_configurations,
     heaviest_variant,
     parcel_variants,
+    smallest_fitting_box,
 )
 from .lanes import DEFAULT_LANES_PATH, LaneBook, LaneBookError
 from .load import Load, define_load
@@ -135,6 +136,7 @@ __all__ = [
     "evaluate_configurations",
     "heaviest_variant",
     "parcel_variants",
+    "smallest_fitting_box",
     "pin_carriers",
     "render",
     "remediate",

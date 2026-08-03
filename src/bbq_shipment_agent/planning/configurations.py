@@ -135,19 +135,52 @@ class Enumeration:
         return frozenset(c.carrier for c in self.configurations)
 
 
+def smallest_fitting_box(load: Load) -> Box | None:
+    """The smallest box the load physically fits in, or None if none does.
+
+    Design 5's rule, applied rather than merely stated: "the smallest box that
+    physically fits the load wins on cost and on thermal performance
+    simultaneously". A larger box is dominated on both axes at this product
+    weight -- more surface area and so a shorter hold time, plus higher
+    dimensional weight -- and gains nothing back in ballast, because at 1.5 lb
+    the ballast is not there.
+
+    Measured on one live run before this became the rule: at the same lane and
+    the same gel pack count, the small box was cheaper in 35 of 35 comparisons
+    and the large box in none, while `TestBoxGeometry` pins the thermal half
+    of the same claim. Both boxes also cap at `MAX_GEL_PACKS`, so a larger one
+    cannot buy hold time a smaller one cannot.
+
+    Ranked by outer volume, then tare. Both are physical facts about the box,
+    so the choice does not move when the thermal model is re-tuned.
+    """
+    fitting = [box for box in BOXES.values() if load.fits_in(box)]
+    if not fitting:
+        return None
+    return min(fitting, key=lambda box: (box.volume_cm3, box.tare_kg))
+
+
 def parcel_variants(load: Load) -> tuple[ParcelSpec, ...]:
     """Every parcel the packet could physically be shipped in.
 
-    The part of the configuration space we own outright -- box size crossed
-    with gel pack count. Everything else is discovered.
+    The part of the configuration space we own outright. Gel pack count is
+    crossed exhaustively because it is a genuine tradeoff -- more refrigerant
+    is never thermally worse but always weighs more, and C5 wants the cheapest
+    count that clears the gate. Box size is not crossed: `smallest_fitting_box`
+    explains why the larger one can never win.
+
+    This halves the quoting call count, which is the reason it was noticed --
+    a live run spent 49 of 98 parcel quotes on a box that was dominated on
+    every one of them. The correctness argument stands on its own, though, and
+    would hold if quoting were free.
     """
-    variants: list[ParcelSpec] = []
-    for box in BOXES.values():
-        if not load.fits_in(box):
-            continue
-        for gel_packs in range(0, min(box.max_gel_packs, MAX_GEL_PACKS) + 1):
-            variants.append(ParcelSpec.build(load, box, gel_packs))
-    return tuple(variants)
+    box = smallest_fitting_box(load)
+    if box is None:
+        return ()
+    return tuple(
+        ParcelSpec.build(load, box, gel_packs)
+        for gel_packs in range(0, min(box.max_gel_packs, MAX_GEL_PACKS) + 1)
+    )
 
 
 def heaviest_variant(variants: tuple[ParcelSpec, ...]) -> ParcelSpec:

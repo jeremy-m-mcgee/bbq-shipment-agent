@@ -75,7 +75,26 @@ TRANSIENT_MARKERS: tuple[str, ...] = (
 )
 
 DEFAULT_MAX_ATTEMPTS = 4
-DEFAULT_BACKOFF_S = 2.0
+#: Seconds, multiplied by the attempt number. Lowered from 2.0 after two live
+#: runs on the same lanes were measured.
+#:
+#: At the CLI's old 4.0: 20 of 98 parcels retried, every one succeeded by the
+#: fifth attempt of eight, and the run spent 800 seconds asleep -- roughly two
+#: thirds of its wall clock. The attempts were doing the work; the waiting
+#: between them was mostly idle.
+#:
+#: At 1.0 (CLI 1.5) the same lanes gave `{1: 45, 5: 1, 6: 2, 7: 1}`. Sleep fell
+#: to 92 seconds, but the parcels that did retry needed *more* attempts and one
+#: came within a single attempt of the ceiling -- which aborts the run. That is
+#: what too short looks like: retrying into a limit that has not cleared.
+#:
+#: So this is the second correction, not the first: fast enough to matter,
+#: slow enough to keep headroom. How fast the limit actually clears is still
+#: NOT measured, and this is a guess narrowed by two observations rather than
+#: a fitted value. `max_attempts` stays untouched -- it is what bounds the
+#: failure, and shortening the wait is safe in a way shortening the attempts
+#: would not be.
+DEFAULT_BACKOFF_S = 1.5
 
 
 class QuotingUnavailable(Exception):

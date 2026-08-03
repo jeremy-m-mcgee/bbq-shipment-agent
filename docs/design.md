@@ -146,7 +146,9 @@ Deterministic, and a pure function of its input: B4 reads no prior state, so the
 Packet contents to weight and dimensions per shipment. Currently uniform.
 
 **C2. Enumerate configurations.**
-Cross product of box size, gel pack count, ship date, and carrier service, per shipment. All four carriers at this stage. No pair restriction yet.
+Cross product of gel pack count, ship date, and carrier service, per shipment, in the smallest box the load fits in. All four carriers at this stage. No pair restriction yet.
+
+Box size is a fit check rather than an axis of the cross product — see section 5, where the larger box turns out to be dominated on cost and thermal margin at once. Gel pack count stays crossed exhaustively, because it is a genuine tradeoff: more refrigerant is never thermally worse but always weighs more, so the count C5 wants is the cheapest one that clears the gate, and that is not knowable without quoting.
 
 **C3. Thermal gate.**
 Filter to configurations where predicted arrival temperature stays at or below 4.4C. See section 5.
@@ -242,7 +244,13 @@ At 1.5 lb of product, the thermal regime is unusual: gel packs carry roughly 77 
 
 At this product weight, a larger box means more surface area, higher heat loss, and shorter hold time. It also increases dimensional weight charges. There is no compensating benefit from added mass, because the mass is not there.
 
-**The smallest box that physically fits the load wins on cost and on thermal performance simultaneously.** The two box sizes are enumerated anyway for completeness, but the larger one should almost never be selected, and its selection is a signal worth investigating.
+**The smallest box that physically fits the load wins on cost and on thermal performance simultaneously.** So that is the rule C2 applies: only the smallest fitting box is quoted.
+
+This paragraph used to end "the two box sizes are enumerated anyway for completeness, but the larger one should almost never be selected, and its selection is a signal worth investigating." The signal could never fire. Being dominated on both axes at once, the larger box cannot be selected at all — and it cannot rescue an infeasible shipment either, since it is never thermally better and caps at the same six gel packs. Enumerating it bought a diagnostic that was unreachable by construction.
+
+Measured on a live seven-recipient run before the change: at the same lane and the same gel pack count, the small box was cheaper in 35 of 35 comparisons and the larger in none, while `TestBoxGeometry` pins the thermal half. That run spent 49 of its 98 parcel quotes on the dominated box.
+
+Both sizes stay defined, because "smallest box that fits" needs something to be smallest *of*, and a load that outgrows the small cavity still takes the larger one. What changed is that the choice is a fit check rather than a quoted comparison.
 
 ### Inputs
 

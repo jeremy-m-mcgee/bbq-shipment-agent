@@ -148,8 +148,16 @@ _WALL_M = 0.05
 #: Design 3: two box sizes. Design 5 is emphatic that at 1.5 lb the larger one
 #: is strictly worse -- more surface area, shorter hold time, higher
 #: dimensional weight, and no compensating thermal mass because the mass is
-#: not there. It is enumerated for completeness and its selection is a signal
-#: worth investigating, which is why D1 checks for it.
+#: not there.
+#:
+#: Both are defined; only the smallest one the load fits in is quoted. This
+#: entry used to say the larger was "enumerated for completeness and its
+#: selection is a signal worth investigating", which could not happen: being
+#: dominated on both cost and thermal margin, it can never be selected, so the
+#: signal can never fire. It also cannot rescue an infeasible shipment, since
+#: it is never thermally better and caps at the same `MAX_GEL_PACKS`. See
+#: `configurations.smallest_fitting_box`. It stays defined because the rule is
+#: "smallest box that fits", which needs something to be larger than.
 BOXES: dict[BoxSize, Box] = {
     BoxSize.SMALL: Box(
         size=BoxSize.SMALL,

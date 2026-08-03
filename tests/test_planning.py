@@ -27,6 +27,7 @@ from bbq_shipment_agent.planning import (
     evaluate_configurations,
     heaviest_variant,
     parcel_variants,
+    smallest_fitting_box,
     ship_day_for,
     thermal_gate,
 )
@@ -92,9 +93,33 @@ class TestBoxGeometry:
 
 
 class TestParcelVariants:
-    def test_it_crosses_box_size_with_gel_pack_count(self, load):
+    def test_it_enumerates_gel_counts_for_one_box(self, load):
+        # Gel count is a real tradeoff and is crossed exhaustively. Box size
+        # is not: design 5's larger box is dominated on cost and on thermal
+        # margin at once, so quoting it buys nothing.
         variants = parcel_variants(load)
-        assert len(variants) == len(BOXES) * (MAX_GEL_PACKS + 1)
+        assert len(variants) == MAX_GEL_PACKS + 1
+
+    def test_only_the_smallest_fitting_box_is_offered(self, load):
+        assert smallest_fitting_box(load) is BOXES[BoxSize.SMALL]
+        assert {v.box_size for v in parcel_variants(load)} == {BoxSize.SMALL}
+
+    def test_a_load_too_big_for_the_small_box_takes_the_larger_one(self, load):
+        # The rule is "smallest box that fits", not "always the small box".
+        # A load that outgrows the small cavity still gets quoted.
+        from dataclasses import replace
+
+        bulky = replace(load, dimensions_m=(0.2, 0.2, 0.2))
+        assert not bulky.fits_in(BOXES[BoxSize.SMALL])
+        assert smallest_fitting_box(bulky) is BOXES[BoxSize.LARGE]
+        assert {v.box_size for v in parcel_variants(bulky)} == {BoxSize.LARGE}
+
+    def test_a_load_that_fits_nothing_enumerates_nothing(self, load):
+        from dataclasses import replace
+
+        enormous = replace(load, dimensions_m=(2.0, 2.0, 2.0))
+        assert smallest_fitting_box(enormous) is None
+        assert parcel_variants(enormous) == ()
 
     def test_gel_packs_only_change_weight(self, load):
         small = [v for v in parcel_variants(load) if v.box_size is BoxSize.SMALL]
@@ -105,8 +130,9 @@ class TestParcelVariants:
         variants = parcel_variants(load)
         heaviest = heaviest_variant(variants)
         # A carrier that takes the worst case takes the rest; pinning off the
-        # smallest can turn a genuine restriction into a hard failure.
-        assert heaviest.box_size is BoxSize.LARGE
+        # smallest can turn a genuine restriction into a hard failure. With one
+        # box in play the worst case is its fullest gel load.
+        assert heaviest.box_size is BoxSize.SMALL
         assert heaviest.gel_packs == MAX_GEL_PACKS
 
 
@@ -222,21 +248,24 @@ class TestThermalGate:
         assert temps == sorted(temps, reverse=True)
 
     def test_the_larger_box_is_never_thermally_better(self, load, quoter):
+        # A property of the boxes, not of what C2 happens to enumerate. C2 now
+        # quotes only the smallest box that fits, so pairing enumerated
+        # configurations by box size would compare nothing and pass vacuously.
+        # Holding the service and the transit estimate fixed and swapping the
+        # box isolates the geometry, which is what the claim is about.
+        from dataclasses import replace
+
         model = LumpedCapacitanceModel()
         lane = Lane("l", 22.0)
         configurations = enumerate_all(load, quoter, (MONDAY,)).configurations
-        paired: dict[tuple, dict] = {}
-        for c in configurations:
-            paired.setdefault((c.service_name, c.gel_packs), {})[c.box_size] = c
         compared = 0
-        for sizes in paired.values():
-            if len(sizes) < 2:
-                continue
+        for configuration in configurations:
+            larger = replace(configuration, box_size=BoxSize.LARGE)
             compared += 1
             assert model.predict_arrival_temp_c(
-                load, sizes[BoxSize.LARGE], lane
-            ) >= model.predict_arrival_temp_c(load, sizes[BoxSize.SMALL], lane)
-        assert compared, "no service quoted both box sizes; comparison was vacuous"
+                load, larger, lane
+            ) >= model.predict_arrival_temp_c(load, configuration, lane)
+        assert compared, "nothing was enumerated; comparison was vacuous"
 
     def test_a_warmer_lane_is_never_easier(self, load, quoter):
         configurations = enumerate_all(load, quoter).configurations

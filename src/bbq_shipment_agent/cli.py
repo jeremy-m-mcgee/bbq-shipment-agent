@@ -759,8 +759,8 @@ def build_parser() -> argparse.ArgumentParser:
             help="quote attempts before a pinned carrier is called missing (default: 8)",
         )
         sub.add_argument(
-            "--backoff", type=float, default=4.0,
-            help="seconds between quote attempts, multiplied each time (default: 4)",
+            "--backoff", type=float, default=2.5,
+            help="seconds between quote attempts, multiplied each time (default: 2.5)",
         )
         sub.add_argument(
             "--screenshots", type=Path, default=None,
