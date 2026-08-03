@@ -24,9 +24,65 @@ prefix commands with `UV_ENV_FILE=$PWD/.env` or nothing will be configured.
 uv run bbq-shipment-agent run init      # A1 only: resolve capabilities, snapshot AI Configs
 uv run bbq-shipment-agent run plan      # A1 -> B -> C -> D1, prints a verified manifest
 uv run bbq-shipment-agent run review    # the above, then the D2 conversation
+uv run bbq-shipment-agent ui            # the same thing in a browser, with a screenshot picker
 uv run bbq-shipment-agent ledger verify # parse every JSONL line, no database
 uv run bbq-shipment-agent ledger rebuild
 ```
+
+## The web UI
+
+```bash
+uv run bbq-shipment-agent ui            # http://127.0.0.1:8765
+```
+
+Pick which screenshots B1 reads by looking at them, then generate a manifest.
+That is the one thing a terminal cannot do: `--screenshot-count 3` takes three
+of seven and prints which three, but you cannot *choose* three without seeing
+them. The picker captions each image from `ground_truth.json` where there is
+one — how many recipients it holds, and how hard they are to read — so you can
+aim a run at the awkward cases rather than sampling blind.
+
+The page shows what the CLI prints, in the shape it should have been in all
+along: the capability header and the served AI Configs stay at the top instead
+of scrolling past, the manifest is grouped by ship date, and the runner-up
+carrier pairs sit beside the chosen one. Stage progress streams while the run
+goes, because a real run makes a vision call per image and a few hundred rate
+quotes.
+
+It stops where `run plan` stops. There is no approval button — D2 is still the
+`run review` conversation — and no control for the 4.4C threshold, the carrier
+cap or the authority level, because those are a Python constant, a Python
+constant and a committed config file.
+
+It binds `127.0.0.1` with no host option and has no authentication. That is the
+trade: nothing off this machine can reach it, and it serves real home addresses
+and screenshots of people's private messages.
+
+To drive it without spending anything, launch it with the recordings:
+
+```bash
+uv run bbq-shipment-agent ui --offline --ledger /tmp/ui-ledger \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
+  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json \
+  --extractions tests/fixtures/b1-extractions.json \
+  --repairs tests/fixtures/b3-repairs.json
+```
+
+The **replay recordings** checkbox is then on by default; unchecking it makes
+the same run live.
+
+One honest limit. `--extractions` and `--repairs` replay B1 and B3 for any
+subset of the fixture screenshots — the recording is matched on image content,
+so reading two of seven replays the right two. But
+`shippo-quotes-sf-dc.json` holds one lane, San Francisco to Washington, and the
+22 people in those screenshots live in twenty-odd other places. A replayed
+screenshot run therefore gets as far as C2 and stops, because `RecordedQuoter`
+refuses to invent a rate it never recorded — which is the behaviour you want.
+Fully offline works today for the **roster** path (`--recipients
+tests/fixtures/roster-sf-dc.yaml`, then tick "all" with no screenshots).
+Screenshots plus recorded quotes needs those lanes recorded first.
 
 ### Reviewing a plan, with recipients from screenshots
 
@@ -77,6 +133,8 @@ uv run bbq-shipment-agent run plan --offline \
 | path | what |
 |---|---|
 | `src/bbq_shipment_agent/plan.py` | the spine: A1 → B2 → B4 → C1–C6 → D1 |
+| `src/bbq_shipment_agent/wiring.py` | `RunOptions` and the only place a live client is built |
+| `src/bbq_shipment_agent/ui/` | the local web app: routes, worker thread, view model, templates |
 | `src/bbq_shipment_agent/recipients/` | phase B — extraction, validation, repair, dedupe |
 | `src/bbq_shipment_agent/planning/` | phase C — catalog, rates, configurations, thermal, solve, manifest |
 | `src/bbq_shipment_agent/review.py` | D2 edit handling and terminal states |

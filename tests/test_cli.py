@@ -1,17 +1,19 @@
-"""The argument parser.
+"""The argument parser, and the adapter from it to `RunOptions`.
 
 Thin on purpose, and it exists because of a real miss: a `build_parser` that
 raised `ArgumentError` on every invocation passed the whole suite, because
 nothing had ever called it. A CLI that cannot start is the most complete
 failure the program has, and it was the only one not covered.
-"""
 
-import argparse
+The screenshot-selection tests moved to `test_wiring.py` with the code they
+cover. What is left here is parsing, plus `_options`, which is the seam the UI
+made necessary: the CLI and the browser have to arrive at the same options
+object, and only one of them has a Namespace.
+"""
 
 import pytest
 
-from bbq_shipment_agent.cli import _roster, _screenshots, build_parser
-from bbq_shipment_agent.recipients import ExtractionError
+from bbq_shipment_agent.cli import _options, build_parser
 
 
 @pytest.fixture(scope="module")
@@ -32,6 +34,7 @@ class TestItBuilds:
             ["run", "init"],
             ["run", "plan"],
             ["run", "review"],
+            ["ui"],
         ],
     )
     def test_every_subcommand_parses_and_has_a_handler(self, parser, argv):
@@ -51,6 +54,8 @@ class TestPlanningArguments:
                 "--quotes", "q.json",
                 "--validations", "v.json",
                 "--completions", "c.json",
+                "--extractions", "e.json",
+                "--repairs", "p.json",
                 "--cache", ".c",
                 "--max-attempts", "3",
                 "--backoff", "1.5",
@@ -72,9 +77,10 @@ class TestPlanningArguments:
         assert args.screenshot_count is None
         assert args.screenshot_seed is None
 
-    @pytest.mark.parametrize("command", ["init", "plan", "review"])
+    @pytest.mark.parametrize("command", ["init", "plan", "review", "ui"])
     def test_every_run_command_takes_the_a1_arguments(self, parser, command):
-        args = parser.parse_args(["run", command, "--profile", "full"])
+        argv = [command] if command == "ui" else ["run", command]
+        args = parser.parse_args(argv + ["--profile", "full"])
         assert args.profile == "full"
         assert args.config and args.snapshot and args.ledger
 
@@ -91,85 +97,63 @@ class TestPlanningArguments:
         assert args.backoff > DEFAULT_BACKOFF_S
 
 
-class TestScreenshotSampling:
-    """`--screenshot-count` picks a subset of B1's input.
+class TestTheUiCommand:
+    def test_it_serves_the_fixture_screenshots_by_default(self, parser):
+        # A picker with nothing to pick is a poor first screen, and this is
+        # the only directory the repo is guaranteed to have.
+        args = parser.parse_args(["ui"])
+        assert args.screenshots.name == "screenshots"
 
-    The property that matters is not that the choice is random but that it is
-    *named*: extraction accuracy is per-image, so a run that read three of
-    seven is only comparable to another run if you can tell which three.
-    """
-
-    @pytest.fixture
-    def images(self, tmp_path):
-        for i in range(7):
-            (tmp_path / f"{i:02d}-shot.png").write_bytes(b"")
-        (tmp_path / "README.md").write_text("not a screenshot", encoding="utf-8")
-        return tmp_path
-
-    def args(self, images, count=None, seed=None):
-        return argparse.Namespace(
-            screenshots=images, screenshot_count=count, screenshot_seed=seed
+    def test_it_takes_the_planning_arguments_too(self, parser):
+        # The form supplies the selection and the profile. Everything else
+        # still arrives as a launch default, so the UI must accept them.
+        args = parser.parse_args(
+            ["ui", "--quotes", "q.json", "--extractions", "e.json", "--offline"]
         )
+        assert str(args.quotes) == "q.json"
+        assert args.offline is True
 
-    def test_no_count_reads_the_whole_directory(self, images):
-        assert len(_screenshots(self.args(images))) == 7
+    def test_it_has_a_port_and_no_host(self, parser):
+        # Loopback is not configurable on purpose: the page serves home
+        # addresses and has no authentication.
+        args = parser.parse_args(["ui", "--port", "9000"])
+        assert args.port == 9000
+        assert not hasattr(args, "host")
 
-    def test_only_png_files_are_candidates(self, images):
-        assert all(p.suffix == ".png" for p in _screenshots(self.args(images)))
 
-    def test_a_count_reads_exactly_that_many(self, images):
-        assert len(_screenshots(self.args(images, count=3, seed=1))) == 3
+class TestOptionsAdapter:
+    """`_options` is where a parsed command line becomes what `wiring` takes."""
 
-    def test_the_sample_comes_from_the_directory(self, images):
-        sample = _screenshots(self.args(images, count=3, seed=1))
-        assert set(sample) <= set(images.glob("*.png"))
-        assert len(set(sample)) == 3  # no image read twice
-
-    def test_the_same_seed_reads_the_same_sample(self, images):
-        first = _screenshots(self.args(images, count=3, seed=42))
-        second = _screenshots(self.args(images, count=3, seed=42))
-        assert first == second
-
-    def test_the_sample_is_ordered_regardless_of_the_draw(self, images):
-        # B1 reads in a stable order, so two runs that drew the same images
-        # cannot differ in the sequence they were handed to the model.
-        sample = _screenshots(self.args(images, count=4, seed=7))
-        assert list(sample) == sorted(sample)
-
-    def test_a_seed_is_generated_and_reported_when_none_is_given(self, images, capsys):
-        _screenshots(self.args(images, count=2))
-        assert "seed" in capsys.readouterr().out
-
-    def test_the_chosen_files_are_named_in_the_output(self, images, capsys):
-        sample = _screenshots(self.args(images, count=3, seed=5))
-        printed = capsys.readouterr().out
-        assert all(p.name in printed for p in sample)
-
-    def test_asking_for_more_than_exist_is_refused(self, images):
-        # Not clamped: a run silently reading 7 when told 10 looks like a run
-        # that got what it asked for.
-        with pytest.raises(ExtractionError, match="exceeds"):
-            _screenshots(self.args(images, count=10))
-
-    def test_asking_for_none_is_refused(self, images):
-        with pytest.raises(ExtractionError, match="at least 1"):
-            _screenshots(self.args(images, count=0))
-
-    def test_an_empty_directory_is_still_refused(self, tmp_path):
-        with pytest.raises(ExtractionError, match="no .png"):
-            _screenshots(self.args(tmp_path, count=1))
-
-    def test_sampling_without_a_directory_to_sample_is_refused(self, tmp_path):
-        # Otherwise the option is silently ignored, which reads as though a
-        # sample were taken.
-        args = argparse.Namespace(
-            screenshots=None,
-            screenshot_count=3,
-            screenshot_seed=None,
-            recipients=tmp_path / "r.yaml",
+    def test_a_count_becomes_a_selection(self, parser):
+        options = _options(
+            parser.parse_args(
+                ["run", "plan", "--screenshots", "s", "--screenshot-count", "2"]
+            )
         )
-        with pytest.raises(ExtractionError, match="was not given"):
-            _roster(args)
+        assert options.selection.count == 2
+        assert options.selection.explicit is None
+
+    def test_no_sampling_arguments_means_no_selection(self, parser):
+        # Not an empty selection: absent means "read the directory", and an
+        # empty one would have to mean something else.
+        options = _options(parser.parse_args(["run", "plan", "--screenshots", "s"]))
+        assert options.selection is None
+
+    def test_the_replay_paths_carry_through(self, parser):
+        options = _options(
+            parser.parse_args(
+                ["run", "plan", "--quotes", "q.json", "--repairs", "p.json"]
+            )
+        )
+        assert str(options.quotes) == "q.json"
+        assert str(options.repairs) == "p.json"
+
+    def test_init_has_no_planning_arguments_and_still_adapts(self, parser):
+        # `run init` never sees --cache or --screenshots. The adapter has to
+        # cope, or adding an option to one command breaks another.
+        options = _options(parser.parse_args(["run", "init", "--packet-count", "22"]))
+        assert options.packet_count == 22
+        assert options.screenshots is None
 
 
 class TestRefusals:

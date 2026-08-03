@@ -711,6 +711,25 @@ Three readings, and they imply different tool grants. The agent reports and the 
 
 The instruction text shipped in `config/ld-snapshot.json` assumes the first reading, because it is the one consistent with the tool grant. Recorded here because a future editor of that text will hit the same ambiguity.
 
+**A second front-end — decided: a local web app, and where its boundary is.** `bbq-shipment-agent ui` serves the pipeline on `127.0.0.1`, and the reason it exists is one screen: choosing which screenshots B1 reads. Section 6.2 makes B1 the only stage with a ground-truth answer key, which makes *which images were read* a real variable rather than an incidental one — and `--screenshot-count 3` can take three of seven and name them, but cannot let you choose three, because a terminal cannot show you an iMessage thread. Everything else the page does is presentation of what `run plan` already prints.
+
+Adding it moved one claim. `cli.py` used to be the only place the live paths were assembled, and that is now `wiring.py`, which both front-ends go through. The property being protected is unchanged and is the reason the move was worth doing rather than copying the wiring: exactly one module constructs anything that opens a socket, so no test can open one by importing something.
+
+Four rules, and each one is a thing a UI makes easy to get wrong:
+
+- **The form configures a run, not the system.** There is no control for the 4.4C threshold, the carrier cap or the authority level, because those are a Python constant, a Python constant and a committed config file. A control that existed and was ignored by the handler would still be a lie about what the system is.
+- **The ledger path is fixed at launch, not on the form.** Clicking a button feels cheaper than typing a command and the append is just as real, so the target is shown on the page and cannot be moved from it.
+- **Loopback with no host option and no authentication.** The page serves validated home addresses and screenshots of private messages. "Nothing off this machine can reach it" is the whole security model, and a `--host` flag would retire it silently.
+- **What was read is recorded, not just displayed.** A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing, so the filenames go on the run row in `evaluation_reasons`. Section 2 requires a surprising run to be diagnosable from the committed JSONL alone, and a UI that let you pick images without recording the pick would have broken that for the one stage where the choice is measurable.
+
+It stops where `run plan` stops: no approval button, no edits. D2 is a conversation and belongs in the review, and section 4's edit-handling table is control flow that a form would have to re-implement. What the result page does do is keep its row model the same as `ReviewSession.manifest`, so that when D2 does arrive in the browser it is a pane beside the manifest rather than a second manifest.
+
+Building it surfaced one gap and sharpened two. **B1 and B3 had no replay path**, so the screenshot route could not be exercised without paying for vision calls, even though `tests/fixtures/b1-extractions.json` and `b3-repairs.json` existed — both were replayed by a class living inside a test. `RecordedVision` and `RecordedConversation` are now library types behind `--extractions` and `--repairs`. `RecordedVision` matches on image *content* rather than call order, which the old test helper could not: a picker that reads image five without reading one to four breaks an order-keyed replay silently, and returns the wrong screenshot's recipients.
+
+What that does not buy is a fully offline screenshot run. `shippo-quotes-sf-dc.json` holds one lane and the fixture screenshots hold twenty-odd destinations, so a replayed screenshot run reaches C2 and stops with `RecordedQuoter` refusing to invent a rate — correct behaviour, and the reason the offline demo path is the roster file rather than the pictures. Recording those lanes is the same task as recording B3's proposed addresses, noted above.
+
+That second gap is unchanged and is now more visible: B3's replay escalates where a live run repairs, and a demo run through the UI shows that escalation list to whoever is watching, rather than burying it in a test that asserts shape.
+
 ---
 
 ## 11. Build order

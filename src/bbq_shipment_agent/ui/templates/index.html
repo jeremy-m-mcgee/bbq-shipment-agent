@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block body %}
+
+{% if active %}
+<div class="notice">
+  A run is already going —
+  <a href="/runs/{{ active.id }}">watch {{ active.id }}</a>. One at a time: two
+  runs would append to the same ledger and quote the same lanes twice.
+</div>
+{% endif %}
+
+<form method="post" action="/runs" id="setup">
+<div class="grid2">
+
+  <div>
+    <h2>Screenshots &mdash; B1 reads these</h2>
+    <div class="panel">
+      {% if screenshots %}
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <label class="check" style="margin:0">
+          <input type="radio" name="mode" value="explicit" checked> pick images
+        </label>
+        <label class="check" style="margin:0">
+          <input type="radio" name="mode" value="sample"> random sample
+        </label>
+        <label class="check" style="margin:0">
+          <input type="radio" name="mode" value="all"> all {{ screenshots|length }}
+        </label>
+        <span style="flex:1"></span>
+        <button type="button" class="ghost" id="all">select all</button>
+        <button type="button" class="ghost" id="none">clear</button>
+      </div>
+
+      <div id="sample" style="display:none;margin-bottom:14px">
+        <div style="display:flex;gap:12px">
+          <label class="field" style="flex:1">how many
+            <input type="number" name="count" min="1" max="{{ screenshots|length }}"
+                   value="2">
+          </label>
+          <label class="field" style="flex:1">seed <span class="dim">(optional)</span>
+            <input type="text" name="seed" placeholder="generated and recorded">
+          </label>
+        </div>
+        <p class="dim" style="font-size:13px;margin:0">
+          Extraction accuracy is per image, so a run that read three of seven is
+          only comparable to another if you can say which three. The seed and the
+          filenames both land on the run row.
+        </p>
+      </div>
+
+      <div class="shots" id="shots">
+        {% for shot in screenshots %}
+        <label class="shot on" data-name="{{ shot.name }}">
+          <input type="checkbox" name="screenshot" value="{{ shot.name }}" checked>
+          <img src="/screenshots/{{ shot.name }}" alt="{{ shot.name }}" loading="lazy">
+          <span class="cap">
+            <b>{{ shot.name }}</b>
+            <span>
+              {%- if shot.expected is not none -%}
+                {{ shot.expected }} recipient{{ '' if shot.expected == 1 else 's' }}
+                {%- if shot.difficulties %} &middot; {{ shot.difficulties|join(', ') }}{% endif -%}
+              {%- else -%}
+                {{ shot.size_kb }} kB
+              {%- endif -%}
+            </span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="dim" style="font-size:12px;margin:12px 0 0">
+        {{ directory }} &mdash; captions come from <code>ground_truth.json</code>
+        where there is one, and say how hard the text is to <em>read</em>, not
+        whether the address is deliverable.
+      </p>
+      {% else %}
+      <p class="dim" style="margin:0">
+        No <code>.png</code> files in <code>{{ directory or 'any directory' }}</code>.
+        The run will take its recipients from the roster file instead.
+        Start the server with <code>--screenshots &lt;dir&gt;</code> to pick images.
+      </p>
+      <input type="hidden" name="no_screenshots" value="1">
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <h2>Run</h2>
+    <div class="panel">
+      <label class="field">profile <span class="dim">(blank uses the config default)</span>
+        <select name="profile">
+          <option value="">default</option>
+          <option value="baseline">baseline</option>
+          <option value="planner_trial">planner_trial</option>
+          <option value="full">full</option>
+        </select>
+      </label>
+      <label class="field">campaign <span class="dim">(run context attribute)</span>
+        <input type="text" name="campaign" value="{{ options.campaign or '' }}"
+               placeholder="aug-cook">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="offline" {% if options.offline %}checked{% endif %}>
+        offline &mdash; skip LaunchDarkly, use the snapshot
+      </label>
+      <label class="check">
+        <input type="checkbox" name="replay" {% if has_recordings %}checked{% else %}disabled{% endif %}>
+        replay recordings
+        {% if not has_recordings %}<span class="dim">(none configured)</span>{% endif %}
+      </label>
+      <p class="dim" style="font-size:12px;margin:0 0 14px">
+        {% if has_recordings %}
+        Unchecked means live calls to Shippo and the model, which cost money and
+        time. Checked replays what was captured.
+        {% else %}
+        Launch with <code>--quotes</code>, <code>--validations</code>,
+        <code>--completions</code>, <code>--extractions</code> and
+        <code>--repairs</code> to enable replay.
+        {% endif %}
+      </p>
+      <button type="submit" {% if active %}disabled{% endif %}>Generate manifest</button>
+    </div>
+
+    <div class="panel">
+      <dl class="kv">
+        <dt>ledger</dt><dd class="mono">{{ options.ledger }}</dd>
+        <dt>roster</dt><dd class="mono">{{ options.recipients }}</dd>
+        <dt>lanes</dt><dd class="mono">{{ options.lanes }}</dd>
+        <dt>snapshot</dt><dd class="mono">{{ options.snapshot }}</dd>
+      </dl>
+      <p class="dim" style="font-size:12px;margin:12px 0 0">
+        Fixed at launch, not on this form. A run appends to that ledger, and a
+        field for the path is a way to write a real run to the wrong file.
+      </p>
+    </div>
+
+    {% if recent %}
+    <h2>Recent</h2>
+    <div class="panel">
+      {% for job in recent %}
+      <div style="padding:3px 0;font-size:13px">
+        <a href="/runs/{{ job.id }}" class="mono">{{ job.id }}</a>
+        <span class="dim">{{ job.started_at.strftime('%H:%M:%S') }}</span>
+        <span class="tag {% if job.state == 'finished' %}on{% endif %}">{{ job.state }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+</form>
+
+<script>
+const shots = document.getElementById('shots');
+const sample = document.getElementById('sample');
+const setOn = (label) => label.classList.toggle('on', label.querySelector('input').checked);
+
+if (shots) {
+  shots.addEventListener('change', (e) => setOn(e.target.closest('.shot')));
+  document.getElementById('all').onclick = () => {
+    shots.querySelectorAll('input').forEach(i => { i.checked = true; setOn(i.closest('.shot')); });
+  };
+  document.getElementById('none').onclick = () => {
+    shots.querySelectorAll('input').forEach(i => { i.checked = false; setOn(i.closest('.shot')); });
+  };
+  // The checkboxes only mean something in "pick images" mode. Dimming them in
+  // the other two is the honest signal: a sample ignores what you ticked.
+  document.querySelectorAll('input[name=mode]').forEach(radio => {
+    radio.onchange = () => {
+      const explicit = document.querySelector('input[name=mode]:checked').value === 'explicit';
+      sample.style.display = radio.value === 'sample' && radio.checked ? 'block' : 'none';
+      shots.style.opacity = explicit ? '1' : '.45';
+      shots.querySelectorAll('input').forEach(i => { i.disabled = !explicit; });
+    };
+  });
+}
+</script>
+{% endblock %}

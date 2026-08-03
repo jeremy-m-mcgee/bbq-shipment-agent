@@ -1,0 +1,568 @@
+"""Where the live paths are assembled. Everything else takes them injected.
+
+`cli.py` used to say this about itself, and it was true while the CLI was the
+only front-end. It is not any more: `ui/` runs the same pipeline from a
+browser, and two copies of the wiring would be two places for an offline
+fallback or a cache path to drift.
+
+So the rule moves rather than weakens. **This module is the only place a
+socket-opening object is constructed** -- the LaunchDarkly client, the Shippo
+quoter, the Shippo validator, the Anthropic model. The library below it still
+takes every one of them by injection, so no test can open a socket by
+importing something.
+
+## Options, not a Namespace
+
+The helpers were keyed on `argparse.Namespace`, which a web form does not
+have. `RunOptions` is the same set of values with a name, so the CLI builds
+one from its parsed arguments and the UI builds one from a POST body, and
+neither knows how the other did it.
+
+## Progress is a parameter, not a print
+
+The helpers printed as they went, which is right for a CLI and useless to
+anything else. They now emit through `Progress`, and the caller decides
+whether that becomes a line on a terminal or an event on a stream. The CLI's
+output is unchanged.
+"""
+
+from __future__ import annotations
+
+import os
+import random
+from dataclasses import dataclass, field, replace
+from pathlib import Path
+from typing import Any, Protocol
+
+from .agent_configs import (
+    DEFAULT_SNAPSHOT_PATH,
+    ChainedAgentConfigs,
+    LaunchDarklyAgentConfigs,
+    OfflineAgentConfigs,
+    SnapshotAgentConfigs,
+)
+from .agents import (
+    AnthropicModel,
+    RecordedConversation,
+    RecordedModel,
+    RecordedVision,
+)
+from .capabilities import (
+    DEFAULT_CONFIG_PATH,
+    PlannerMode,
+    ValidationMode,
+    VerificationMode,
+)
+from .planning import (
+    DEFAULT_LANE,
+    DEFAULT_LANES_PATH,
+    LaneBook,
+    RecordedQuoter,
+    ShippoQuoter,
+)
+from .recipients import (
+    DEFAULT_ROSTER_PATH,
+    ExtractionError,
+    RecordedAddressValidator,
+    ShippoAddressValidator,
+    extract_from_images,
+    load_roster,
+)
+from .run import (
+    LaunchDarklyProvider,
+    OfflineProvider,
+    initialize_run,
+    launchdarkly_client,
+)
+
+DEFAULT_LEDGER_ROOT = Path("ledger")
+DEFAULT_DB_PATH = Path("ledger.duckdb")
+#: Cheap insurance against re-quoting an unchanged lane, and the reason a
+#: second plan on the same roster costs nothing. Gitignored: it is a cache of
+#: a live API, not an artifact of the run.
+DEFAULT_CACHE_DIR = Path(".cache")
+
+
+class Progress(Protocol):
+    """Where a stage says what it is doing.
+
+    One method, because the callers want different things from it and none of
+    them wants a logging framework. `stage` is the pipeline stage ("B1"), and
+    the keyword fields are for a consumer that renders structure rather than
+    text -- the CLI ignores them and prints the message.
+    """
+
+    def emit(self, stage: str, message: str, **fields: Any) -> None: ...
+
+
+class NullProgress:
+    """Says nothing. The default, so a library caller need not care."""
+
+    def emit(self, stage: str, message: str, **fields: Any) -> None:
+        return None
+
+
+class PrintProgress:
+    """The CLI's rendering: a padded stage column, then the message.
+
+    Continuation lines pass an empty stage and land under the column, which is
+    how `run plan` already printed a screenshot sample.
+    """
+
+    def emit(self, stage: str, message: str, **fields: Any) -> None:
+        print(f"  {stage:<13}{message}" if stage else f"               {message}")
+
+
+@dataclass(frozen=True)
+class ScreenshotSelection:
+    """Which images B1 reads: named ones, or a seeded sample of *n*.
+
+    Two ways in, because the two front-ends can ask different questions. A CLI
+    cannot show you an iMessage thread, so it offers a count and prints the
+    sample it took; a browser can, so it offers checkboxes. Both resolve to a
+    named tuple of files, and the names are what reaches the ledger -- with an
+    explicit choice there is no seed, so the filenames are the *only* account
+    of what B1 read.
+
+    Explicit and count together is an error rather than a precedence rule. A
+    front-end that sent both has a bug, and picking one silently would hide it.
+    """
+
+    explicit: tuple[str, ...] | None = None
+    count: int | None = None
+    seed: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.explicit is not None and self.count is not None:
+            raise ExtractionError(
+                "a screenshot selection is either explicit filenames or a "
+                "count, not both."
+            )
+        if self.explicit is None and self.count is None and self.seed is not None:
+            raise ExtractionError(
+                "a screenshot seed selects from a count, and no count was given."
+            )
+
+
+@dataclass(frozen=True)
+class RunOptions:
+    """Everything a run needs that is not the pipeline itself.
+
+    Frozen, so a front-end holding one cannot have it changed underneath it by
+    a stage. `replace` is the way to vary one for a second run.
+    """
+
+    ledger: Path = DEFAULT_LEDGER_ROOT
+    config: Path = DEFAULT_CONFIG_PATH
+    snapshot: Path = DEFAULT_SNAPSHOT_PATH
+    lanes: Path = DEFAULT_LANES_PATH
+    cache: Path = DEFAULT_CACHE_DIR
+    recipients: Path = DEFAULT_ROSTER_PATH
+    profile: str | None = None
+    campaign: str | None = None
+    #: A run context attribute, and only `run init` supplies one. Planning
+    #: knows the real count from the roster, and a hand-typed one that
+    #: disagreed would mis-target every flag evaluated against the context.
+    packet_count: int | None = None
+    offline: bool = False
+    timeout: float = 5.0
+    #: B1's input directory. None means the roster file supplies the people.
+    screenshots: Path | None = None
+    selection: ScreenshotSelection | None = None
+    #: Replay files. Each one is a live path not taken.
+    quotes: Path | None = None
+    validations: Path | None = None
+    completions: Path | None = None
+    extractions: Path | None = None
+    repairs: Path | None = None
+    max_attempts: int = 8
+    backoff: float = 2.5
+
+    @property
+    def replaying(self) -> bool:
+        """Whether every live path this run would take has a recording."""
+        return all(
+            (
+                self.quotes is not None,
+                self.validations is not None,
+                self.completions is not None,
+                self.extractions is not None or self.screenshots is None,
+                self.repairs is not None or self.screenshots is None,
+            )
+        )
+
+
+def offline_reason(requested: bool) -> str:
+    """Say *why* the run is offline, not merely that it is.
+
+    `launchdarkly_client` returns None for a missing key and for a client that
+    did not come up, and those are different operator problems: one is a
+    `.env` that was never filled in, the other is a key or a network that does
+    not work. Section 6.10 treats both as normal, which makes distinguishing
+    them the front-end's job rather than nobody's.
+    """
+    if requested:
+        return "OFFLINE_REQUESTED"
+    if not os.environ.get("LD_SDK_KEY"):
+        return "NO_SDK_KEY"
+    return "LD_UNREACHABLE"
+
+
+def flag_sources(options: RunOptions, client: Any) -> tuple[str, Any, Any]:
+    """The provider and agent-config source for a run, live or offline.
+
+    Shared by every entry point so they cannot drift into disagreeing about
+    what an offline run means.
+    """
+    if client is None:
+        reason = offline_reason(options.offline)
+        # The snapshot is still consulted. Design 6.10 step 1 bootstraps from
+        # cache, and a cached instruction set is exactly what makes an
+        # unreachable run degrade rather than fail.
+        return (
+            f"offline ({reason})",
+            OfflineProvider(reason=reason),
+            ChainedAgentConfigs(
+                SnapshotAgentConfigs(options.snapshot), OfflineAgentConfigs(reason)
+            ),
+        )
+    return (
+        "launchdarkly",
+        LaunchDarklyProvider(client),
+        ChainedAgentConfigs(
+            LaunchDarklyAgentConfigs(client), SnapshotAgentConfigs(options.snapshot)
+        ),
+    )
+
+
+def snapshot_state(snapshot: Path, before: bytes | None) -> str:
+    after = snapshot.read_bytes() if snapshot.exists() else None
+    if after is None:
+        return f"{snapshot} not written (nothing usable retrieved)"
+    if before is None:
+        return f"{snapshot} created — commit it"
+    if before != after:
+        return f"{snapshot} changed — commit it"
+    return f"{snapshot} unchanged"
+
+
+def lane_book(options: RunOptions, progress: Progress | None = None) -> Any:
+    """The committed ambient assumptions, or None to fall back to 22C.
+
+    A missing file is not an error: `DEFAULT_LANE` still works and is what
+    every test uses. It is worth saying out loud though, because one national
+    ambient is what design 10 identified as collapsing the thermal envelope.
+    """
+    if not options.lanes.exists():
+        if progress is not None:
+            progress.emit(
+                "lanes",
+                f"note: {options.lanes} not found; every destination assumed "
+                f"{DEFAULT_LANE.ambient_c}C. See design 10.",
+            )
+        return None
+    return LaneBook.load(options.lanes)
+
+
+def available_screenshots(directory: Path | str) -> tuple[Path, ...]:
+    """Every .png in a directory, sorted.
+
+    Sorted before anything else sees it, so a seeded sample depends on the
+    seed alone rather than on the order the filesystem happened to return.
+    """
+    return tuple(sorted(Path(directory).glob("*.png")))
+
+
+def resolve_screenshots(
+    options: RunOptions, progress: Progress | None = None
+) -> tuple[Path, ...]:
+    """The .png files B1 reads: every one, a named sample, or named files.
+
+    Which subset was read is not incidental -- extraction accuracy is
+    per-image, so a run that read three of seven is not comparable to one that
+    read a different three. The sample is therefore *named* rather than merely
+    taken: the seed is printed whether supplied or generated, and so are the
+    chosen filenames, because those are the account that survives a change of
+    Python's sampling internals.
+
+    Asking for more images than exist is an error rather than a clamp. A run
+    silently reading seven when it was told ten looks exactly like a run that
+    got what it asked for. Naming a file that is not there is an error for the
+    same reason.
+    """
+    if options.screenshots is None:
+        raise ExtractionError("no screenshot directory was given.")
+    images = available_screenshots(options.screenshots)
+    if not images:
+        raise ExtractionError(f"no .png screenshots in {options.screenshots}")
+
+    selection = options.selection
+    if selection is None or (selection.explicit is None and selection.count is None):
+        return images
+
+    if selection.explicit is not None:
+        by_name = {p.name: p for p in images}
+        unknown = [n for n in selection.explicit if n not in by_name]
+        if unknown:
+            raise ExtractionError(
+                f"not in {options.screenshots}: {', '.join(sorted(unknown))}"
+            )
+        if not selection.explicit:
+            raise ExtractionError("no screenshots were selected.")
+        chosen = tuple(sorted({by_name[n] for n in selection.explicit}))
+        if progress is not None:
+            progress.emit(
+                "B1",
+                f"reading {len(chosen)} of {len(images)} screenshot(s), chosen by name",
+                files=[p.name for p in chosen],
+            )
+            for image in chosen:
+                progress.emit("", image.name)
+        return chosen
+
+    count = selection.count
+    assert count is not None
+    if count < 1:
+        raise ExtractionError(f"screenshot count must be at least 1, got {count}")
+    if count > len(images):
+        raise ExtractionError(
+            f"screenshot count {count} exceeds the {len(images)} .png file(s) "
+            f"in {options.screenshots}"
+        )
+
+    seed = selection.seed
+    if seed is None:
+        seed = random.randrange(2**32)
+    chosen = tuple(sorted(random.Random(seed).sample(images, count)))
+    if progress is not None:
+        progress.emit(
+            "B1",
+            f"sampling {len(chosen)} of {len(images)} screenshot(s), seed {seed}",
+            files=[p.name for p in chosen],
+            seed=seed,
+        )
+        for image in chosen:
+            progress.emit("", image.name)
+    return chosen
+
+
+def extraction_reasons(
+    images: tuple[Path, ...], selection: ScreenshotSelection | None
+) -> dict[str, Any]:
+    """What to record on the run row about which images B1 read.
+
+    The seed reconstructs a sample; nothing reconstructs an explicit choice,
+    so the filenames go on the record either way. Without this, a run planned
+    from a browser could not say afterwards what it had read.
+    """
+    reasons: dict[str, Any] = {"screenshots": [p.name for p in images]}
+    if selection is not None and selection.seed is not None:
+        reasons["screenshot_seed"] = selection.seed
+    return reasons
+
+
+def extraction_model(options: RunOptions, images: tuple[Path, ...]) -> Any:
+    """B1's vision model, or a recording of one.
+
+    Replay exists for B1 because `tests/fixtures/b1-extractions.json` is a
+    real capture and a demo that pays for seven vision calls to show a form
+    submitting is a demo nobody runs twice. The images are passed in because
+    the recording is matched on image content -- reading three of seven has to
+    replay the right three.
+    """
+    if options.extractions is not None:
+        return RecordedVision.from_file(options.extractions, images)
+    return AnthropicModel()
+
+
+def build_roster(
+    options: RunOptions, run: Any = None, progress: Progress | None = None
+) -> tuple[Any, tuple[Path, ...]]:
+    """The run input, from the file and -- when asked -- from screenshots.
+
+    The file always supplies the origin, the candidate ship dates and the lane
+    declarations, because a screenshot says nothing about any of them. With a
+    screenshot directory, B1 supplies the people and the file's `recipients`
+    key becomes optional.
+
+    Returns the roster and the images that were read, because the caller has
+    to record the second on the run row.
+    """
+    progress = progress or NullProgress()
+    if options.screenshots is None:
+        if options.selection is not None:
+            raise ExtractionError(
+                "a screenshot selection was given without a screenshot "
+                "directory. Nothing would sample."
+            )
+        return load_roster(options.recipients, lane_book=lane_book(options, progress)), ()
+
+    roster = load_roster(
+        options.recipients,
+        lane_book=lane_book(options, progress),
+        require_recipients=False,
+    )
+    images = resolve_screenshots(options, progress)
+
+    progress.emit("B1", f"reading {len(images)} screenshot(s)", count=len(images))
+    extracted = extract_from_images(
+        run, images, model=extraction_model(options, images), ledger_root=options.ledger
+    )
+    progress.emit("B1", extracted.describe(), summary=extracted.describe())
+    for u in extracted.unresolved:
+        progress.emit("", f"no address: {u.name} — {u.note[:70]}", unresolved=u.name)
+    for name in extracted.unreadable:
+        progress.emit("", f"UNREADABLE: {name}", unreadable=name)
+
+    # Lanes are assigned from the file's book, the same as for a hand-written
+    # roster -- extraction produces an address, not an ambient assumption.
+    book = lane_book(options)
+    recipients = extracted.recipients
+    if book is not None and roster.ship_dates:
+        season = roster.ship_dates[0]
+        recipients = tuple(
+            replace(r, lane=book.lane_for(r.address.state, season)) for r in recipients
+        )
+    return roster.with_recipients(recipients), images
+
+
+def repair_model(options: RunOptions, planner: PlannerMode) -> Any:
+    """B3's model, when `planner-mode` is not off and there are images."""
+    if planner is PlannerMode.OFF or options.screenshots is None:
+        return None
+    if options.repairs is not None:
+        return RecordedConversation.from_file(options.repairs)
+    return AnthropicModel()
+
+
+def quoter(options: RunOptions) -> Any:
+    """Recorded quotes if asked for, live Shippo otherwise.
+
+    There is no third option. A quoter that invents a rate when the API is
+    unreachable would put a made-up cost on a manifest a human is about to
+    approve, so both of these raise instead.
+    """
+    if options.quotes:
+        return RecordedQuoter.from_file(options.quotes)
+    options.cache.mkdir(parents=True, exist_ok=True)
+    return ShippoQuoter(
+        cache_path=options.cache / "shippo-quotes.json",
+        max_attempts=options.max_attempts,
+        backoff_s=options.backoff,
+    )
+
+
+def validator(options: RunOptions, mode: ValidationMode) -> Any:
+    """None when `validation-mode` is off, so nothing connects needlessly."""
+    if mode is ValidationMode.OFF:
+        return None
+    if options.validations:
+        return RecordedAddressValidator.from_file(options.validations)
+    options.cache.mkdir(parents=True, exist_ok=True)
+    return ShippoAddressValidator(cache_path=options.cache / "shippo-addresses.json")
+
+
+def verifier(options: RunOptions, mode: VerificationMode) -> Any:
+    """None when `verification-enabled` is off, so nothing connects needlessly."""
+    if mode is not VerificationMode.ON:
+        return None
+    if options.completions:
+        return RecordedModel.from_file(options.completions)
+    return AnthropicModel()
+
+
+@dataclass
+class RunContext:
+    """A1's output plus how it was obtained, for a front-end to display."""
+
+    run: Any
+    connection: str
+    snapshot: str
+    client: Any = None
+    #: Set once planning has run. Kept here so a front-end holds one object.
+    roster: Any = None
+    images: tuple[Path, ...] = ()
+    result: Any = None
+    extra_reasons: dict[str, Any] = field(default_factory=dict)
+
+
+def open_run(options: RunOptions, progress: Progress | None = None) -> RunContext:
+    """A1, wired to whatever LaunchDarkly actually returns.
+
+    The client is returned open on purpose and the caller must close it. D1
+    reports its metrics against the variation LaunchDarkly served, and that
+    needs the same client -- closing after A1 would silently drop every AI
+    Config metric. The SDK also runs a background thread, so a caller that
+    forgets will hang.
+    """
+    client = None if options.offline else launchdarkly_client(
+        timeout_seconds=options.timeout
+    )
+    try:
+        connection, provider, agent_source = flag_sources(options, client)
+        before = options.snapshot.read_bytes() if options.snapshot.exists() else None
+        run = initialize_run(
+            ledger_root=options.ledger,
+            config_path=options.config,
+            provider=provider,
+            agent_source=agent_source,
+            snapshot_path=options.snapshot,
+            profile=options.profile,
+            campaign=options.campaign,
+            packet_count=options.packet_count,
+        )
+    except BaseException:
+        if client is not None:
+            client.close()
+        raise
+    return RunContext(
+        run=run,
+        connection=connection,
+        snapshot=snapshot_state(options.snapshot, before),
+        client=client,
+    )
+
+
+def plan_with(
+    context: RunContext, options: RunOptions, progress: Progress | None = None
+) -> RunContext:
+    """B1 through D1 against an already-opened run.
+
+    Separate from `open_run` because a front-end shows the capability header
+    the moment A1 lands and then waits on planning, and a single call would
+    make it wait for both.
+    """
+    from .plan import plan_run
+
+    progress = progress or NullProgress()
+    run = context.run
+    roster, images = build_roster(options, run, progress)
+    context.roster = roster
+    context.images = images
+    context.extra_reasons = extraction_reasons(images, options.selection) if images else {}
+
+    mode = run.capabilities.validation
+    verification = run.capabilities.verification
+    progress.emit(
+        "roster",
+        f"{roster.source}  ({roster.packet_count} recipients)",
+        packet_count=roster.packet_count,
+    )
+    progress.emit("ship dates", ", ".join(d.isoformat() for d in roster.ship_dates))
+    progress.emit("validation", mode.value)
+    progress.emit("verification", verification.value)
+    progress.emit("quotes", str(options.quotes) if options.quotes else "live (Shippo)")
+
+    context.result = plan_run(
+        run,
+        roster,
+        ledger_root=options.ledger,
+        quoter=quoter(options),
+        validator=validator(options, mode),
+        lane_book=lane_book(options),
+        repairer=repair_model(options, run.capabilities.planner),
+        screenshots=options.screenshots,
+        verifier=verifier(options, verification),
+        extra_reasons=context.extra_reasons,
+    )
+    return context

@@ -172,6 +172,7 @@ def plan_run(
     repairer: Any = None,
     screenshots: Path | str | None = None,
     verifier: ModelClient | None = None,
+    extra_reasons: dict[str, Any] | None = None,
 ) -> PlanResult:
     """B2 through C6 against an already-initialized run.
 
@@ -269,7 +270,15 @@ def plan_run(
         reason = str(exc)
 
     _record_planning(
-        ledger_root, run, roster, validation, suppression, solve, manifest, mode
+        ledger_root,
+        run,
+        roster,
+        validation,
+        suppression,
+        solve,
+        manifest,
+        mode,
+        extra_reasons,
     )
 
     # D1 runs only when there is something to verify. A missing manifest is
@@ -308,6 +317,7 @@ def _record_planning(
     solve: Solve,
     manifest: Manifest | None,
     mode: ValidationMode,
+    extra_reasons: dict[str, Any] | None = None,
 ) -> None:
     """Append what planning learned to the run row opened at A1.
 
@@ -315,8 +325,14 @@ def _record_planning(
     and no `completed_at` because the run has not reached a terminal state.
     `carrier_pair` and `total_cost` describe the *proposed* plan -- nothing has
     been approved. Nothing is ever purchased -- dispatch was removed, design 9.
+
+    `extra_reasons` is how the caller records something only it knows. Today
+    that is which screenshots B1 read: a seeded sample is reconstructible from
+    the seed, but a set chosen by hand in a UI is not reconstructible from
+    anything, so the filenames are the only account of what the run saw.
     """
     reasons = run.evaluation_reasons()
+    reasons.update(extra_reasons or {})
     reasons["validation_mode"] = mode.value
     reasons["validation_corrected"] = validation.corrected_count
     if suppression.consolidated:

@@ -66,13 +66,25 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
 - `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
 - `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
+- `src/bbq_shipment_agent/wiring.py` — `RunOptions`, `Progress`, and the *only* place a live client is constructed. Both front-ends go through it.
+- `src/bbq_shipment_agent/ui/` — the local web app: app.py (routes), service.py (worker thread + events), view.py (results as plain data), templates/
 - `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
 - `config/lanes.yaml` — ambient per destination band + month. Stated assumptions, never measured; an unmapped state takes the *hottest* band on purpose.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
 - `recipients.yaml` — the run input. Gitignored (home addresses); `recipients.example.yaml` is the template.
 - `.cache/` — live Shippo answers, gitignored. A cache of an API, not a run artifact.
-- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`, `uv run bbq-shipment-agent run init|plan`
+- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`, `uv run bbq-shipment-agent run init|plan|review`, `uv run bbq-shipment-agent ui`
+
+## Front-ends
+- Two: the CLI and `ui`. Neither sequences a stage. Both build a `RunOptions` and call `wiring.open_run` then `wiring.plan_with`, so an offline fallback or a cache path cannot drift between them.
+- `wiring.py` is the only module that constructs something which opens a socket. If a new live client appears anywhere else, that claim is dead and the "no test can open a socket" property goes with it.
+- The UI binds 127.0.0.1 and there is no host flag. It has no authentication because nothing off the machine can reach it, and it serves real home addresses and screenshots of private messages. Adding a host option changes that trade silently.
+- The form configures a run. It does not configure the system: no control for the 4.4C threshold, the carrier cap, authority, or the ledger path. A field for the ledger is a way to append a real run to the wrong file.
+- `/screenshots/{name}` serves from a dict built by globbing the resolved directory, keyed by exact filename. Never `dir / name`.
+- One run at a time, refused rather than queued: two would append to the same ledger and quote the same lanes twice.
+- Which images B1 read go on the run row (`evaluation_reasons["screenshots"]`). A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing.
+- Replay is all or nothing. `RunOptions.replaying` is what the page calls "no live calls", and B1/B3 need `--extractions`/`--repairs` for it to be true on a screenshot run.
 
 ## Capability rules
 - A provider proposes; the repo decides. Order is fixed: profile → flag overrides → ceiling clamp → prerequisites.

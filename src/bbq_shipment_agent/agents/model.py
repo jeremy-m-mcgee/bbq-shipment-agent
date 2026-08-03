@@ -314,3 +314,119 @@ class RecordedModel:
             stop_reason=row.get("stop_reason"),
             model=row.get("model"),
         )
+
+
+class RecordedVision:
+    """Replays B1's captured replies, matched to the image actually sent.
+
+    B1 makes one call per screenshot, so a recording is a map from image name
+    to what the model said about it. The obvious replay keys on call order,
+    which is what the extraction tests did and what a UI breaks the moment it
+    lets you read image five without reading images one to four.
+
+    So the match is on content: the base64 block in the outgoing message is
+    hashed and looked up against the same hash taken over the files on disk.
+    Reading three of seven replays the right three, in any order.
+
+    An unrecorded image raises rather than being answered. A fixture that
+    answers for anything is a rubber stamp, which is the same reason
+    `RecordedQuoter` and `RecordedAddressValidator` raise.
+    """
+
+    def __init__(self, recording: dict[str, Any], images: Any) -> None:
+        self._replies = recording.get("replies", {})
+        self._by_digest = {
+            self._digest_bytes(Path(image).read_bytes()): Path(image).name
+            for image in images
+        }
+        self.calls = 0
+
+    @classmethod
+    def from_file(cls, path: Path | str, images: Any) -> RecordedVision:
+        return cls(json.loads(Path(path).read_text(encoding="utf-8")), images)
+
+    @staticmethod
+    def _digest_bytes(raw: bytes) -> str:
+        import hashlib
+
+        return hashlib.sha256(raw).hexdigest()
+
+    def converse(
+        self, invocation: Invocation, messages: Any, tools: Any = ()
+    ) -> Completion:
+        self.calls += 1
+        name = self._name_of(messages)
+        row = self._replies.get(name)
+        if row is None:
+            raise ModelUnavailable(
+                f"no recorded extraction for {name or 'the image sent'}. "
+                "Re-record against the live API rather than inventing what the "
+                "model would have read."
+            )
+        return Completion(
+            text=row["text"],
+            input_tokens=row.get("input_tokens", 0),
+            output_tokens=row.get("output_tokens", 0),
+            model=row.get("model"),
+        )
+
+    def _name_of(self, messages: Any) -> str | None:
+        import base64
+
+        for message in messages:
+            for block in message.get("content", []) or []:
+                if not isinstance(block, dict) or block.get("type") != "image":
+                    continue
+                data = block.get("source", {}).get("data", "")
+                try:
+                    raw = base64.standard_b64decode(data)
+                except (ValueError, TypeError):
+                    continue
+                found = self._by_digest.get(self._digest_bytes(raw))
+                if found is not None:
+                    return found
+        return None
+
+
+class RecordedConversation:
+    """Replays a captured agent conversation turn by turn, tool calls included.
+
+    B3 is a loop, so its recording is a sequence rather than a lookup: the
+    tool *results* are recomputed live against the validator and the image
+    cropper, and only the assistant's turns are replayed. Design 10 records
+    what that costs -- the proposals the agent made are not in the validator
+    recording, so a replayed repair escalates where a live one succeeded.
+
+    Running out of turns ends the loop rather than raising. The recording is
+    finished, the agent has nothing further to claim, and whoever is left
+    stays escalated -- which design 4 calls a normal successful outcome, and
+    is the safe direction for an address nobody has verified.
+    """
+
+    def __init__(self, recording: dict[str, Any]) -> None:
+        self._turns = list(recording.get("turns", []))
+        self.calls = 0
+        self.tools_offered: Any = ()
+
+    @classmethod
+    def from_file(cls, path: Path | str) -> RecordedConversation:
+        return cls(json.loads(Path(path).read_text(encoding="utf-8")))
+
+    def converse(
+        self, invocation: Invocation, messages: Any, tools: Any = ()
+    ) -> Completion:
+        self.calls += 1
+        self.tools_offered = tools
+        if not self._turns:
+            return Completion(text='{"repairs": [], "escalations": []}')
+        turn = self._turns.pop(0)
+        return Completion(
+            text=turn["text"],
+            input_tokens=turn.get("input_tokens", 0),
+            output_tokens=turn.get("output_tokens", 0),
+            model=turn.get("model"),
+            tool_calls=tuple(
+                ToolCall(id=t["id"], name=t["name"], arguments=t["arguments"])
+                for t in turn.get("tool_calls", [])
+            ),
+        )

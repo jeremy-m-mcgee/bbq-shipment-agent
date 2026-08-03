@@ -1,10 +1,14 @@
 """Command line entry point.
 
 The ledger commands are build order step 1. `run init` is step 2 and `run
-plan` is step 3, and between them they are the only place the live paths are
-assembled: everything else in the package takes its provider, its config
-source, its quoter and its validator by injection, so without these commands
-nothing ever opens a socket.
+plan` is step 3. `ui` serves the same pipeline from a browser.
+
+This module used to be the only place the live paths were assembled. That
+moved to `wiring.py` when the UI arrived, because two front-ends with two
+copies of the wiring are two places for an offline fallback or a cache path to
+drift. What is left here is argument parsing and rendering: everything below
+still takes its provider, its config source, its quoter and its validator by
+injection, so nothing in the library opens a socket.
 
 That is deliberate for the library and was a gap for the operator. Whether the
 flags and AI Configs a run depends on actually exist in the LD environment is
@@ -15,66 +19,46 @@ here, and so is whether a real recipient list produces a sensible manifest.
 from __future__ import annotations
 
 import argparse
-import os
-import random
 from pathlib import Path
 
-from .agent_configs import (
-    DEFAULT_SNAPSHOT_PATH,
-    ChainedAgentConfigs,
-    LaunchDarklyAgentConfigs,
-    OfflineAgentConfigs,
-    SnapshotAgentConfigs,
-)
-from .agents import (
-    AnthropicModel,
-    ModelUnavailable,
-    RecordedModel,
-)
+from .agent_configs import DEFAULT_SNAPSHOT_PATH
+from .agents import ModelUnavailable
 from .capabilities import (
     DEFAULT_CONFIG_PATH,
     CapabilityConfigError,
     KillSwitchEngaged,
-    ValidationMode,
-    VerificationMode,
 )
 from .context import ContextError
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
-from .plan import plan_run
 from .planning import (
-    DEFAULT_LANE,
     DEFAULT_LANES_PATH,
-    LaneBook,
     LaneBookError,
     QuotingUnavailable,
-    RecordedQuoter,
-    ShippoQuoter,
     render,
 )
 from .recipients import (
     DEFAULT_ROSTER_PATH,
     AddressValidationUnavailable,
     ExtractionError,
-    RecordedAddressValidator,
     RosterError,
-    ShippoAddressValidator,
-    extract_from_images,
-    load_roster,
     to_shipments,
 )
-from .run import (
-    LaunchDarklyProvider,
-    OfflineProvider,
-    initialize_run,
-    launchdarkly_client,
+from .wiring import (
+    DEFAULT_CACHE_DIR,
+    DEFAULT_DB_PATH,
+    DEFAULT_LEDGER_ROOT,
+    PrintProgress,
+    RunOptions,
+    ScreenshotSelection,
+    open_run,
+    plan_with,
+    quoter,
 )
 
-DEFAULT_LEDGER_ROOT = Path("ledger")
-DEFAULT_DB_PATH = Path("ledger.duckdb")
-#: Cheap insurance against re-quoting an unchanged lane, and the reason a
-#: second `run plan` on the same roster costs nothing. Gitignored: it is a
-#: cache of a live API, not an artifact of the run.
-DEFAULT_CACHE_DIR = Path(".cache")
+#: Where `ui` looks for screenshots unless told otherwise. The fixture set is
+#: the only directory this repo is guaranteed to have, and a picker with
+#: nothing to pick is a poor first screen.
+DEFAULT_SCREENSHOT_DIR = Path("tests/fixtures/screenshots")
 
 
 def _cmd_rebuild(args: argparse.Namespace) -> int:
@@ -117,20 +101,40 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def _offline_reason(requested: bool) -> str:
-    """Say *why* the run is offline, not merely that it is.
+def _options(args: argparse.Namespace) -> RunOptions:
+    """A parsed command line as the options every front-end shares.
 
-    `launchdarkly_client` returns None for a missing key and for a client that
-    did not come up, and those are different operator problems: one is a
-    `.env` that was never filled in, the other is a key or a network that does
-    not work. Section 6.10 treats both as normal, which makes distinguishing
-    them the CLI's job rather than nobody's.
+    The one place `argparse` meets `wiring`. Everything past this point is
+    keyed on `RunOptions`, which is what lets a browser form run the same
+    pipeline without inventing a Namespace to satisfy it.
     """
-    if requested:
-        return "OFFLINE_REQUESTED"
-    if not os.environ.get("LD_SDK_KEY"):
-        return "NO_SDK_KEY"
-    return "LD_UNREACHABLE"
+    selection = None
+    count = getattr(args, "screenshot_count", None)
+    seed = getattr(args, "screenshot_seed", None)
+    if count is not None or seed is not None:
+        selection = ScreenshotSelection(count=count, seed=seed)
+    return RunOptions(
+        ledger=args.ledger,
+        config=args.config,
+        snapshot=args.snapshot,
+        lanes=getattr(args, "lanes", DEFAULT_LANES_PATH),
+        cache=getattr(args, "cache", DEFAULT_CACHE_DIR),
+        recipients=getattr(args, "recipients", DEFAULT_ROSTER_PATH),
+        profile=args.profile,
+        campaign=args.campaign,
+        packet_count=getattr(args, "packet_count", None),
+        offline=args.offline,
+        timeout=args.timeout,
+        screenshots=getattr(args, "screenshots", None),
+        selection=selection,
+        quotes=getattr(args, "quotes", None),
+        validations=getattr(args, "validations", None),
+        completions=getattr(args, "completions", None),
+        extractions=getattr(args, "extractions", None),
+        repairs=getattr(args, "repairs", None),
+        max_attempts=getattr(args, "max_attempts", 8),
+        backoff=getattr(args, "backoff", 2.5),
+    )
 
 
 def _print_run(run, connection: str, snapshot_state: str, ledger_root: Path) -> None:
@@ -163,44 +167,6 @@ def _print_run(run, connection: str, snapshot_state: str, ledger_root: Path) -> 
     print(f"  ledger       {stream_path(ledger_root, RECORD_TYPES[0])}\n")
 
 
-def _flag_sources(args: argparse.Namespace, client):
-    """The provider and agent-config source for a run, live or offline.
-
-    Shared by `run init` and `run plan` so the two cannot drift into
-    disagreeing about what an offline run means.
-    """
-    if client is None:
-        reason = _offline_reason(args.offline)
-        # The snapshot is still consulted. Section 6.10 step 1 bootstraps
-        # from cache, and a cached instruction set is exactly what makes an
-        # unreachable run degrade rather than fail.
-        return (
-            f"offline ({reason})",
-            OfflineProvider(reason=reason),
-            ChainedAgentConfigs(
-                SnapshotAgentConfigs(args.snapshot), OfflineAgentConfigs(reason)
-            ),
-        )
-    return (
-        "launchdarkly",
-        LaunchDarklyProvider(client),
-        ChainedAgentConfigs(
-            LaunchDarklyAgentConfigs(client), SnapshotAgentConfigs(args.snapshot)
-        ),
-    )
-
-
-def _snapshot_state(snapshot: Path, before: bytes | None) -> str:
-    after = snapshot.read_bytes() if snapshot.exists() else None
-    if after is None:
-        return f"{snapshot} not written (nothing usable retrieved)"
-    if before is None:
-        return f"{snapshot} created — commit it"
-    if before != after:
-        return f"{snapshot} changed — commit it"
-    return f"{snapshot} unchanged"
-
-
 def _cmd_run_init(args: argparse.Namespace) -> int:
     """A1, wired to whatever LaunchDarkly actually returns.
 
@@ -208,179 +174,15 @@ def _cmd_run_init(args: argparse.Namespace) -> int:
     `baseline`, not a dry run, so pass a throwaway `--ledger` if all you want
     is to see what the environment serves.
     """
-    client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
+    context = open_run(_options(args), PrintProgress())
     try:
-        connection, provider, agent_source = _flag_sources(args, client)
-        before = args.snapshot.read_bytes() if args.snapshot.exists() else None
-        run = initialize_run(
-            ledger_root=args.ledger,
-            config_path=args.config,
-            provider=provider,
-            agent_source=agent_source,
-            snapshot_path=args.snapshot,
-            profile=args.profile,
-            campaign=args.campaign,
-            packet_count=args.packet_count,
-        )
-        _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
+        _print_run(context.run, context.connection, context.snapshot, args.ledger)
         return 0
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
-        if client is not None:
-            client.close()
+        if context.client is not None:
+            context.client.close()
 
-
-def _lane_book(args: argparse.Namespace):
-    """The committed ambient assumptions, or None to fall back to 22C.
-
-    A missing file is not an error: `DEFAULT_LANE` still works and is what
-    every test uses. It is worth saying out loud though, because one national
-    ambient is what design 10 identified as collapsing the thermal envelope.
-    """
-    if not args.lanes.exists():
-        print(
-            f"note: {args.lanes} not found; every destination assumed "
-            f"{DEFAULT_LANE.ambient_c}C. See design 10."
-        )
-        return None
-    return LaneBook.load(args.lanes)
-
-
-def _screenshots(args: argparse.Namespace) -> tuple[Path, ...]:
-    """The .png files B1 reads: every one, or a named random sample.
-
-    `--screenshot-count` exists to run B1 against part of a directory, which
-    for `tests/fixtures/screenshots/` means a cheaper pass over the answer key
-    than all seven images. Which subset was read is not incidental — extraction
-    accuracy is per-image, so a run that read three of seven is not comparable
-    to one that read a different three.
-
-    So the sample is named rather than merely taken. The population is sorted
-    before sampling, so the seed alone determines the choice regardless of
-    directory order; the seed is printed whether it was supplied or generated;
-    and the chosen filenames are printed too, because they are the account that
-    survives a change of Python's sampling internals.
-
-    Asking for more images than exist is an error rather than a clamp. A run
-    silently reading seven when it was told ten looks exactly like a run that
-    got what it asked for.
-    """
-    images = tuple(sorted(Path(args.screenshots).glob("*.png")))
-    if not images:
-        raise ExtractionError(f"no .png screenshots in {args.screenshots}")
-    if args.screenshot_count is None:
-        return images
-    if args.screenshot_count < 1:
-        raise ExtractionError(
-            f"--screenshot-count must be at least 1, got {args.screenshot_count}"
-        )
-    if args.screenshot_count > len(images):
-        raise ExtractionError(
-            f"--screenshot-count {args.screenshot_count} exceeds the "
-            f"{len(images)} .png file(s) in {args.screenshots}"
-        )
-
-    seed = args.screenshot_seed
-    if seed is None:
-        seed = random.randrange(2**32)
-    sample = tuple(sorted(random.Random(seed).sample(images, args.screenshot_count)))
-    print(
-        f"  B1           sampling {len(sample)} of {len(images)} screenshot(s), "
-        f"seed {seed}"
-    )
-    for image in sample:
-        print(f"               {image.name}")
-    return sample
-
-
-def _roster(args: argparse.Namespace, run=None):
-    """The run input, from the file and — when asked — from screenshots.
-
-    The file always supplies the origin, the candidate ship dates and the lane
-    declarations, because a screenshot says nothing about any of them. With
-    `--screenshots`, B1 supplies the people and the file's `recipients` key
-    becomes optional.
-    """
-    if not args.screenshots:
-        if args.screenshot_count is not None or args.screenshot_seed is not None:
-            raise ExtractionError(
-                "--screenshot-count and --screenshot-seed select from "
-                "--screenshots, which was not given. Nothing would sample."
-            )
-        return load_roster(args.recipients, lane_book=_lane_book(args))
-
-    roster = load_roster(
-        args.recipients, lane_book=_lane_book(args), require_recipients=False
-    )
-    images = _screenshots(args)
-
-    print(f"  B1           reading {len(images)} screenshot(s)")
-    extracted = extract_from_images(
-        run, images, model=AnthropicModel(), ledger_root=args.ledger
-    )
-    print(f"               {extracted.describe()}")
-    for u in extracted.unresolved:
-        print(f"               no address: {u.name} — {u.note[:70]}")
-    for name in extracted.unreadable:
-        print(f"               UNREADABLE: {name}")
-
-    # Lanes are assigned from the file's book, the same as for a hand-written
-    # roster -- extraction produces an address, not an ambient assumption.
-    book = _lane_book(args)
-    recipients = extracted.recipients
-    if book is not None and roster.ship_dates:
-        from dataclasses import replace as _replace
-
-        season = roster.ship_dates[0]
-        recipients = tuple(
-            _replace(r, lane=book.lane_for(r.address.state, season)) for r in recipients
-        )
-    return roster.with_recipients(recipients)
-
-
-def _repairer(args: argparse.Namespace, planner):
-    """B3's model, when `planner-mode` is not off and there are images."""
-    from .capabilities import PlannerMode
-
-    if planner is PlannerMode.OFF or not args.screenshots:
-        return None
-    return AnthropicModel()
-
-
-def _quoter(args: argparse.Namespace):
-    """Recorded quotes if asked for, live Shippo otherwise.
-
-    There is no third option. A quoter that invents a rate when the API is
-    unreachable would put a made-up cost on a manifest a human is about to
-    approve, so both of these raise instead.
-    """
-    if args.quotes:
-        return RecordedQuoter.from_file(args.quotes)
-    args.cache.mkdir(parents=True, exist_ok=True)
-    return ShippoQuoter(
-        cache_path=args.cache / "shippo-quotes.json",
-        max_attempts=args.max_attempts,
-        backoff_s=args.backoff,
-    )
-
-
-def _validator(args: argparse.Namespace, mode: ValidationMode):
-    """None when `validation-mode` is off, so nothing connects needlessly."""
-    if mode is ValidationMode.OFF:
-        return None
-    if args.validations:
-        return RecordedAddressValidator.from_file(args.validations)
-    args.cache.mkdir(parents=True, exist_ok=True)
-    return ShippoAddressValidator(cache_path=args.cache / "shippo-addresses.json")
-
-
-def _verifier(args: argparse.Namespace, mode: VerificationMode):
-    """None when `verification-enabled` is off, so nothing connects needlessly."""
-    if mode is not VerificationMode.ON:
-        return None
-    if args.completions:
-        return RecordedModel.from_file(args.completions)
-    return AnthropicModel()
 
 
 def _cmd_run_plan(args: argparse.Namespace) -> int:
@@ -391,51 +193,25 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
     blocker -- there is a plan to look at either way, but neither is something
     to hand over as though it were finished.
     """
-    client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
-    # Held open through planning rather than closed after A1: D1 reports its
-    # metrics against the variation LaunchDarkly served, and that needs the
-    # same client. Closing early would silently drop every AI Config metric.
+    options = _options(args)
+    # The client is held open through planning rather than closed after A1: D1
+    # reports its metrics against the variation LaunchDarkly served, and that
+    # needs the same client. Closing early would silently drop every AI Config
+    # metric.
+    context = open_run(options, PrintProgress())
     try:
-        connection, provider, agent_source = _flag_sources(args, client)
-        before = args.snapshot.read_bytes() if args.snapshot.exists() else None
-        run = initialize_run(
-            ledger_root=args.ledger,
-            config_path=args.config,
-            provider=provider,
-            agent_source=agent_source,
-            snapshot_path=args.snapshot,
-            profile=args.profile,
-            campaign=args.campaign,
-        )
-        _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
-
-        # After A1, because B1 needs the config A1 captured. The packet count
-        # is therefore not a run-context attribute any more: it is not known
-        # until extraction has run, and a guess would mis-target every flag.
-        roster = _roster(args, run)
-        mode = run.capabilities.validation
-        verification = run.capabilities.verification
-        print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
-        print(f"  ship dates   {', '.join(d.isoformat() for d in roster.ship_dates)}")
-        print(f"  validation   {mode.value}")
-        print(f"  verification {verification.value}")
-        print(f"  quotes       {args.quotes or 'live (Shippo)'}\n")
-
-        result = plan_run(
-            run,
-            roster,
-            ledger_root=args.ledger,
-            quoter=_quoter(args),
-            validator=_validator(args, mode),
-            lane_book=_lane_book(args),
-            repairer=_repairer(args, run.capabilities.planner),
-            screenshots=args.screenshots,
-            verifier=_verifier(args, verification),
-        )
+        _print_run(context.run, context.connection, context.snapshot, args.ledger)
+        # Planning runs after A1, because B1 needs the config A1 captured. The
+        # packet count is therefore not a run-context attribute: it is not
+        # known until extraction has run, and a guess would mis-target every
+        # flag.
+        plan_with(context, options, PrintProgress())
+        print()
+        result = context.result
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
-        if client is not None:
-            client.close()
+        if context.client is not None:
+            context.client.close()
 
     # Corrections only. The validator's advisory messages on a *clean* address
     # are captured on the result and printed nowhere -- design 10 records that
@@ -474,39 +250,13 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
     that ends in approved, approved with exclusions, or rejected -- which is
     now the last thing that happens to a run, since dispatch was removed.
     """
-    client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
+    options = _options(args)
+    context = open_run(options, PrintProgress())
     try:
-        connection, provider, agent_source = _flag_sources(args, client)
-        before = args.snapshot.read_bytes() if args.snapshot.exists() else None
-        run = initialize_run(
-            ledger_root=args.ledger,
-            config_path=args.config,
-            provider=provider,
-            agent_source=agent_source,
-            snapshot_path=args.snapshot,
-            profile=args.profile,
-            campaign=args.campaign,
-        )
-        _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
-
-        roster = _roster(args, run)
-        mode = run.capabilities.validation
-        verification = run.capabilities.verification
-        print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
-        print(f"  validation   {mode.value}")
-        print(f"  verification {verification.value}\n")
-
-        result = plan_run(
-            run,
-            roster,
-            ledger_root=args.ledger,
-            quoter=_quoter(args),
-            validator=_validator(args, mode),
-            lane_book=_lane_book(args),
-            repairer=_repairer(args, run.capabilities.planner),
-            screenshots=args.screenshots,
-            verifier=_verifier(args, verification),
-        )
+        _print_run(context.run, context.connection, context.snapshot, args.ledger)
+        plan_with(context, options, PrintProgress())
+        print()
+        run, roster, result = context.run, context.roster, context.result
         if result.manifest is None:
             print(f"no manifest: {result.reason}")
             _print_partial(result.solve)
@@ -514,10 +264,10 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
 
         print(render(result.manifest))
         _print_verification(result.verification)
-        return _review(args, run, roster, result, client)
+        return _review(args, options, run, roster, result)
     finally:
-        if client is not None:
-            client.close()
+        if context.client is not None:
+            context.client.close()
 
 
 def _print_verification(verification) -> bool:
@@ -554,7 +304,7 @@ def _print_verification(verification) -> bool:
     return bool(verification.blockers)
 
 
-def _review(args: argparse.Namespace, run, roster, result, client) -> int:
+def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) -> int:
     """D2. Conversational review over the manifest, then a terminal state.
 
     Falls back to a plain prompt loop when `review-narrator` is unavailable.
@@ -581,13 +331,15 @@ def _review(args: argparse.Namespace, run, roster, result, client) -> int:
         roster.origin,
         roster.ship_dates,
         ledger_root=args.ledger,
-        quoter=_quoter(args),
+        quoter=quoter(options),
         escalated=result.validation.escalated,
         suppressed=result.suppression.suppressed,
     )
 
     narrator = None
     try:
+        from .agents import AnthropicModel
+
         narrator = Narrator(
             run,
             session,
@@ -673,6 +425,30 @@ def _print_partial(solve) -> None:
         )
 
 
+def _cmd_ui(args: argparse.Namespace) -> int:
+    """Serve the planning UI on the loopback interface.
+
+    Bound to 127.0.0.1 and there is deliberately no option to change it. The
+    page serves `recipients.yaml`, which holds real home addresses, and
+    screenshots of people's messages. There is no authentication because the
+    answer to "who can reach this" is "processes on this machine", and an
+    interface flag would quietly turn that into a different answer.
+    """
+    import uvicorn
+
+    from .ui import create_app
+
+    options = _options(args)
+    app = create_app(options, screenshot_dir=args.screenshots)
+    print(f"\n  bbq-shipment-agent ui   http://127.0.0.1:{args.port}")
+    print(f"  ledger                  {args.ledger}")
+    print(f"  screenshots             {args.screenshots}")
+    print(f"  replay                  {'yes' if options.replaying else 'no (live calls)'}")
+    print("\n  ctrl-c to stop\n")
+    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bbq-shipment-agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -712,9 +488,14 @@ def build_parser() -> argparse.ArgumentParser:
     review = run_sub.add_parser(
         "review", help="A1 through D2: plan a run, then review and record it"
     )
+    ui = subparsers.add_parser(
+        "ui", help="serve the planning UI on 127.0.0.1: pick screenshots, then plan"
+    )
+    ui.add_argument("--port", type=int, default=8765)
+    ui.set_defaults(handler=_cmd_ui)
 
-    # Everything A1 needs, which all three commands run.
-    for sub in (init, plan, review):
+    # Everything A1 needs, which all four commands run.
+    for sub in (init, plan, review, ui):
         sub.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER_ROOT)
         sub.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
         sub.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT_PATH)
@@ -739,8 +520,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.set_defaults(handler=_cmd_run_init)
 
-    # `review` plans first, so it needs everything `plan` needs.
-    for sub in (plan, review):
+    # `review` plans first, so it needs everything `plan` needs, and the UI
+    # plans too -- its form supplies only the screenshot selection and the
+    # profile, so every other input still arrives as a command-line default.
+    for sub in (plan, review, ui):
         sub.add_argument(
             "--recipients",
             type=Path,
@@ -758,6 +541,17 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument(
             "--completions", type=Path, default=None,
             help="replay a recorded D1 reply instead of calling the model",
+        )
+        # B1 and B3 were the two live model paths with no replay, which meant
+        # the screenshot route could not be exercised without paying for
+        # vision calls -- even though both fixtures existed.
+        sub.add_argument(
+            "--extractions", type=Path, default=None,
+            help="replay recorded B1 extractions instead of calling the vision model",
+        )
+        sub.add_argument(
+            "--repairs", type=Path, default=None,
+            help="replay a recorded B3 repair conversation instead of calling the model",
         )
         sub.add_argument(
             "--cache", type=Path, default=DEFAULT_CACHE_DIR,
@@ -791,6 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"ambient assumptions per destination (default: {DEFAULT_LANES_PATH})",
         )
     review.set_defaults(handler=_cmd_run_review)
+    # The UI's whole point is choosing images, so it starts pointed at the
+    # fixture set rather than at nothing. Override with `--screenshots` for a
+    # real run; pass a directory with no .png files and the picker says so and
+    # falls back to the roster file.
+    ui.set_defaults(screenshots=DEFAULT_SCREENSHOT_DIR)
 
     # Neither takes a packet count: the number is knowable from the roster,
     # and a hand-typed one that disagrees with the file would mis-target every
