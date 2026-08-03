@@ -660,11 +660,11 @@ Three readings, and they are not equivalent:
 
 The third is probably right and cannot be built yet, which is why this stays open rather than being decided now.
 
-**A judge would earn its keep on D2 narration, and nowhere else.** LaunchDarkly AI Configs support judges: `LDAIClient.create_judge` returns a `Judge` with `evaluate(input_text, output_text, sampling_rate)`, backed by its own AI Config — its own model, its own instructions, its own `evaluationMetricKey` — and `JudgeConfiguration` can be attached to an agent config so a config declares which judges score it. This was overlooked when the metrics layer was removed, and the removal note was corrected: judges are a real capability, not a dashboard.
+**A judge on D2 narration — decided, plumbing live, config not yet created.** LaunchDarkly AI Configs support judges: `LDAIClient.create_judge` returns a `Judge` with `evaluate(input_text, output_text, sampling_rate)`, backed by its own AI Config — its own model, its own instructions, its own `evaluationMetricKey` — and `JudgeConfiguration` attaches judges to an agent config so a config declares which judges score it.
 
-They are foreclosed today, but not by that removal. `create_judge` hangs off `LDAIClient`, and this codebase never constructs one — `agent_configs` reads the raw variation because `AIAgentConfig` exposes neither the variation key nor the version, and section 6.4 mitigation 2 needs both on every ledger line. Adopting judges therefore means holding both: raw retrieval for identity, an `LDAIClient` alongside it for evaluation.
+This was foreclosed while `agent_configs` read only the raw variation, and is not any more: `LaunchDarklyAgentConfigs` now consults both layers, and `AgentConfig` carries `create_tracker` and `judge_configuration` from the SDK. Verified live — all four configs return an SDK tracker and `JudgeConfiguration(judges=[])`, meaning the attachment point exists and nothing is attached.
 
-The question is not whether judges are available but where one would answer a question nothing else can:
+The question was never whether judges are available but where one answers something nothing else can:
 
 | stage | judge? | why |
 |---|---|---|
@@ -676,6 +676,21 @@ The question is not whether judges are available but where one would answer a qu
 D2 is the exception because its correctness is a property of *reading*: does every claim trace to a field in the payload it was given? Section 6.3 states that rule and nothing enforces it. The evidence is on the record — asked which constraint bound hardest, `review-narrator` named the wrong recipient and reasoned from it for two turns. The fix then was to add the missing field, and that was right, but it only closed the one case. A judge scoring "is every claim in this narration supported by the payload" would catch the class.
 
 Note what such a judge is *not*: a source of statistics. Section 8's caveat still applies and a judge's aggregate score would reach significance no sooner than any other metric here. Its value is per-instance — catching a faithless claim before the operator reads it, the same shape as D1 catching a bad manifest before review. That also keeps it on the right side of section 2: read-only, strictly downstream, unable to alter what it judges.
+
+**What is left to do**, in order:
+
+1. **Create the judge AI Config in LaunchDarkly**, keyed `narration-faithfulness`. A judge config needs a model, instructions, and an `evaluationMetricKey` — `Judge.evaluate` logs a warning and returns an empty result without the last one, so it is not optional. Instructions receive the reserved variables `message_history` and `response_to_evaluate`; the judge's job is to answer whether every claim in the narration is supported by the payload, and to name the ones that are not.
+2. **Attach it to `review-narrator`** with a sampling rate. At three to five runs a year, sample at 1.0: sampling exists for volume this system does not have, and a missed evaluation is a missed catch rather than a rounding error.
+3. **Call it after a narration turn.** `Judge.evaluate(input_text, output_text)` is `async`, and `Narrator.say` is not, so this needs a decision about where the await happens — most likely alongside the ledger write at the end of a turn, with the result recorded on the invocation. `ManagedAgent.run` would dispatch judges automatically, but 6.1 keeps the agent loop in Python and that trade is argued above.
+4. **Feed it the payload, not the manifest.** The judge must score against exactly what the narrator was given, or it will mark a claim unsupported that the narrator could not have known was unsupported.
+
+The test case is already in the repository's history: `review-narrator`, asked which constraint bound hardest, named Ana Ruiz when the answer was Cass Delgado, and reasoned from it for two turns. A faithfulness judge should score that narration down. If it does not, the judge is not earning its keep.
+
+**B3's offline replay does not reproduce its live behaviour.** `tests/fixtures/b3-repairs.json` records a real repair conversation, and the tool results are recomputed on each run rather than recorded — which is the right design, since it exercises the validator and the image cropper for real. But `shippo-addresses.json` holds no recordings for the addresses the *agent proposed*, so `RecordedAddressValidator` raises on them, `_adjudicate` catches it, and those proposals are rejected. Live: 6 repaired, 3 escalated. Replayed: roughly 1 repaired, 8 escalated.
+
+The tests pass because they assert shape — everyone accounted for, some repairs, some escalations — rather than counts. That is a test suite hiding a regression, and the fix is to record the proposed addresses against the live validator, the same way the ZIP+4 destination lane was recorded for the quote fixture.
+
+**Phase D is scattered across the package.** Phases B and C are coherent: `recipients/` holds every phase-B stage, `planning/` every phase-C one. Phase D is not. `agents/` holds the model plumbing (`model`, `tools`, `metrics`) *and* two stages (`verification` is D1, `narrator` is D2's voice), while `review.py` — D2's mechanism — sits at the package root away from its own voice. So `agents/` means two things at once and D2 is split across two levels. A `review/` package holding `verification`, `narrator` and `session`, with `agents/` reduced to plumbing, would match how the other phases read.
 
 **D1 revises, but has no tools to revise with.** Section 4 says the D1 loop "revises and re-checks within a bounded budget". Section 6.2 grants `manifest-verification` "manifest read, read-only". A read-only agent cannot revise a manifest, so one of the two is wrong.
 
