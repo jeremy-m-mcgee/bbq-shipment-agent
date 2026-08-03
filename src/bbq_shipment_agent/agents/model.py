@@ -68,6 +68,9 @@ class Completion:
     #: to a message list. Kept opaque: reconstructing it from `text` and
     #: `tool_calls` would drop whatever the provider round-trips.
     raw_content: Any = None
+    #: Model parameters LaunchDarkly served that the provider refused, and
+    #: that were dropped so the run could continue. Empty on a normal call.
+    dropped_parameters: tuple[str, ...] = ()
     #: The model that actually answered, as the API reported it. Kept beside
     #: the model LaunchDarkly asked for so the two can be compared: an alias
     #: that resolves elsewhere, or a name silently remapped by the provider,
@@ -220,10 +223,25 @@ class AnthropicModel:
         if tools:
             request["tools"] = [tool.to_api() for tool in tools]
 
-        try:
-            message = self._sdk().messages.create(**request)
-        except APIError as exc:
-            raise ModelUnavailable(f"{invocation.agent_key}: {exc}") from exc
+        dropped: list[str] = []
+        while True:
+            try:
+                message = self._sdk().messages.create(**request)
+                break
+            except APIError as exc:
+                unusable = _refused_parameter(exc, request)
+                if unusable is None:
+                    raise ModelUnavailable(f"{invocation.agent_key}: {exc}") from exc
+                # A model parameter the provider will not accept. Design 6.1
+                # lets LaunchDarkly serve these, and what is valid differs by
+                # model -- `temperature` is deprecated for some and fine for
+                # others, so a console value that worked yesterday can 400
+                # today after a model swap. Dropping it and continuing beats
+                # failing a shipping run over an advisory setting, and the
+                # drop is reported rather than silent: `dropped_parameters`
+                # reaches the CLI so the operator fixes the config.
+                request.pop(unusable)
+                dropped.append(unusable)
 
         text = "".join(
             block.text for block in message.content if getattr(block, "type", "") == "text"
@@ -239,9 +257,24 @@ class AnthropicModel:
             output_tokens=getattr(message.usage, "output_tokens", 0),
             stop_reason=message.stop_reason,
             tool_calls=calls,
+            dropped_parameters=tuple(dropped),
             raw_content=message.content,
             model=getattr(message, "model", None),
         )
+
+
+def _refused_parameter(exc: Any, request: dict[str, Any]) -> str | None:
+    """The parameter name a 400 is complaining about, if it is one of ours.
+
+    Deliberately narrow. Only a parameter we actually sent, and only one from
+    `PASSTHROUGH_PARAMETERS`, is ever dropped -- an error naming `model` or
+    `messages` is a real failure and must not be retried into silence.
+    """
+    message = str(getattr(exc, "message", "") or exc)
+    for name in PASSTHROUGH_PARAMETERS:
+        if name in request and f"`{name}`" in message:
+            return name
+    return None
 
 
 class RecordedModel:

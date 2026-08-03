@@ -50,14 +50,15 @@ state, and B4 runs between B2 and C1. Step 4 is done in the
 sense the step meant: `LumpedCapacitanceModel` is C3's default. Calibration
 is not coming — E3 was removed, so design 5 now says the model will not be
 calibrated, and the lane ambient in design 10 is the only thermal lever left.
-Remaining: 5 (B1, needs screenshots) and 7 (B3, needs B1). Steps 6, 9 and 10 done.
+All ten steps are built. B1 is `recipients/extraction.py`, B3 is
+`recipients/repair.py`.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
 - Phase B works on `Recipient` (address + provenance + confidence); `to_shipments` makes the `Shipment` phase C wants at the end of B4. Provenance never reaches planning.
 - `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
-- `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), roster.py (the run input file), validation.py (B2), dedupe.py (B4)
+- `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), extraction.py (B1), roster.py (the run input file), validation.py (B2), repair.py (B3), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
@@ -83,6 +84,7 @@ Remaining: 5 (B1, needs screenshots) and 7 (B3, needs B1). Steps 6, 9 and 10 don
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
 
 ## Agent invocation
+- A model parameter LD serves may be refused by the provider (`temperature` is deprecated for Sonnet 5). `AnthropicModel` drops it, retries once, and reports it on `Completion.dropped_parameters`. Nothing validates parameters at startup — design 10.
 - LD supplies instructions, model name, and model parameters. Nothing in `agents/` hardcodes a prompt or a model.
 - Identity for the ledger record and the LD metric both come from the config captured at A1. Never a fresh lookup at invocation time.
 - The rendered template goes to the model; the un-rendered one is what gets hashed and snapshotted.

@@ -89,6 +89,7 @@ class TestTheContract:
         dependencies = {
             "validator": RecordedAddressValidator.from_file(VALIDATIONS),
             "session": object(),
+            "screenshots": FIXTURES / "screenshots",
         }
         for agent_key, declared in TOOL_NAMES.items():
             built = {t.name for t in build_tools(agent_key, **dependencies)}
@@ -106,10 +107,13 @@ class TestTheAssertion:
         assert_tool_contract({"address-repair": config("address-repair")})
 
     def test_a_tool_python_does_not_offer_is_refused(self):
-        with pytest.raises(ToolContractError, match="read_image_region"):
+        # `purchase_labels` is the sharpest case available: dispatch was
+        # removed (design 9), so an instruction naming it would be asking for
+        # a capability the system deliberately does not have.
+        with pytest.raises(ToolContractError, match="purchase_labels"):
             assert_tool_contract(
                 {"address-repair": config("address-repair",
-                                          tools=["read_image_region"])}
+                                          tools=["purchase_labels"])}
             )
 
     def test_the_message_names_the_agent_and_both_sides(self):
@@ -175,14 +179,14 @@ class TestItAbortsTheRun:
     def test_a1_refuses_to_start(self, tmp_path):
         with pytest.raises(ToolContractError):
             run_a1(tmp_path, {"address-repair": config("address-repair",
-                                                       tools=["read_image_region"])})
+                                                       tools=["purchase_labels"])})
 
     def test_an_aborted_run_writes_no_ledger_row(self, tmp_path):
         # The ledger is append-only: a row written for a run that could not
         # legally proceed cannot be taken back.
         with pytest.raises(ToolContractError):
             run_a1(tmp_path, {"address-repair": config("address-repair",
-                                                       tools=["read_image_region"])})
+                                                       tools=["purchase_labels"])})
         assert list(iter_records(tmp_path / "ledger", RunRecord)) == []
 
     def test_an_aborted_run_writes_no_snapshot(self, tmp_path):
@@ -190,7 +194,7 @@ class TestItAbortsTheRun:
         # offline run inherit the same broken contract from disk.
         with pytest.raises(ToolContractError):
             run_a1(tmp_path, {"address-repair": config("address-repair",
-                                                       tools=["read_image_region"])})
+                                                       tools=["purchase_labels"])})
         assert not (tmp_path / "snap.json").exists()
 
     def test_a_clean_contract_starts_normally(self, tmp_path):

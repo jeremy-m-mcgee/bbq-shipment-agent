@@ -13,6 +13,7 @@ dependencies = [
     "duckdb>=1.5.5",
     "launchdarkly-server-sdk>=9.16.1",
     "launchdarkly-server-sdk-ai>=1.2.0",
+    "pillow>=12.3.0",
     "pyyaml>=6.0.3",
     "shippo>=3.9.0",
 ]

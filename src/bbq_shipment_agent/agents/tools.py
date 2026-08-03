@@ -35,7 +35,10 @@ not exist, which fails at the moment the model tries to call it.
 
 from __future__ import annotations
 
+import base64
+import io
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from ..agent_configs import LD_CONFIGURED_KEYS, AgentConfig
@@ -50,7 +53,7 @@ from ..agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 TOOL_NAMES: dict[str, frozenset[str]] = {
     # B1. Empty and staying empty: design 6.3 gives it no tool access.
     "screenshot-extraction": frozenset(),
-    "address-repair": frozenset({"validate_address"}),
+    "address-repair": frozenset({"validate_address", "read_image_region"}),
     "manifest-verification": frozenset(),
     "review-narrator": frozenset({"propose_edit", "confirm_edit", "read_manifest"}),
 }
@@ -73,6 +76,21 @@ class ToolError(Exception):
     so and given the chance to try something else; killing the run would turn
     every bad argument into an outage.
     """
+
+
+@dataclass(frozen=True)
+class ToolImage:
+    """A tool result the model should see as pixels, not as text.
+
+    `read_image_region` hands back a crop of a screenshot, and describing it
+    in words would defeat the point: B3 exists because the *extraction* was
+    wrong, so the only useful answer is the original pixels. The loop that
+    runs the tool turns this into an image content block; every other tool
+    result is JSON.
+    """
+
+    block: dict[str, Any]
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -146,16 +164,23 @@ def build_tools(agent_key: str, **dependencies: Any) -> tuple[Tool, ...]:
     return builder(**dependencies)
 
 
-def _address_repair_tools(validator: Any = None, **_: Any) -> tuple[Tool, ...]:
-    """B3's tools. `read_image_region` joins them when B1 exists (step 5).
+def _address_repair_tools(
+    validator: Any = None, screenshots: Any = None, **_: Any
+) -> tuple[Tool, ...]:
+    """B3's tools: design 6.2's "Shippo validate, image region read".
 
-    Only `validate_address` is offered today, which is why `TOOL_NAMES` lists
-    only that: the contract describes what Python actually has, not what the
-    design intends it to have eventually. A contract that promised the image
-    tool would make the assertion pass for an instruction that cannot work.
+    `read_image_region` appears only when a screenshots directory is supplied,
+    which is the same rule `validate_address` follows for its validator: the
+    contract describes what Python actually has. A run against a hand-written
+    roster has no images, and offering a tool that cannot work would be worse
+    than offering nothing.
     """
     if validator is None:
         return ()
+
+    tools: list[Tool] = []
+    if screenshots is not None:
+        tools.append(_read_image_region_tool(Path(screenshots)))
 
     def validate_address(
         street1: str, city: str, state: str, zip: str, name: str = ""
@@ -177,7 +202,7 @@ def _address_repair_tools(validator: Any = None, **_: Any) -> tuple[Tool, ...]:
             "messages": list(result.messages),
         }
 
-    return (
+    tools.append(
         Tool(
             name="validate_address",
             description=(
@@ -200,7 +225,93 @@ def _address_repair_tools(validator: Any = None, **_: Any) -> tuple[Tool, ...]:
                 "required": ["street1", "city", "state", "zip"],
             },
             run=validate_address,
+        )
+    )
+    return tuple(tools)
+
+
+def _read_image_region_tool(base: Path) -> Tool:
+    """Crop a screenshot to a region and hand back the pixels.
+
+    Every path is resolved inside `base` and anything escaping it is refused.
+    The model supplies the filename, and a model that has been told to read
+    `../../.env` is a model that reads `.env` unless something stops it. The
+    check is cheap and the alternative is a file-read primitive driven by
+    generated text.
+    """
+
+    def read_image_region(
+        source_image: str,
+        x: int | None = None,
+        y: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        pad: int = 24,
+    ) -> ToolImage:
+        from PIL import Image
+
+        target = (base / source_image).resolve()
+        if not target.is_relative_to(base.resolve()):
+            raise ToolError(
+                f"{source_image!r} is outside the screenshot directory. Only "
+                "images from this run can be read."
+            )
+        if not target.exists():
+            raise ToolError(f"no such screenshot: {source_image}")
+
+        image = Image.open(target)
+        note = f"{source_image}, full image ({image.width}x{image.height})"
+        if None not in (x, y, width, height):
+            # Padded, because a region tight enough to contain the address is
+            # often tight enough to clip the digit at its edge -- and a
+            # clipped digit is exactly what B3 was called in to resolve.
+            box = (
+                max(0, int(x) - pad),
+                max(0, int(y) - pad),
+                min(image.width, int(x) + int(width) + pad),
+                min(image.height, int(y) + int(height) + pad),
+            )
+            image = image.crop(box)
+            note = f"{source_image}, region {box} with {pad}px padding"
+
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="PNG")
+        return ToolImage(
+            block={
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": base64.standard_b64encode(buffer.getvalue()).decode("ascii"),
+                },
+            },
+            note=note,
+        )
+
+    return Tool(
+        name="read_image_region",
+        description=(
+            "Return the original pixels of a screenshot, optionally cropped to "
+            "a region. Use this to re-read an address the extractor got wrong "
+            "-- you are looking at the source, not at the extraction. Omit the "
+            "coordinates to see the whole screenshot, which is worth doing if "
+            "a crop is ambiguous or an address may continue outside it."
         ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "source_image": {
+                    "type": "string",
+                    "description": "Filename, as given in the record's provenance.",
+                },
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+            },
+            "required": ["source_image"],
+        },
+        run=read_image_region,
     )
 
 

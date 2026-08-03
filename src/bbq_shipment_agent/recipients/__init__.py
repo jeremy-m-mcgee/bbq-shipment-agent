@@ -20,6 +20,12 @@ from .extraction import (
     extract_from_images,
 )
 from .record import Provenance, Recipient, Region, to_shipments
+from .repair import (
+    MAX_ITERATIONS,
+    RepairResult,
+    RepairUnavailable,
+    repair_addresses,
+)
 from .roster import (
     DEFAULT_ROSTER_PATH,
     Roster,
@@ -46,10 +52,13 @@ __all__ = [
     "CONFIG_KEY",
     "ExtractionError",
     "ExtractionResult",
+    "MAX_ITERATIONS",
     "Provenance",
     "Recipient",
     "RecordedAddressValidator",
     "Region",
+    "RepairResult",
+    "RepairUnavailable",
     "Unresolved",
     "Roster",
     "RosterError",
@@ -61,6 +70,7 @@ __all__ = [
     "classify",
     "dedupe_recipients",
     "extract_from_images",
+    "repair_addresses",
     "default_ship_dates",
     "load_roster",
     "to_shipments",

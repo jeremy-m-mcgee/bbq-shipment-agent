@@ -1,0 +1,360 @@
+{
+  "instruction_hash": "b82d3827486bbdea",
+  "model": "claude-sonnet-5",
+  "needing_repair": [
+    "hector",
+    "priya-nandakumar",
+    "owen-doyle",
+    "lena-ford",
+    "gus-whitfield",
+    "farah",
+    "beau-tanner",
+    "marina-kovac",
+    "yuki-tanaka"
+  ],
+  "turns": [
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 3332,
+      "model": "claude-sonnet-5",
+      "output_tokens": 1298,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "height": 110,
+            "source_image": "01-imessage-thread.png",
+            "width": 730,
+            "x": 75,
+            "y": 1855
+          },
+          "id": "toolu_01GEVfLKjh5djHXKYMpWXUR1",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 70,
+            "source_image": "04-slack-thread.png",
+            "width": 900,
+            "x": 178,
+            "y": 1120
+          },
+          "id": "toolu_01228b6vHqf4Zr814E2Tzj5g",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 150,
+            "source_image": "05-email.png",
+            "width": 1030,
+            "x": 55,
+            "y": 1080
+          },
+          "id": "toolu_01YXBy7NGAkVDbewEWcRCLF1",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 90,
+            "source_image": "05-email.png",
+            "width": 1030,
+            "x": 55,
+            "y": 1330
+          },
+          "id": "toolu_01389JBxmHSFdbBXSqVpVeU9",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 90,
+            "source_image": "05-email.png",
+            "width": 1030,
+            "x": 55,
+            "y": 1390
+          },
+          "id": "toolu_0122n7YBXd8K85eYzLfWNyWz",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 130,
+            "source_image": "06-imessage-dark.png",
+            "width": 700,
+            "x": 75,
+            "y": 1040
+          },
+          "id": "toolu_01Cgc5pgpfJ7DiKbggXKc8qz",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 130,
+            "source_image": "06-imessage-dark.png",
+            "width": 700,
+            "x": 75,
+            "y": 1215
+          },
+          "id": "toolu_017i6nn68Pc31bTjPC6Un6B6",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 100,
+            "source_image": "07-whatsapp-group.png",
+            "width": 800,
+            "x": 51,
+            "y": 490
+          },
+          "id": "toolu_01FbFe8cetENJJe4JMUWu1xy",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 80,
+            "source_image": "07-whatsapp-group.png",
+            "width": 1119,
+            "x": 51,
+            "y": 913
+          },
+          "id": "toolu_01FjjdXhkpNtrotE9V6jHP3b",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 7081,
+      "model": "claude-sonnet-5",
+      "output_tokens": 1331,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "height": 160,
+            "source_image": "06-imessage-dark.png",
+            "width": 750,
+            "x": 75,
+            "y": 1040
+          },
+          "id": "toolu_01GLK9QTDUQG8YytikfhFD5i",
+          "name": "read_image_region"
+        },
+        {
+          "arguments": {
+            "height": 100,
+            "source_image": "07-whatsapp-group.png",
+            "width": 1170,
+            "x": 51,
+            "y": 913
+          },
+          "id": "toolu_019C9vWeQaVbcj5ZspXJQS7P",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 9041,
+      "model": "claude-sonnet-5",
+      "output_tokens": 287,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "height": 100,
+            "source_image": "07-whatsapp-group.png",
+            "width": 300,
+            "x": 900,
+            "y": 889
+          },
+          "id": "toolu_01BR2xwiYH5seFnvigKbf235",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 9453,
+      "model": "claude-sonnet-5",
+      "output_tokens": 116,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "source_image": "07-whatsapp-group.png"
+          },
+          "id": "toolu_019tgAhPKB8wKDF8FsjW1fdX",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 13438,
+      "model": "claude-sonnet-5",
+      "output_tokens": 814,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "source_image": "06-imessage-dark.png"
+          },
+          "id": "toolu_01KekpnxKTMUBZuuxxupHCJi",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 18120,
+      "model": "claude-sonnet-5",
+      "output_tokens": 1407,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "city": "St. Louis",
+            "name": "Hector",
+            "state": "MO",
+            "street1": "11 N 4th St",
+            "zip": "63102"
+          },
+          "id": "toolu_01DYsAqpq35XzNs6Eqz9Pkcu",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "New York",
+            "name": "Priya Nandakumar",
+            "state": "NY",
+            "street1": "350 Fifth Avenue",
+            "zip": "10018"
+          },
+          "id": "toolu_01Y1ehrqTM3ztKsA5tBDZasB",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "Washington",
+            "name": "Owen Doyle",
+            "state": "DC",
+            "street1": "1000 Jefferson Dr",
+            "zip": "20560"
+          },
+          "id": "toolu_018zchsxVrW4uDTs2kCixWWE",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "Chicago",
+            "name": "Lena Ford",
+            "state": "IL",
+            "street1": "1060 W Addison St",
+            "zip": "60631"
+          },
+          "id": "toolu_01MaX9MHpjwWURjo3RR6VDgo",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "Philadelphia",
+            "name": "Gus Whitfield",
+            "state": "PA",
+            "street1": "520 Chestnut St",
+            "zip": "19106"
+          },
+          "id": "toolu_016Tziub5qUinHKxyV3v9CkS",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "Boston",
+            "name": "Beau Tanner",
+            "state": "MA",
+            "street1": "4 South Market",
+            "zip": "02109"
+          },
+          "id": "toolu_018jpY95ZEhbWPpuZLZW8K85",
+          "name": "validate_address"
+        },
+        {
+          "arguments": {
+            "city": "Los Angeles",
+            "name": "Marina Kovac",
+            "state": "CA",
+            "street1": "2800 E Observatory Rd",
+            "zip": "90072"
+          },
+          "id": "toolu_01HSPxPWuoLvs7AaP5QYNF4Y",
+          "name": "validate_address"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 20604,
+      "model": "claude-sonnet-5",
+      "output_tokens": 1279,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "height": 160,
+            "source_image": "05-email.png",
+            "width": 1030,
+            "x": 55,
+            "y": 1330
+          },
+          "id": "toolu_01NfDydPGEcM343KM8ro3prR",
+          "name": "read_image_region"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 22249,
+      "model": "claude-sonnet-5",
+      "output_tokens": 258,
+      "text": "",
+      "tool_calls": [
+        {
+          "arguments": {
+            "city": "Philadelphia",
+            "name": "Gus Whitfield",
+            "state": "PA",
+            "street1": "520 Chestnut Street",
+            "zip": "19106"
+          },
+          "id": "toolu_013tLvVZDgAu4eVnGQMkLA56",
+          "name": "validate_address"
+        }
+      ]
+    },
+    {
+      "dropped_parameters": [
+        "temperature"
+      ],
+      "input_tokens": 22621,
+      "model": "claude-sonnet-5",
+      "output_tokens": 1990,
+      "text": "{\n  \"repairs\": [\n    {\n      \"recipient_key\": \"hector\",\n      \"read_from_image\": \"11 N 4th St, St. Louis, MO 63102 (with prior correction note 'sorry NORTH not south')\",\n      \"proposed\": {\n        \"street1\": \"11 N 4th St\",\n        \"city\": \"Saint Louis\",\n        \"state\": \"MO\",\n        \"zip\": \"63102\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"high\"\n    },\n    {\n      \"recipient_key\": \"priya-nandakumar\",\n      \"name_note\": \"validator returned a different 5-digit ZIP, treated as correctable repair\",\n      \"read_from_image\": \"adding my work address instead \u2014 350 Fifth Avenue, New York, NY 10018\",\n      \"proposed\": {\n        \"street1\": \"350 5th Ave\",\n        \"city\": \"New York\",\n        \"state\": \"NY\",\n        \"zip\": \"10118\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"high\"\n    },\n    {\n      \"recipient_key\": \"owen-doyle\",\n      \"read_from_image\": \"it's the 1000 Jefferson Dr, Washington, DC 20560 building, apartment side entrance\",\n      \"proposed\": {\n        \"street1\": \"1000 Jefferson Dr SW\",\n        \"city\": \"Washington\",\n        \"state\": \"DC\",\n        \"zip\": \"20560\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"high\"\n    },\n    {\n      \"recipient_key\": \"lena-ford\",\n      \"read_from_image\": \"Also adding Lena Ford \u2014 1060 W Addison St, Chicago, IL 60631.\",\n      \"proposed\": {\n        \"street1\": \"1060 W Addison St\",\n        \"city\": \"Chicago\",\n        \"state\": \"IL\",\n        \"zip\": \"60613\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"high\"\n    },\n    {\n      \"recipient_key\": \"beau-tanner\",\n      \"read_from_image\": \"and my buddy Beau Tanner, 4 South Market, Boston MA 02109\",\n      \"proposed\": {\n        \"street1\": \"4 S Market St\",\n        \"city\": \"Boston\",\n        \"state\": \"MA\",\n        \"zip\": \"02109\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"high\"\n    },\n    {\n      \"recipient_key\": \"marina-kovac\",\n      \"read_from_image\": \"Marina Kovac, put me down please \u2014 2800 E Observatory Rd, Los Angeles CA (zip supplied later in thread: 'oops forgot the zip, it's 90072')\",\n      \"proposed\": {\n        \"street1\": \"2800 E Observatory Ave\",\n        \"city\": \"Los Angeles\",\n        \"state\": \"CA\",\n        \"zip\": \"90027\"\n      },\n      \"validated\": true,\n      \"attempts\": 1,\n      \"confidence\": \"medium\"\n    }\n  ],\n  \"escalations\": [\n    {\n      \"recipient_key\": \"gus-whitfield\",\n      \"read_from_image\": \"And Gus Whitfield over in 520 Chestnut St, Philadelpia, PA 19106.\",\n      \"reason\": \"Reading is clear (with 'Philadelpia' corrected to 'Philadelphia') but the validator reports no such deliverable address exists at 520 Chestnut St, Philadelphia, PA 19106 for either 'St' or 'Street' street-type variants; no misread digit could be identified to try an alternate number, so escalating rather than guessing a different street number.\",\n      \"attempts\": 2\n    },\n    {\n      \"recipient_key\": \"farah\",\n      \"read_from_image\": \"Farah too \u2014 300 Alamo Plaza, San Antonio TX 782[obscured by heart-reaction emoji, remaining zip digits not visible]\",\n      \"reason\": \"The last two digits of the ZIP code are covered by a heart emoji reaction in the screenshot and no follow-up message supplies the missing digits, so the ZIP cannot be read and must not be guessed.\",\n      \"attempts\": 1\n    },\n    {\n      \"recipient_key\": \"yuki-tanaka\",\n      \"read_from_image\": \"116 Rep. John Lewis Way N, Nashville, TN 3721[text truncated at right edge of screenshot, last zip digit(s) not visible]\",\n      \"reason\": \"The ZIP code is cut off by the edge of the phone screen in the source screenshot itself (not a crop issue \u2014 confirmed against the full image), leaving at least one digit unread with no later message supplying it, so it cannot be completed without guessing.\",\n      \"attempts\": 1\n    }\n  ]\n}",
+      "tool_calls": []
+    }
+  ]
+}
