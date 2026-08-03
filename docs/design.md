@@ -601,7 +601,7 @@ Splitting was the open-ended move, and it is now known to be impossible (section
 
 Both are decidable by running the thermal model over the candidate months and reading off the answer, which is exactly what section 2 says a model should not be in the path of, and what section 6.3 lists as the boundary that is easy to erode.
 
-Demoted. `planning/remediation.py` is C4, the registry is three agents, and the AI Config should be deleted in LaunchDarkly — nothing fetches it, so a stale one is inert rather than dangerous.
+Demoted. `planning/remediation.py` is C4, the registry is three agents, and the AI Config has been deleted in LaunchDarkly — which changed nothing observable, since nothing had fetched it since the demotion. Verified after the fact: LaunchDarkly now answers `FLAG_NOT_FOUND` for the key, and a live `run init` retrieves the same three agents and leaves the snapshot untouched. That is the shape a clean removal should have — the config going away is a no-op because the code stopped depending on it first.
 
 Two things the demotion bought that were not obvious going in. C4 now refuses a shipment that is *not* globally infeasible rather than answering, because the answer would be a recommendation to defer something that ships fine today; that guard found a real case, since 40C still clears on a one-day service. And a deferral now carries the ambient it was computed at and a warning that a future run's rates will differ, which an instruction could have asked for and a function simply does.
 
