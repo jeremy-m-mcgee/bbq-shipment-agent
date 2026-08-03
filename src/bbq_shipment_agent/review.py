@@ -188,6 +188,7 @@ class ReviewSession:
         quoter: RateQuoter,
         thermal_model: ThermalModel | None = None,
         escalated: tuple[Excluded, ...] = (),
+        suppressed: tuple[Excluded, ...] = (),
     ) -> None:
         self.run = run
         self.origin = origin
@@ -197,7 +198,9 @@ class ReviewSession:
         self._model = thermal_model
         self._escalated = escalated
         self._shipments = shipments
-        self._excluded: list[Excluded] = []
+        # Seeded with B4's suppressions, so an exclusion made during the
+        # review joins the same list rather than starting a second one.
+        self._excluded: list[Excluded] = list(suppressed)
         self._pending: tuple[Edit, tuple[Shipment, ...]] | None = None
         self.history: list[EditResult] = []
         self.terminal: TerminalState | None = None

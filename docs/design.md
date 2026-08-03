@@ -79,10 +79,11 @@ Ship dates are chosen per shipment, independently. A single Saturday shipment th
 flowchart TD
     A1[A1 Initialize run] --> B1[B1 Extract from screenshots]
     B1 --> B2[B2 Validate addresses]
-    B2 -->|clean| C1[C1 Define load]
+    B2 -->|clean| B4[B4 Dedupe and suppress]
     B2 -->|correctable or failed| B3[B3 Repair loop]
-    B3 -->|repaired| C1
+    B3 -->|repaired| B4
     B3 -->|exhausted| ESC[Escalation list]
+    B4 --> C1[C1 Define load]
     C1 --> C2[C2 Enumerate configurations]
     C2 --> C3[C3 Thermal gate]
     C3 -->|feasible| C5[C5 Solve carrier pairs]
@@ -130,12 +131,12 @@ B3 proposes and the validator adjudicates. The failure mode worth designing agai
 
 Output: repaired records plus an escalation list.
 
-**B4. Dedupe and suppress.** *Deferred. See section 11, step 12.*
+**B4. Dedupe and suppress.**
 Within-run duplicates, then same-address consolidation. No cross-run check — see section 9.
 
-Not part of the spine. At ~22 packets on a hand-written list the operator is looking at the duplicates as they type them, so the stage automates a check that is already cheap to do by eye, and the same-address case needs a judgement call — one parcel or two — that the operator can make faster than a rule can. Deferring it costs nothing structural: the pipeline runs B2 straight into C1, and D1's duplicate-destination check still catches a doubled doorstep before a human sees the manifest.
+Deterministic, and a pure function of its input: B4 reads no prior state, so the same recipient list always produces the same eligible set. Output: eligible set, plus an explicit suppression reason for everyone excluded, and a map from each kept shipment to the recipients folded onto it — the packer needs it that way round, since a parcel covering two people wants a card with two names.
 
-If it is picked up: deterministic, and a pure function of its input — B4 reads no prior state, so the same recipient list always produces the same eligible set. Output: eligible set, plus an explicit suppression reason for everyone excluded.
+**It runs after B2, and the order is load-bearing.** Two recipients at one doorstep are only *identical* once the validator has canonicalised both addresses; a pair that differs by a typo the validator was about to fix would survive a dedupe performed on the submitted forms. Consolidation also has to preserve a `required_ship_date`, since folding a pinned shipment onto an unpinned one would silently discard section 3's highest-leverage interaction.
 
 ### Phase C: Planning
 
@@ -533,7 +534,7 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 The recipient list is an explicit instruction. It is hand-written by the operator, or extracted from screenshots of people actually asking, and either way a name on it is a deliberate act. Excluding someone because a previous run served them overrides that instruction on the strength of a date, and at three to five runs a year a repeat is far more likely to be intentional — a second cook, a second occasion — than an accident. The window default was never set, which was the tell: nobody had an intuition for a number because the rule had no natural value.
 
-Within-run deduplication and same-address consolidation are not rejected on the same grounds — those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. They are deferred instead, for the separate reason in section 4's B4 entry. What matters here is that dropping the cross-run check removes the only prior-state dependency from the deterministic spine, whether or not B4 is ever built.
+Within-run deduplication and same-address consolidation are not rejected on the same grounds — those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. They stay, and are built. What matters here is that dropping the cross-run check removes the only prior-state dependency from the deterministic spine: B4 reads no ledger and no clock, so the same recipient list always produces the same eligible set.
 
 **Dispatch.** Removed, having been designed and specified but never built. E1 bought labels, E2 wrote the shipment rows, E3 backfilled actual arrival times some days later.
 
@@ -624,7 +625,7 @@ Sequenced so that each step de-risks the next.
 7. **Repair loop.** B3, the first tool-using agent, and the one with the clearest payoff.
 8. **Review interface.** D2, including the re-solve and pair-comparison logic, plus the `review-narrator` agent. Terminal states write E2's shipment rows.
 9. **Infeasibility remediation.** C4, last because it is the rarest path.
-10. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. The module is already written and tested in `recipients/dedupe.py`; picking this up means wiring it between B2 and C1, nothing more. Until then it has no caller.
+10. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. *Done.* It also made D1's first check answerable — "every input recipient appears in exactly one of eligible, suppressed or escalated" needs a suppressed list that can be non-empty.
 
 Dispatch and backfill were steps 9 and 10 and are gone; section 9 records why.
 

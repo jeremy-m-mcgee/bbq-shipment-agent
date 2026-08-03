@@ -302,3 +302,78 @@ class TestShipDates:
         # Saturday is USPS-only for perishables, so the pin decides the carrier.
         assert result.manifest.carriers == ("USPS",)
         assert result.manifest.forced_by_saturday
+
+
+class TestDedupeIsInTheSpine:
+    def test_two_recipients_at_one_doorstep_get_one_parcel(self, workspace):
+        roster = ROSTER + """  - key: bea
+    name: Bea Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+"""
+        result = run_plan(workspace, roster_text=roster)
+        assert [r.recipient_key for r in result.manifest.rows] == ["ana"]
+        assert result.suppression.consolidated == {"ana": ("bea",)}
+
+    def test_the_suppression_reaches_the_manifest(self, workspace):
+        roster = ROSTER + """  - key: bea
+    name: Bea Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+"""
+        result = run_plan(workspace, roster_text=roster)
+        assert [e.recipient_key for e in result.manifest.suppressed] == ["bea"]
+        assert "same address as Ana Ruiz" in result.manifest.suppressed[0].reason
+
+    def test_it_runs_after_validation_not_before(self, workspace):
+        # The order is load-bearing, not cosmetic. These two submit different
+        # ZIPs for one doorstep; only the validator's canonical form makes them
+        # equal, so deduping the submitted addresses would ship twice.
+        roster = ROSTER.replace('    zip: "20500"', '    zip: "20500-0005"') + """  - key: bea
+    name: Bea Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+"""
+        result = run_plan(workspace, roster_text=roster)
+        assert len(result.manifest.rows) == 1
+
+    def test_nobody_is_silently_dropped(self, workspace):
+        # D1's first check, made answerable: every input recipient lands in
+        # exactly one of eligible, suppressed or escalated.
+        roster = ROSTER + """  - key: bea
+    name: Bea Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+"""
+        result = run_plan(workspace, roster_text=roster)
+        assert set(result.manifest.accounted_for()) == {
+            s.recipient_key for s in result.roster.shipments
+        }
+
+    def test_the_suppression_count_reaches_the_ledger(self, workspace):
+        roster = ROSTER + """  - key: bea
+    name: Bea Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+"""
+        result = run_plan(workspace, roster_text=roster)
+        appends = list(iter_records(workspace / "ledger", RunRecord))
+        assert appends[-1].suppressed_count == 1
+        # The packer needs it the other way round: this parcel covers these
+        # people, so a card with two names goes in the box.
+        assert appends[-1].evaluation_reasons["consolidated"] == {"ana": ["bea"]}
+
+    def test_a_run_with_no_duplicates_suppresses_nothing(self, workspace):
+        result = run_plan(workspace)
+        assert result.suppression.suppressed == ()
+        assert result.manifest.suppressed == ()

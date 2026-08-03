@@ -458,14 +458,18 @@ def _review(args: argparse.Namespace, run, roster, result, client) -> int:
     from .agents.narrator import Narrator, NarratorUnavailable
     from .review import Edit, EditKind, ReviewError, ReviewSession
 
+    # The deduped set, not B2's output: reviewing a plan that still contains
+    # a doorstep's second recipient would offer the operator edits on a
+    # shipment the manifest never had.
     session = ReviewSession(
         run,
-        result.validation.eligible,
+        result.suppression.eligible,
         roster.origin,
         roster.ship_dates,
         ledger_root=args.ledger,
         quoter=_quoter(args),
         escalated=result.validation.escalated,
+        suppressed=result.suppression.suppressed,
     )
 
     narrator = None

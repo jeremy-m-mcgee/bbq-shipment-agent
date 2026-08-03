@@ -1,6 +1,7 @@
-"""The spine, end to end. Build order step 3, plus D1.
+"""The spine, end to end. Build order step 3, plus B4 and D1.
 
-A1 -> B2 -> C1 -> C2 -> C3 -> C5 -> C6 -> D1. Design 11 says steps 1 through 3
+A1 -> B2 -> B4 -> C1 -> C2 -> C3 -> C5 -> C6 -> D1. Design 11 says steps 1
+through 3
 "produce a system that is useful on its own: it will plan a run correctly and
 hand over a manifest, with the operator supplying addresses by hand". Every
 stage existed before this module; none of them had a caller, which meant the
@@ -12,8 +13,12 @@ strictly downstream: it reads the finished manifest and reports, and cannot
 alter a single field on it (design 10 settles that reading). A run with
 verification off is the same run without the critique pass.
 
-B4 is not in the sequence -- design 11 moved it to step 12. B3 (repair) is
-step 7, so a failed address escalates rather than being repaired.
+B3 (repair) is step 7 and is not in the sequence, so a failed address
+escalates rather than being repaired.
+
+B4 sits between B2 and C1 and is the reason `suppressed` on a manifest is no
+longer always empty. It runs *after* validation on purpose -- see the comment
+at the call site.
 
 ## What this module is and is not
 
@@ -62,7 +67,9 @@ from .recipients import (
     AddressValidationUnavailable,
     AddressValidator,
     Roster,
+    SuppressionReport,
     ValidationReport,
+    dedupe_shipments,
     validate_shipments,
 )
 from .run import Run
@@ -108,6 +115,7 @@ class PlanResult:
     run: Run
     roster: Roster
     validation: ValidationReport
+    suppression: SuppressionReport
     solve: Solve
     manifest: Manifest | None
     #: Why there is no manifest, when there is none.
@@ -152,8 +160,15 @@ def plan_run(
         mode,
     )
 
+    # B4, after B2 rather than before it. Design 4 orders them that way and
+    # validation is why it matters: two recipients at one doorstep are only
+    # *identical* once the validator has canonicalised both addresses to the
+    # same ZIP+4. Deduping the submitted forms would miss a pair that differed
+    # by a typo the validator was about to fix.
+    suppression = dedupe_shipments(validation.eligible)
+
     solve = solve_carriers(
-        validation.eligible,
+        suppression.eligible,
         roster.origin,
         ship_dates or roster.ship_dates,
         quoter,
@@ -166,6 +181,7 @@ def plan_run(
         manifest = assemble_manifest(
             run.run_id,
             solve,
+            suppressed=suppression.suppressed,
             escalated=validation.escalated,
             cap_fingerprint=run.cap_fingerprint,
         )
@@ -174,7 +190,9 @@ def plan_run(
         # cue, and C4 does not exist yet, so it is reported rather than raised.
         reason = str(exc)
 
-    _record_planning(ledger_root, run, roster, validation, solve, manifest, mode)
+    _record_planning(
+        ledger_root, run, roster, validation, suppression, solve, manifest, mode
+    )
 
     # D1 runs only when there is something to verify. A missing manifest is
     # not a manifest with problems, and asking a read-only critic to review
@@ -194,6 +212,7 @@ def plan_run(
         run=run,
         roster=roster,
         validation=validation,
+        suppression=suppression,
         solve=solve,
         manifest=manifest,
         reason=reason,
@@ -206,6 +225,7 @@ def _record_planning(
     run: Run,
     roster: Roster,
     validation: ValidationReport,
+    suppression: SuppressionReport,
     solve: Solve,
     manifest: Manifest | None,
     mode: ValidationMode,
@@ -220,6 +240,13 @@ def _record_planning(
     reasons = run.evaluation_reasons()
     reasons["validation_mode"] = mode.value
     reasons["validation_corrected"] = validation.corrected_count
+    if suppression.consolidated:
+        # The packer needs this the other way round from the suppression
+        # list: this parcel covers these people, so a card with two names
+        # goes in the box.
+        reasons["consolidated"] = {
+            k: list(v) for k, v in suppression.consolidated.items()
+        }
     reasons["available_carriers"] = sorted(solve.available_carriers)
     if solve.messages:
         reasons["carrier_messages"] = [
@@ -232,7 +259,7 @@ def _record_planning(
             packet_count=roster.packet_count,
             carrier_pair=list(manifest.carriers) if manifest else None,
             total_cost=manifest.total_cost if manifest else None,
-            suppressed_count=0,  # B4 is deferred; nothing suppresses today.
+            suppressed_count=len(suppression.suppressed),
             escalated_count=len(validation.escalated),
             stranded_count=len(manifest.stranded) if manifest else None,
             evaluation_reasons=reasons,

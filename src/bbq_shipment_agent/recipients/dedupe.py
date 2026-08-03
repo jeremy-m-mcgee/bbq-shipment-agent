@@ -3,11 +3,12 @@
 "Within-run duplicates, then same-address consolidation. No cross-run check --
 see section 9."
 
-Deferred, and therefore unwired: design 4 moved B4 out of the spine to build
-order step 12, on the grounds that at ~22 packets on a hand-written list the
-operator sees the duplicates as they type them. The pipeline runs B2 straight
-into C1. This module is complete and tested; picking the stage up means
-calling `dedupe_shipments` between the two, and nothing else.
+Runs between B2 and C1, and the order matters. Two recipients at one doorstep
+are only *identical* once the validator has canonicalised both addresses to the
+same ZIP+4, so deduping the submitted forms would miss a pair that differed by
+a typo B2 was about to fix. Measured: an operator typing `20500` for one and
+`20500-0005` for the other produces two parcels if B4 goes first and one if it
+goes second.
 
 Two passes, in that order, because they answer different questions. The first
 catches the same recipient key listed twice: an operator scrolling a list and

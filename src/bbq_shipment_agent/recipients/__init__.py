@@ -4,8 +4,8 @@ B2 (validate) and B4 (dedupe and suppress) live here. Both are deterministic —
 design 4 marks them so, and the model-driven repair loop that sits between
 them is B3, which arrives at build order step 7.
 
-Only B2 is in the spine. B4 is deferred to build order step 12 and has no
-caller; see its module docstring.
+Both are in the spine, B2 then B4, in that order for the reason in
+`dedupe`'s module docstring.
 
 Kept apart from `planning` because the phases answer different questions:
 Phase B decides *who* is shipped to, Phase C decides *how*.

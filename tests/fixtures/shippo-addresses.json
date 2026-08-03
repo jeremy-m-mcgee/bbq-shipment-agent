@@ -8,6 +8,15 @@
     "street1": "1 Infinite Loop",
     "zip": "95014-2083"
   },
+  "1600 pennsylvania ave nw|washington|dc|20500-0005|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "DC",
+    "street1": "1600 Pennsylvania Ave NW",
+    "zip": "20500-0005"
+  },
   "1600 pennsylvania ave nw|washington|dc|20500|us": {
     "city": "Washington",
     "country": "US",

@@ -58,8 +58,8 @@ class Shipment:
     def address_key(self) -> str:
         """Normalized address identity, for the duplicate check.
 
-        With B4 deferred (design 11, step 12), this is what D1's
-        duplicate-destination check runs on -- the remaining guard against
-        the same doorstep being quoted twice.
+        B4 consolidates on this, and D1's duplicate-destination check runs
+        on it afterwards -- one stops the same doorstep being quoted twice,
+        the other notices if it happened anyway.
         """
         return self.address.cache_key()

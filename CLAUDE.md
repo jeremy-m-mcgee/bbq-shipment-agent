@@ -35,18 +35,19 @@ manifest-verification (D1) | review-narrator (D2)
 See docs/design.md section 11. Steps 1, 2 and 3 are done. `run plan` runs
 A1 → B2 → C1–C6 → D1 from `recipients.yaml` and prints a verified manifest.
 Everything through C6 makes no model call; D1 is the one agent, gated by
-`verification-enabled` and strictly downstream of the manifest. B4 is written
-and tested but deferred to step 10 and has no caller. Step 4 is done in the
+`verification-enabled` and strictly downstream of the manifest. Steps 8 and 10
+are done too: `run review` holds the D2 conversation and records a terminal
+state, and B4 runs between B2 and C1. Step 4 is done in the
 sense the step meant: `LumpedCapacitanceModel` is C3's default. Calibration
 is not coming — E3 was removed, so design 5 now says the model will not be
 calibrated, and the lane ambient in design 10 is the only thermal lever left.
-Remaining: 5 (B1), 6 (tool contract), 7 (B3), 8 (D2), 9 (C4), 10 (B4).
+Remaining: 5 (B1, needs screenshots), 7 (B3), 9 (C4). Step 6 is done.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
-- `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → C1–C6 → D1
-- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), verification.py (D1)
-- `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4, deferred, no caller)
+- `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
+- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
+- `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
