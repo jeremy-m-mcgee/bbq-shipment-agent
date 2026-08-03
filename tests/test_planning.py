@@ -287,3 +287,62 @@ class TestThermalGate:
 
         configurations = enumerate_all(load, quoter).configurations
         assert thermal_gate(load, configurations, model=JustOverTheLine()) == ()
+
+
+class TestSplittingDoesNotHelp:
+    """Design 4 used to offer C4 a 'split the shipment' move. It is dead.
+
+    Kept as a test rather than only a note, because the claim is unintuitive
+    and someone will propose it again.
+    """
+
+    def _arrival(self, load, gel, days, ambient):
+        from dataclasses import replace as _replace
+
+        from bbq_shipment_agent.planning import ParcelSpec, Quote
+        from bbq_shipment_agent.planning.configurations import Configuration
+
+        parcel = ParcelSpec.build(load, BOXES[BoxSize.SMALL], gel)
+        quote = Quote(
+            carrier="X", service_name="s", service_token="s", amount=1.0,
+            currency="USD", estimated_days=days,
+            duration_terms="Delivery in N days.", parcel=parcel,
+        )
+        configuration = Configuration(
+            box_size=BoxSize.SMALL, gel_packs=gel, ship_date=MONDAY, quote=quote
+        )
+        return LumpedCapacitanceModel().predict_arrival_temp_c(
+            load, configuration, Lane("l", ambient)
+        )
+
+    def test_a_split_parcel_never_arrives_colder(self, load):
+        from dataclasses import replace as _replace
+
+        for ambient in (27.0, 32.0, 36.0, 40.0):
+            for days in (1, 2, 3, 4):
+                whole = self._arrival(load, 6, days, ambient)
+                half = self._arrival(
+                    _replace(load, mass_kg=load.mass_kg / 2), 6, days, ambient
+                )
+                assert half >= whole - 1e-9, (ambient, days, whole, half)
+
+    def test_and_is_strictly_worse_where_it_matters(self, load):
+        # Not merely no better: at the margin where a remediation would be
+        # attempted, halving the ballast costs two degrees.
+        from dataclasses import replace as _replace
+
+        whole = self._arrival(load, 6, 2, 36.0)
+        half = self._arrival(_replace(load, mass_kg=load.mass_kg / 2), 6, 2, 36.0)
+        assert half > whole + 1.0
+
+    def test_because_hold_time_does_not_depend_on_the_load(self, load):
+        # The reason, pinned separately from the symptom: hold time is
+        # latent_budget / leak_rate, and neither term contains product mass.
+        # Splitting leaves it identical and removes ballast, so it can only
+        # hurt -- section 5's own claim, applied to the split.
+        from dataclasses import replace as _replace
+
+        light = _replace(load, mass_kg=load.mass_kg / 8)
+        # Deep into gel exhaustion, both converge on ambient from the same
+        # hold time; the lighter load simply gets there sooner.
+        assert self._arrival(light, 6, 5, 32.0) >= self._arrival(load, 6, 5, 32.0)

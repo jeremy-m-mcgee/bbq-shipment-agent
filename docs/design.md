@@ -151,8 +151,12 @@ Filter to configurations where predicted arrival temperature stays at or below 4
 
 Hard gate. Output: feasible set per shipment, occasionally empty.
 
-**C4. Remediate global infeasibility.** *Agent loop.*
-Runs only where C3 left a shipment with nothing feasible under any carrier. Explores moves that C2 does not enumerate: splitting the shipment, deferring to the next run, or declaring the destination undeliverable with a stated reason.
+**C4. Remediate global infeasibility.** *Not yet built. See section 10 — splitting turned out to be impossible, which is most of what this stage was for.*
+Runs only where C3 left a shipment with nothing feasible under any carrier. The moves available are deferring to a cooler month, or declaring the destination undeliverable with a stated reason.
+
+This entry used to list a third move, splitting the shipment, on the reasoning that "two smaller parcels have different thermal behaviour than one". They do, and it is *worse*. Hold time is `latent_budget / leak_rate`, and neither term contains the product mass — gel pack count and box geometry set it entirely. Splitting therefore leaves hold time identical while halving the only thermal ballast in the box, so the contents track ambient faster once the gel is spent. Measured at 36C and two days' transit: 33.8C whole, 35.9C split in half, 36.0C split in four.
+
+That is section 5's own central claim turned on the split: at 1.5 lb the product is minimal ballast, and removing half of what little there is can only hurt. Splitting into two boxes does not add refrigerant either, because gel capacity is a property of the box and each half-parcel still takes at most six.
 
 This loop handles global infeasibility only. A shipment that is feasible under some carrier but not under the pair currently being evaluated is not a failure, it is a tradeoff, and it is handled in C5.
 
@@ -585,6 +589,23 @@ What remained after that measurement was the single 22C default, and that is wha
 Calibrating UA against real transit data is no longer on the table at all — E3 was removed with the rest of dispatch, and section 5 says the model will not be calibrated. The ambient assumption is therefore the only thermal lever left, which is a reason to state it carefully rather than to widen it.
 
 `TestThermalGate` pins the *properties* rather than the numbers — more gel packs never arrives warmer, the larger box is never thermally better, zero gel packs never survives. Those should survive recalibration; no constant should, which is why none is pinned.
+
+**C4 may not deserve to be an agent any more.** Section 6.2 lists `infeasibility-remediation` as one of the four model-driven loops, and its AI Config is live. The justification was that it "explores moves that C2 does not enumerate" — an open input space, which is section 2's bar for spending agency.
+
+Splitting was the open-ended move, and it is now known to be impossible (section 4). What remains is two moves and a computation:
+
+- **Defer to a cooler month.** Feasible or not is arithmetic, now that ambient varies by month. Measured: a Texas destination at six gel packs supports only 1-day transit in August and 2-day in October; a Washington one supports 3-day in January.
+- **Declare undeliverable.** What is left when no month works.
+
+Both are decidable by running the thermal model over the candidate months and reading off the answer, which is exactly what section 2 says a model should not be in the path of, and what section 6.3 lists as the boundary that is easy to erode.
+
+Three readings:
+
+- **Demote it to deterministic logic**, delete the AI Config, and amend 6.2 to three agents. Most consistent with "agency is a cost, not a goal", and the cheapest.
+- **Keep the agent for the reason it writes down.** The computation says *which* month works; a human still has to be told why a recipient is being dropped or delayed, and phrasing that for twenty-two strangers is the kind of open-ended job the narrator earns its keep on. This makes C4 an explainer like D2 rather than a decider.
+- **Keep it as specified** and accept that its remaining decisions are computable. Weakest, and the reading this section exists to prevent.
+
+Deliberately not decided here: the AI Config was written and reviewed against the three-move version, so whichever way this goes, that instruction text needs rewriting before C4 runs at all.
 
 **Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
