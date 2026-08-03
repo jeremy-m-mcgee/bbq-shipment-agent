@@ -143,9 +143,6 @@ class Narrator:
 
             turn.input_tokens += completion.input_tokens
             turn.output_tokens += completion.output_tokens
-            metrics.track_tokens(
-                completion.input_tokens, completion.output_tokens
-            )
             self.messages.append(
                 {
                     "role": "assistant",
@@ -172,6 +169,13 @@ class Narrator:
                 "ask again, or read the manifest directly)"
             )
 
+        # Once per turn, with the whole turn's usage, not once per model call.
+        # A tracker records tokens exactly once, and a turn that ran three tool
+        # round trips makes three calls -- reporting each one meant the first
+        # was recorded and the rest were dropped with a warning. The turn is
+        # also the unit `iterations` counts on the ledger line, so the two
+        # numbers now describe the same thing.
+        metrics.track_tokens(turn.input_tokens, turn.output_tokens)
         metrics.track_success()
         self._record("findings" if turn.tools_called else "clean", turn)
         self.turns.append(turn)
