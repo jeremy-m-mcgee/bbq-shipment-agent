@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import Any
 
 from ..agent_configs import AgentConfig
-from ..agents.model import Invocation, ModelUnavailable
+from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.verification import render_instructions
 from ..context import STAGE_EXTRACTION
 from ..planning.manifest import Excluded
@@ -146,7 +146,7 @@ def extract_from_images(
     run: Any,
     images: tuple[Path, ...],
     *,
-    model: Any,
+    model: ConversingModel,
     ledger_root: Path | str,
     config: AgentConfig | None = None,
 ) -> ExtractionResult:

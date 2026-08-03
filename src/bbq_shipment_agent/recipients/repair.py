@@ -47,7 +47,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..agents.model import Invocation, ModelUnavailable
+from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.tools import Tool, ToolError, ToolImage, build_tools
 from ..agents.verification import render_instructions
 from ..context import STAGE_ADDRESS_REPAIR
@@ -98,7 +98,7 @@ def repair_addresses(
     needing_repair: tuple[Recipient, ...],
     *,
     validator: AddressValidator,
-    model: Any,
+    model: ConversingModel,
     screenshots: Path | str | None = None,
     ledger_root: Path | str,
 ) -> RepairResult:

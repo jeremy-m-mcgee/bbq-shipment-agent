@@ -46,8 +46,6 @@ DEFAULT_MAX_TOKENS = 4_096
 #: typo in the console should not become a TypeError inside a shipping run.
 PASSTHROUGH_PARAMETERS: tuple[str, ...] = ("max_tokens", "temperature", "top_p")
 
-PROVIDER = "anthropic"
-
 
 class ModelUnavailable(Exception):
     """The model could not be called. Never a silently empty answer."""

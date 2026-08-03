@@ -42,7 +42,7 @@ from typing import Any
 
 from ..context import STAGE_REVIEW_NARRATOR
 from ..run import Run, record_agent_invocation
-from .model import Invocation, ModelUnavailable
+from .model import ConversingModel, Invocation, ModelUnavailable
 from .tools import Tool, ToolError, build_tools
 from .verification import render_instructions
 
@@ -91,7 +91,7 @@ class Narrator:
         session: Any,
         *,
         ledger_root: Path | str,
-        model: Any,
+        model: ConversingModel,
     ) -> None:
         config = run.agent_configs.get(CONFIG_KEY)
         if config is None or not config.available:

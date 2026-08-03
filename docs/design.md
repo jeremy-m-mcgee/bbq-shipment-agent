@@ -366,7 +366,11 @@ context = {
 mode = flags.variation("planner-mode", context, default="off")
 ```
 
-Memory is on for `address_repair` and off for `carrier_selection` because a targeting rule says so. The `shipment` context kind means specific records that have caused problems before can be targeted directly, which expresses the memory axis as a targeting rule rather than a separate subsystem.
+**What the `stage` kind actually varies, in the built system, is AI Config retrieval.** Each configured stage is evaluated under its own kind, so `address-repair` and `review-narrator` can be served different instruction text and different models by targeting rule. That part works and is exercised.
+
+Capability flags are not evaluated that way. A1 resolves all four once, under `stage: run_init`, and every stage reads the resolved set. A targeting rule written against `stage: address_repair` for `memory-mode` would therefore never fire — this section previously implied it would, with an example about memory being on for one stage and off for another.
+
+That is a deliberate limitation rather than an oversight, and section 7 depends on it: one run has one resolved capability set and one fingerprint, and every shipment row points at it. Per-stage capability resolution would mean several sets per run and a fingerprint that names none of them. The `shipment` context kind has the same status — available, evaluated at A1 only, and section 7 records what would have to change before it could vary per recipient.
 
 ### 6.7 Profiles
 

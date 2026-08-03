@@ -22,14 +22,18 @@ from ldclient import Context
 #: Stage keys used as the `stage` context kind. These are targeting
 #: identifiers, not an agent registry -- `carrier_selection` is a stage that
 #: has no agent, and targeting it is the point.
+#: Stage kinds that are actually evaluated against. Capability flags are
+#: resolved once at A1 under `run_init` -- see `run.initialize_run` -- so the
+#: only per-stage evaluation in the system is AI Config retrieval, which uses
+#: one kind per configured stage. Constants for stages nobody evaluates were
+#: removed: a targeting rule written against one would never fire, and its
+#: presence here implied otherwise.
 STAGE_RUN_INIT = "run_init"
 STAGE_EXTRACTION = "extraction"
-STAGE_ADDRESS_VALIDATION = "address_validation"
 STAGE_ADDRESS_REPAIR = "address_repair"
 STAGE_INFEASIBILITY_REMEDIATION = "infeasibility_remediation"
 STAGE_MANIFEST_VERIFICATION = "manifest_verification"
 STAGE_REVIEW_NARRATOR = "review_narrator"
-STAGE_CARRIER_SELECTION = "carrier_selection"
 
 
 class ContextError(Exception):
