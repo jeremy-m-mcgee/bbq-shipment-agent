@@ -98,5 +98,6 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - An unreachable run never overwrites the snapshot. That cache is the fallback precisely when LD is down.
 - Invocation records take their identity from the config captured at A1, never a fresh lookup.
 - All four configs exist in LD and are snapshotted. Only the *config key* must match code (`AGENT_STAGES`); variation keys are free-form but must be non-empty, or `launchdarkly_metrics` silently drops to `NoMetrics`.
+- Create AI Configs in **Agent mode**, even `screenshot-extraction`, which is not an agent. `_from_variation` reads `instructions`; a Completion-mode config carries `messages` and comes back `unavailable`.
 - Declare a tool on an AI Config only in the same change that registers it in Python. Declaring fewer than Python offers is not drift; declaring one Python lacks is the failure 6.4 mitigation 1 exists to catch. All four currently declare none, and `manifest-verification` stays that way — it is read-only by design.
 - Instruction text lives in LD, not in the repo. Drafting a change in a scratch file is fine; committing it is not. Two copies where one is unserved is the drift the snapshot exists to detect.
