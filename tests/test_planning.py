@@ -14,6 +14,7 @@ from bbq_shipment_agent.planning import (
     BOXES,
     MAX_ARRIVAL_TEMP_C,
     MAX_GEL_PACKS,
+    MIN_GEL_PACKS,
     Address,
     BoxSize,
     Lane,
@@ -94,11 +95,23 @@ class TestBoxGeometry:
 
 class TestParcelVariants:
     def test_it_enumerates_gel_counts_for_one_box(self, load):
-        # Gel count is a real tradeoff and is crossed exhaustively. Box size
-        # is not: design 5's larger box is dominated on cost and on thermal
-        # margin at once, so quoting it buys nothing.
+        # Gel count is a real tradeoff and is crossed exhaustively above the
+        # floor. Box size is not crossed at all: design 5's larger box is
+        # dominated on cost and on thermal margin at once, so quoting it buys
+        # nothing.
         variants = parcel_variants(load)
-        assert len(variants) == MAX_GEL_PACKS + 1
+        assert len(variants) == MAX_GEL_PACKS - MIN_GEL_PACKS + 1
+        assert {v.gel_packs for v in variants} == set(
+            range(MIN_GEL_PACKS, MAX_GEL_PACKS + 1)
+        )
+
+    def test_an_empty_box_is_never_offered(self, load):
+        # Operator policy, not physics: frozen barbecue arriving with no
+        # refrigerant reads as a mistake to whoever opens it, whatever the
+        # arrival temperature says. C5 cannot pick what C2 never offered.
+        # `TestThermalGate` pins the separate thermal claim.
+        assert MIN_GEL_PACKS >= 1
+        assert all(v.gel_packs >= MIN_GEL_PACKS for v in parcel_variants(load))
 
     def test_only_the_smallest_fitting_box_is_offered(self, load):
         assert smallest_fitting_box(load) is BOXES[BoxSize.SMALL]
@@ -225,8 +238,26 @@ class TestThermalGate:
         assert 0 < len(feasible) < len(configurations)
 
     def test_zero_gel_packs_never_survives(self, load, quoter):
-        feasible = thermal_gate(load, enumerate_all(load, quoter).configurations)
-        assert all(f.configuration.gel_packs > 0 for f in feasible)
+        # Built directly rather than taken from the enumerator. C2 no longer
+        # offers a zero-gel parcel at all (operator policy, `MIN_GEL_PACKS`),
+        # so filtering enumerated configurations for `gel_packs > 0` would pass
+        # without the thermal model being consulted -- a vacuous test wearing
+        # the name of a real property. The physics is worth pinning on its own
+        # merits, because the policy floor and the gate are separate claims and
+        # only one of them moves if `config/lanes.yaml` gains a colder band.
+        from dataclasses import replace
+
+        model = LumpedCapacitanceModel()
+        configurations = enumerate_all(load, quoter, (MONDAY,)).configurations
+        checked = 0
+        for configuration in configurations:
+            empty = replace(configuration, gel_packs=0)
+            checked += 1
+            assert (
+                model.predict_arrival_temp_c(load, empty, Lane("l", 22.0))
+                > MAX_ARRIVAL_TEMP_C
+            )
+        assert checked, "nothing was enumerated; comparison was vacuous"
 
     def test_more_gel_packs_never_arrives_warmer(self, load, quoter):
         # Monotonicity should survive recalibration; no constant should.

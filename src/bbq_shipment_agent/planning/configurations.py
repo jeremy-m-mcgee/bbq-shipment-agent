@@ -37,6 +37,7 @@ from datetime import date
 from .catalog import (
     BOXES,
     MAX_GEL_PACKS,
+    MIN_GEL_PACKS,
     Box,
     BoxSize,
     ShipDay,
@@ -164,10 +165,12 @@ def parcel_variants(load: Load) -> tuple[ParcelSpec, ...]:
     """Every parcel the packet could physically be shipped in.
 
     The part of the configuration space we own outright. Gel pack count is
-    crossed exhaustively because it is a genuine tradeoff -- more refrigerant
-    is never thermally worse but always weighs more, and C5 wants the cheapest
-    count that clears the gate. Box size is not crossed: `smallest_fitting_box`
-    explains why the larger one can never win.
+    crossed exhaustively from `MIN_GEL_PACKS` because it is a genuine tradeoff
+    -- more refrigerant is never thermally worse but always weighs more, and C5
+    wants the cheapest count that clears the gate. The floor is operator policy
+    rather than physics: nobody ships frozen barbecue with an empty box, and a
+    parcel never offered is one C5 can never pick. Box size is not crossed at
+    all: `smallest_fitting_box` explains why the larger one can never win.
 
     This halves the quoting call count, which is the reason it was noticed --
     a live run spent 49 of 98 parcel quotes on a box that was dominated on
@@ -179,7 +182,7 @@ def parcel_variants(load: Load) -> tuple[ParcelSpec, ...]:
         return ()
     return tuple(
         ParcelSpec.build(load, box, gel_packs)
-        for gel_packs in range(0, min(box.max_gel_packs, MAX_GEL_PACKS) + 1)
+        for gel_packs in range(MIN_GEL_PACKS, min(box.max_gel_packs, MAX_GEL_PACKS) + 1)
     )
 
 

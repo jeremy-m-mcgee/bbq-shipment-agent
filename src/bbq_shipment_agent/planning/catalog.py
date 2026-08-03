@@ -182,6 +182,20 @@ BOXES: dict[BoxSize, Box] = {
 #: Design 3: gel packs, not dry ice. Avoids hazmat classification and keeps
 #: all four carriers available.
 MAX_GEL_PACKS = 6
+#: Operator policy, not physics. Frozen barbecue arriving with no refrigerant
+#: in the box reads as a mistake to whoever opens it, whatever the arrival
+#: temperature says -- so a zero-gel parcel is never offered, and C5 cannot
+#: pick one however cheap it is.
+#:
+#: Recorded as its own constant rather than folded into the thermal reasoning
+#: because it is a *different kind* of claim and survives different changes.
+#: Zero gel packs also happens to clear the 4.4C gate at no ambient the lane
+#: book can produce today (the coldest is 8.0C -- `cool` 16.0 plus January's
+#: -8), but that is a fact about `config/lanes.yaml`, which is editable, and it
+#: would quietly stop being true if a colder band were added. This floor would
+#: not. `TestThermalGate` still pins the thermal half separately, against a
+#: parcel built directly rather than one the enumerator offered.
+MIN_GEL_PACKS = 1
 GEL_PACK_MASS_KG = 0.7
 #: Latent heat of fusion, water-based gel, J/kg. This is the whole cooling
 #: budget: design 5 puts gel packs at roughly 77 percent of it at this product

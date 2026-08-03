@@ -66,6 +66,11 @@ These are enforced in code and cannot be overridden by flag, CLI argument, or en
 | Ship days | Saturday, Monday, Tuesday only |
 | Saturday shipments | USPS only for perishables, given weekend ground schedules |
 | Refrigerant | Gel packs, not dry ice. Avoids hazmat classification and keeps all four carriers available |
+| Minimum gel packs | At least one, always. Not a thermal claim — see below |
+
+**The gel pack floor is presentation, not physics.** A parcel with no refrigerant in it reads as a mistake to whoever opens it, whatever the arrival temperature says, and the recipient is not holding the thermal model. So C2 never enumerates a zero-gel parcel and C5 cannot select one however cheap it is.
+
+Worth separating from the thermal argument it resembles. Zero gel packs also fails the 4.4C gate at every ambient `config/lanes.yaml` can currently produce — the coldest is 8.0C, the `cool` band's 16.0 plus January's −8 — so today the two rules agree and the floor changes no plan. But that agreement is a fact about an editable config file, and adding a colder band would end it. The floor would survive that; the thermal coincidence would not. `MIN_GEL_PACKS` therefore states the operator reason, and `TestThermalGate` pins the physics separately against a parcel built directly rather than one the enumerator offered.
 
 ### Structural consequence
 
@@ -148,7 +153,7 @@ Packet contents to weight and dimensions per shipment. Currently uniform.
 **C2. Enumerate configurations.**
 Cross product of gel pack count, ship date, and carrier service, per shipment, in the smallest box the load fits in. All four carriers at this stage. No pair restriction yet.
 
-Box size is a fit check rather than an axis of the cross product — see section 5, where the larger box turns out to be dominated on cost and thermal margin at once. Gel pack count stays crossed exhaustively, because it is a genuine tradeoff: more refrigerant is never thermally worse but always weighs more, so the count C5 wants is the cheapest one that clears the gate, and that is not knowable without quoting.
+Box size is a fit check rather than an axis of the cross product — see section 5, where the larger box turns out to be dominated on cost and thermal margin at once. Gel pack count stays crossed exhaustively above the section 3 floor of one, because it is a genuine tradeoff: more refrigerant is never thermally worse but always weighs more, so the count C5 wants is the cheapest one that clears the gate, and that is not knowable without quoting.
 
 **C3. Thermal gate.**
 Filter to configurations where predicted arrival temperature stays at or below 4.4C. See section 5.
