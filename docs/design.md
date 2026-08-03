@@ -656,6 +656,23 @@ Three readings, and they are not equivalent:
 
 The third is probably right and cannot be built yet, which is why this stays open rather than being decided now.
 
+**A judge would earn its keep on D2 narration, and nowhere else.** LaunchDarkly AI Configs support judges: `LDAIClient.create_judge` returns a `Judge` with `evaluate(input_text, output_text, sampling_rate)`, backed by its own AI Config — its own model, its own instructions, its own `evaluationMetricKey` — and `JudgeConfiguration` can be attached to an agent config so a config declares which judges score it. This was overlooked when the metrics layer was removed, and the removal note was corrected: judges are a real capability, not a dashboard.
+
+They are foreclosed today, but not by that removal. `create_judge` hangs off `LDAIClient`, and this codebase never constructs one — `agent_configs` reads the raw variation because `AIAgentConfig` exposes neither the variation key nor the version, and section 6.4 mitigation 2 needs both on every ledger line. Adopting judges therefore means holding both: raw retrieval for identity, an `LDAIClient` alongside it for evaluation.
+
+The question is not whether judges are available but where one would answer a question nothing else can:
+
+| stage | judge? | why |
+|---|---|---|
+| B1 extraction | no | `ground_truth.json` is an answer key. A judge would replace a measurement with an opinion. |
+| B3 repair | no | The address validator adjudicates. A hard external fact beats a model's view of one. |
+| D1 verification | no | Section 8's metric is whether operator edits drop — behavioural, not a model's opinion of a critique. |
+| **D2 narration** | **yes** | Faithfulness has no external oracle. |
+
+D2 is the exception because its correctness is a property of *reading*: does every claim trace to a field in the payload it was given? Section 6.3 states that rule and nothing enforces it. The evidence is on the record — asked which constraint bound hardest, `review-narrator` named the wrong recipient and reasoned from it for two turns. The fix then was to add the missing field, and that was right, but it only closed the one case. A judge scoring "is every claim in this narration supported by the payload" would catch the class.
+
+Note what such a judge is *not*: a source of statistics. Section 8's caveat still applies and a judge's aggregate score would reach significance no sooner than any other metric here. Its value is per-instance — catching a faithless claim before the operator reads it, the same shape as D1 catching a bad manifest before review. That also keeps it on the right side of section 2: read-only, strictly downstream, unable to alter what it judges.
+
 **D1 revises, but has no tools to revise with.** Section 4 says the D1 loop "revises and re-checks within a bounded budget". Section 6.2 grants `manifest-verification` "manifest read, read-only". A read-only agent cannot revise a manifest, so one of the two is wrong.
 
 Three readings, and they imply different tool grants. The agent reports and the Python spine re-solves and re-invokes, which matches the read-only grant and needs no change. Or the agent revises its own findings across iterations rather than the manifest, which also fits. Or the agent proposes corrections, which needs a tool grant it does not have and puts a model one step closer to the plan than section 2's "agency is a cost" principle allows.
