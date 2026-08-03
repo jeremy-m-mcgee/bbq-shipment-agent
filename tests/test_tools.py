@@ -81,9 +81,17 @@ class TestTheContract:
         # The contract describes what Python has, not what the design intends
         # it to have eventually. A promised-but-unbuilt tool would let the
         # assertion pass for an instruction that cannot work.
-        validator = RecordedAddressValidator.from_file(VALIDATIONS)
+        #
+        # Every dependency any builder takes is supplied, so a tool that is
+        # simply never constructed cannot pass by omission. The session is a
+        # placeholder: builders check it is present, and the tool bodies are
+        # closures that nothing invokes here.
+        dependencies = {
+            "validator": RecordedAddressValidator.from_file(VALIDATIONS),
+            "session": object(),
+        }
         for agent_key, declared in TOOL_NAMES.items():
-            built = {t.name for t in build_tools(agent_key, validator=validator)}
+            built = {t.name for t in build_tools(agent_key, **dependencies)}
             assert built == set(declared), agent_key
 
 
@@ -107,12 +115,26 @@ class TestTheAssertion:
     def test_the_message_names_the_agent_and_both_sides(self):
         with pytest.raises(ToolContractError) as exc:
             assert_tool_contract(
-                {"review-narrator": config("review-narrator", tools=["resolve_from_c5"])}
+                {
+                    "infeasibility-remediation": config(
+                        "infeasibility-remediation", tools=["read_ledger"]
+                    )
+                }
             )
         message = str(exc.value)
-        assert "review-narrator" in message
-        assert "resolve_from_c5" in message
+        assert "infeasibility-remediation" in message
+        assert "read_ledger" in message
         assert "offers nothing" in message
+
+    def test_the_message_lists_what_is_offered_when_there_is_something(self):
+        with pytest.raises(ToolContractError) as exc:
+            assert_tool_contract(
+                {"review-narrator": config("review-narrator", tools=["resolve_from_c5"])}
+            )
+        # The design's own name for D2's tool is "re-solve trigger"; Python
+        # splits it into propose and confirm, so the message has to show what
+        # the config should have said rather than only what it got wrong.
+        assert "propose_edit" in str(exc.value)
 
     def test_an_unavailable_config_is_skipped(self):
         # It has no instructions, so it cannot be referencing a tool, and 6.10

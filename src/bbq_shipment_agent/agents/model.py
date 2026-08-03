@@ -61,6 +61,13 @@ class Completion:
     input_tokens: int = 0
     output_tokens: int = 0
     stop_reason: str | None = None
+    #: Tools the model asked Python to run. Non-empty only when the reply
+    #: stopped to call something; the caller runs them and continues.
+    tool_calls: tuple[Any, ...] = ()
+    #: The assistant turn exactly as the provider returned it, for appending
+    #: to a message list. Kept opaque: reconstructing it from `text` and
+    #: `tool_calls` would drop whatever the provider round-trips.
+    raw_content: Any = None
     #: The model that actually answered, as the API reported it. Kept beside
     #: the model LaunchDarkly asked for so the two can be compared: an alias
     #: that resolves elsewhere, or a name silently remapped by the provider,
@@ -131,10 +138,36 @@ class Invocation:
         return parameters
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    """A model's request to run one of the tools Python offered it."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
 class ModelClient(Protocol):
     """Sends one prompt and returns one completion."""
 
     def complete(self, invocation: Invocation, prompt: str) -> Completion: ...
+
+
+class ConversingModel(Protocol):
+    """Holds a multi-turn exchange, with tools.
+
+    Separate from `ModelClient` because D1 genuinely does not need it: a
+    read-only critique is one prompt and one answer, and giving it a message
+    list and a tool loop would be machinery in the path of a stage that has
+    nothing to call. The tool-using agents implement this one.
+    """
+
+    def converse(
+        self,
+        invocation: Invocation,
+        messages: list[dict[str, Any]],
+        tools: tuple[Any, ...] = (),
+    ) -> Completion: ...
 
 
 class AnthropicModel:
@@ -168,26 +201,45 @@ class AnthropicModel:
         return self._client
 
     def complete(self, invocation: Invocation, prompt: str) -> Completion:
+        return self.converse(invocation, [{"role": "user", "content": prompt}])
+
+    def converse(
+        self,
+        invocation: Invocation,
+        messages: list[dict[str, Any]],
+        tools: tuple[Any, ...] = (),
+    ) -> Completion:
         from anthropic import APIError
 
+        request: dict[str, Any] = {
+            "model": invocation.model,
+            "system": invocation.instructions,
+            "messages": messages,
+            **invocation.request_parameters(),
+        }
+        if tools:
+            request["tools"] = [tool.to_api() for tool in tools]
+
         try:
-            message = self._sdk().messages.create(
-                model=invocation.model,
-                system=invocation.instructions,
-                messages=[{"role": "user", "content": prompt}],
-                **invocation.request_parameters(),
-            )
+            message = self._sdk().messages.create(**request)
         except APIError as exc:
             raise ModelUnavailable(f"{invocation.agent_key}: {exc}") from exc
 
         text = "".join(
             block.text for block in message.content if getattr(block, "type", "") == "text"
         )
+        calls = tuple(
+            ToolCall(id=block.id, name=block.name, arguments=dict(block.input or {}))
+            for block in message.content
+            if getattr(block, "type", "") == "tool_use"
+        )
         return Completion(
             text=text,
             input_tokens=getattr(message.usage, "input_tokens", 0),
             output_tokens=getattr(message.usage, "output_tokens", 0),
             stop_reason=message.stop_reason,
+            tool_calls=calls,
+            raw_content=message.content,
             model=getattr(message, "model", None),
         )
 

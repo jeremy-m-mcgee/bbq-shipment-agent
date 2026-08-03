@@ -51,7 +51,7 @@ TOOL_NAMES: dict[str, frozenset[str]] = {
     "address-repair": frozenset({"validate_address"}),
     "infeasibility-remediation": frozenset(),
     "manifest-verification": frozenset(),
-    "review-narrator": frozenset(),
+    "review-narrator": frozenset({"propose_edit", "confirm_edit", "read_manifest"}),
 }
 
 
@@ -203,6 +203,148 @@ def _address_repair_tools(validator: Any = None, **_: Any) -> tuple[Tool, ...]:
     )
 
 
+def _review_narrator_tools(session: Any = None, **_: Any) -> tuple[Tool, ...]:
+    """D2's tools. Design 6.2 grants "manifest read, re-solve trigger".
+
+    The re-solve trigger is split in two because design 4 splits it: an edit
+    that moves the optimal carrier set is *proposed* and waits, and confirming
+    it is a separate act by the operator. One tool that both proposed and
+    applied would collapse that distinction and let a model apply a run-wide
+    change on its own — which is exactly what the confirmation exists to stop.
+
+    Note what is absent: nothing here approves, rejects, or excludes without
+    going through the same classification. Terminal states are the operator's,
+    taken through `ReviewSession`, not something the narrator can call.
+    """
+    if session is None:
+        return ()
+
+    from datetime import date as _date
+
+    from ..review import Edit, EditKind
+
+    def read_manifest() -> dict[str, Any]:
+        from .verification import manifest_payload
+
+        if session.manifest is None:
+            return {
+                "manifest": None,
+                "problem": "no carrier subset covers the run as currently edited",
+                "infeasible": list(session.solve.infeasible),
+            }
+        return manifest_payload(
+            session.manifest,
+            tuple(s.recipient_key for s in session.shipments),
+        )
+
+    def propose_edit(
+        kind: str, recipient_key: str, ship_date: str = "", reason: str = ""
+    ) -> dict[str, Any]:
+        try:
+            edit = Edit(
+                kind=EditKind(kind),
+                recipient_key=recipient_key,
+                ship_date=_date.fromisoformat(ship_date) if ship_date else None,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+
+        from ..review import ReviewError
+
+        try:
+            result = session.propose(edit)
+        except ReviewError as exc:
+            raise ToolError(str(exc)) from exc
+
+        return {
+            "outcome": result.outcome.value,
+            "applied": result.applied,
+            "needs_confirmation": result.needs_confirmation,
+            "refusal": result.refusal,
+            "feasible_dates": [d.isoformat() for d in result.alternatives],
+            "carriers_before": list(result.carriers_before),
+            "carriers_after": list(result.carriers_after),
+            "cost_before": result.cost_before,
+            "cost_after": result.cost_after,
+            "cost_delta": result.cost_delta,
+            "newly_stranded": list(result.newly_stranded),
+        }
+
+    def confirm_edit() -> dict[str, Any]:
+        from ..review import ReviewError
+
+        try:
+            result = session.confirm()
+        except ReviewError as exc:
+            raise ToolError(str(exc)) from exc
+        return {
+            "applied": True,
+            "carriers": list(session.carriers),
+            "total_cost": session.total_cost,
+            "edit": result.edit.describe(),
+        }
+
+    return (
+        Tool(
+            name="read_manifest",
+            description=(
+                "Return the current manifest as structured data: every "
+                "shipment with its carrier, service, cost, ship date, "
+                "expected arrival and thermal margin, plus the runner-up "
+                "carrier subsets and anyone excluded, escalated or stranded. "
+                "Call this again after any applied edit — the plan changes."
+            ),
+            input_schema={"type": "object", "properties": {}},
+            run=read_manifest,
+        ),
+        Tool(
+            name="propose_edit",
+            description=(
+                "Re-solve the plan with one change applied, and report what "
+                "it would do. This does NOT necessarily apply the change. "
+                "Three outcomes: 'unchanged' means the optimal carrier set "
+                "held and the edit is already applied; 'pair_moved' means the "
+                "edit rewrites carrier and cost across the whole run and is "
+                "waiting for the operator to confirm it; 'refused' means the "
+                "change puts a shipment above the 4.4C arrival limit and will "
+                "not be applied at all, with feasible dates offered instead."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["ship_date", "exclude"],
+                        "description": "ship_date pins a recipient to one "
+                        "date; exclude removes them from the run.",
+                    },
+                    "recipient_key": {"type": "string"},
+                    "ship_date": {
+                        "type": "string",
+                        "description": "YYYY-MM-DD, required for kind=ship_date. "
+                        "Must be one of the run's candidate ship dates.",
+                    },
+                    "reason": {"type": "string"},
+                },
+                "required": ["kind", "recipient_key"],
+            },
+            run=propose_edit,
+        ),
+        Tool(
+            name="confirm_edit",
+            description=(
+                "Apply the edit that propose_edit held back because it moved "
+                "the optimal carrier set. Call this only after the operator "
+                "has explicitly agreed to the run-wide change."
+            ),
+            input_schema={"type": "object", "properties": {}},
+            run=confirm_edit,
+        ),
+    )
+
+
 _BUILDERS: dict[str, Callable[..., tuple[Tool, ...]]] = {
     "address-repair": _address_repair_tools,
+    "review-narrator": _review_narrator_tools,
 }
