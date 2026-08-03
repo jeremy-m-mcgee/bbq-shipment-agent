@@ -1,0 +1,376 @@
+{
+  "screenshots": [
+    {
+      "file": "01-imessage-thread.png",
+      "source_type": "imessage",
+      "recipients": [
+        {
+          "name": "Ana Ruiz",
+          "street1": "1600 Pennsylvania Ave NW",
+          "city": "Washington",
+          "state": "DC",
+          "zip": "20500",
+          "region": {
+            "x": 75,
+            "y": 940,
+            "width": 694,
+            "height": 112
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Marcus Feld",
+          "street1": "233 S Wacker Dr",
+          "city": "Chicago",
+          "state": "IL",
+          "zip": "60606",
+          "region": {
+            "x": 75,
+            "y": 1457,
+            "width": 615,
+            "height": 112
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Hector Ramos",
+          "street1": "11 N 4th St",
+          "city": "St. Louis",
+          "state": "MO",
+          "zip": "63102",
+          "region": {
+            "x": 75,
+            "y": 1811,
+            "width": 719,
+            "height": 112
+          },
+          "difficulty": "clean",
+          "notes": "Corrected his own address in a follow-up message: first sent \"11 S 4th St\", then corrected to \"11 N 4th St\". Ground truth reflects the corrected address."
+        }
+      ]
+    },
+    {
+      "file": "02-whatsapp-dm.png",
+      "source_type": "whatsapp",
+      "recipients": [
+        {
+          "name": "Priya Nandakumar",
+          "street1": "350 5th Ave",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10118",
+          "region": {
+            "x": 51,
+            "y": 710,
+            "width": 727,
+            "height": 105
+          },
+          "difficulty": "clean",
+          "notes": "Also appears in 04-slack-thread.png (recipient R13) with a different spelling of the same building."
+        },
+        {
+          "name": "Devon Clarke",
+          "street1": "400 Broad St",
+          "city": "Seattle",
+          "state": "WA",
+          "zip": "98109",
+          "region": {
+            "x": 51,
+            "y": 1071,
+            "width": 349,
+            "height": 200
+          },
+          "difficulty": "clean",
+          "notes": "Address split across two consecutive bubbles: street in one bubble, city/state/ZIP in the next."
+        },
+        {
+          "name": "Isabel Moreno",
+          "street1": "225 Baker St NW",
+          "city": "Atlanta",
+          "state": "GA",
+          "zip": "30313",
+          "region": {
+            "x": 51,
+            "y": 1476,
+            "width": 740,
+            "height": 105
+          },
+          "difficulty": "clean",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "file": "03-instagram-dm.png",
+      "source_type": "instagram",
+      "recipients": [
+        {
+          "name": "Sofia Alvarez",
+          "street1": "1 Telegraph Hill Blvd",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94133",
+          "region": {
+            "x": 171,
+            "y": 1061,
+            "width": 515,
+            "height": 110
+          },
+          "difficulty": "clean",
+          "notes": "Shares one address with Nadia Alvarez (housemates): same address, different name."
+        },
+        {
+          "name": "Nadia Alvarez",
+          "street1": "1 Telegraph Hill Blvd",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94133",
+          "region": {
+            "x": 171,
+            "y": 1061,
+            "width": 515,
+            "height": 110
+          },
+          "difficulty": "clean",
+          "notes": "Shares one address with Sofia Alvarez (housemates): same address, different name."
+        },
+        {
+          "name": "Raj Patel",
+          "street1": "111 S Michigan Ave",
+          "city": "Chicago",
+          "state": "IL",
+          "zip": "60603",
+          "region": {
+            "x": 171,
+            "y": 1571,
+            "width": 625,
+            "height": 110
+          },
+          "difficulty": "clean",
+          "notes": ""
+        }
+      ]
+    },
+    {
+      "file": "04-slack-thread.png",
+      "source_type": "slack",
+      "recipients": [
+        {
+          "name": "Tom Becker",
+          "street1": "4 Jersey St",
+          "city": "Boston",
+          "state": "MA",
+          "zip": "02215",
+          "region": {
+            "x": 496,
+            "y": 399,
+            "width": 618,
+            "height": 51
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Wendy Cho",
+          "street1": "1000 4th Ave",
+          "city": "Seattle",
+          "state": "WA",
+          "zip": "98104",
+          "region": {
+            "x": 177,
+            "y": 611,
+            "width": 875,
+            "height": 112
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Grace Liu",
+          "street1": "1000 5th Ave",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10028",
+          "region": {
+            "x": 177,
+            "y": 893,
+            "width": 845,
+            "height": 112
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Priya Nandakumar",
+          "street1": "350 Fifth Avenue",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10018",
+          "region": {
+            "x": 177,
+            "y": 1105,
+            "width": 890,
+            "height": 112
+          },
+          "difficulty": "correctable",
+          "notes": "Second appearance of Priya Nandakumar (also R4 in 02-whatsapp-dm.png). Same building written differently (\"Fifth Avenue\" vs \"5th Ave\"); ZIP 10018 is wrong, correct ZIP is 10118 (Empire State Building)."
+        }
+      ]
+    },
+    {
+      "file": "05-email.png",
+      "source_type": "email",
+      "recipients": [
+        {
+          "name": "Owen Doyle",
+          "street1": "1000 Jefferson Dr",
+          "city": "Washington",
+          "state": "DC",
+          "zip": "20560",
+          "region": {
+            "x": 54,
+            "y": 1058,
+            "width": 856,
+            "height": 124
+          },
+          "difficulty": "correctable",
+          "notes": "Directional dropped: written \"1000 Jefferson Dr\", correct is \"1000 Jefferson Dr SW\" (Smithsonian Institution Building). Address is buried mid-paragraph."
+        },
+        {
+          "name": "Lena Ford",
+          "street1": "1060 W Addison St",
+          "city": "Chicago",
+          "state": "IL",
+          "zip": "60631",
+          "region": {
+            "x": 54,
+            "y": 1322,
+            "width": 931,
+            "height": 124
+          },
+          "difficulty": "correctable",
+          "notes": "ZIP transposed: written 60631, correct is 60613 (Wrigley Field)."
+        },
+        {
+          "name": "Gus Whitfield",
+          "street1": "520 Chestnut St",
+          "city": "Philadelpia",
+          "state": "PA",
+          "zip": "19106",
+          "region": {
+            "x": 54,
+            "y": 1395,
+            "width": 1004,
+            "height": 124
+          },
+          "difficulty": "correctable",
+          "notes": "City misspelled \"Philadelpia\" -> \"Philadelphia\" (Independence Hall)."
+        }
+      ]
+    },
+    {
+      "file": "06-imessage-dark.png",
+      "source_type": "imessage",
+      "recipients": [
+        {
+          "name": "Cody Barnes",
+          "street1": "50 Massachusetts Ave NE",
+          "city": "Washington",
+          "state": "DC",
+          "zip": "20002",
+          "region": {
+            "x": 75,
+            "y": 817,
+            "width": 573,
+            "height": 112
+          },
+          "difficulty": "hard",
+          "notes": "Dark-mode thread, very low contrast dim text. Address is real and correct (Union Station) but low-confidence to read; the leading \"50\" could be misread as \"56\"."
+        },
+        {
+          "name": "Farah Osei",
+          "street1": "300 Alamo Plaza",
+          "city": "San Antonio",
+          "state": "TX",
+          "zip": "782??",
+          "region": {
+            "x": 75,
+            "y": 1036,
+            "width": 654,
+            "height": 112
+          },
+          "difficulty": "hard",
+          "notes": "An emoji tapback reaction overlaps the ZIP, hiding the last two digits (\"05\"). Visible as \"782\" then covered. Correct ZIP is 78205 (The Alamo)."
+        },
+        {
+          "name": "Beau Tanner",
+          "street1": "4 South Market",
+          "city": "Boston",
+          "state": "MA",
+          "zip": "02109",
+          "region": {
+            "x": 75,
+            "y": 1213,
+            "width": 691,
+            "height": 112
+          },
+          "difficulty": "correctable",
+          "notes": "Abbreviation/expansion collision: written \"4 South Market\". Correct is \"4 S Market St\" (Faneuil Hall) — \"South Market\" ambiguous and the street-type \"St\" was dropped."
+        }
+      ]
+    },
+    {
+      "file": "07-whatsapp-group.png",
+      "source_type": "whatsapp",
+      "recipients": [
+        {
+          "name": "Marina Kovac",
+          "street1": "2800 E Observatory Rd",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90072",
+          "region": {
+            "x": 51,
+            "y": 562,
+            "width": 793,
+            "height": 48
+          },
+          "difficulty": "correctable",
+          "notes": "Address is only complete when TWO separate (non-adjacent) messages are read together: street + city in an earlier message, ZIP given later (\"forgot the zip, it's 90072\"). ZIP transposed; correct is 90027 (Griffith Observatory)."
+        },
+        {
+          "name": "Yuki Tanaka",
+          "street1": "116 Rep. John Lewis Way N",
+          "city": "Nashville",
+          "state": "TN",
+          "zip": "3721?",
+          "region": {
+            "x": 51,
+            "y": 919,
+            "width": 1119,
+            "height": 60
+          },
+          "difficulty": "hard",
+          "notes": "The message runs off the right edge of the screen; the final ZIP digit is cut off past the screen edge, leaving \"3721\". Full ZIP is 37219 (Ryman Auditorium). Street, city, and state are fully visible."
+        },
+        {
+          "name": "Jules",
+          "street1": "",
+          "city": "",
+          "state": "",
+          "zip": "",
+          "region": {
+            "x": 51,
+            "y": 1235,
+            "width": 810,
+            "height": 105
+          },
+          "difficulty": "impossible",
+          "notes": "Clearly wants a packet but gave no usable address (\"just send it to my place, you know where I am\"). No street, city, state, or ZIP provided. Region points at the message where the (non-)address would be."
+        }
+      ]
+    }
+  ]
+}
