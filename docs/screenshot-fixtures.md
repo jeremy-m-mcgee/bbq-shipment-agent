@@ -32,9 +32,11 @@ fails. Fixtures that are all clean and legible test none of it.
 A folder of PNGs plus one `ground-truth.json`. Both halves are required.
 
 **About 22 recipients across 6–8 screenshots** — one real run's worth.
-Multiple recipients per image, because the region pointers below only matter
-when there is more than one thing in the picture. Phone-screenshot
-dimensions, e.g. 1170×2532.
+**Several recipients per image**, deliberately: nothing in the pipeline
+assumes one address per screenshot, a region is recorded per recipient rather
+than per image, and the region pointers only earn their keep when there is
+more than one thing in the picture. Phone-screenshot dimensions, e.g.
+1170×2532.
 
 ### Ground truth is not optional
 

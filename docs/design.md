@@ -607,6 +607,12 @@ Two things the demotion bought that were not obvious going in. C4 now refuses a 
 
 What is *not* resolved is where a recommendation goes. C4 proposes; nothing accepts. `PlanResult.remediations` is printed and then dropped, because acting on a deferral means editing the roster for a future run and D2's `EditKind` has no move for it. Related to the escalation-queue entry above, and blocked on the same question.
 
+**Nothing carries the provenance pointer yet.** Section 4 gives B1's output "a provenance pointer back to the source image and region, which B3 depends on", and B3 "re-reads the source image region". No record in the pipeline has a field for it. `Shipment` is `recipient_key, name, address, lane, required_ship_date`; `Excluded` — which is what B2 produces for a failed address, and therefore what B3 receives — is `recipient_key, name, reason`.
+
+So the pointer has to survive two hops that have nowhere to put it, and it is only discovered at step 5 because nothing before then reads an image. Same shape as the `forced_by_saturday` boolean: the design assumed a field and the code never made one.
+
+Worth deciding *before* B1 is written, because the choice is not obvious. Putting it on `Shipment` gives every downstream stage a field it does not use and puts an image path into the planning types, which are otherwise about parcels and lanes. Keeping a separate `provenance` map keyed by `recipient_key` leaves the planning types alone but adds a structure that has to be threaded to B3 alongside the escalation list. Note also that nothing says one address per screenshot — a region is per *field*, so one image yields many pointers, and whichever structure wins has to hold a pointer per recipient rather than per image.
+
 **Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
 Measured against the live validator, one address came back *"Street address (directional or suffix only) was corrected to validate the address. Please check this correction prior to using address."* while the returned `street1` was byte-identical to what was submitted. Shippo says it corrected something; the fields say nothing changed. The classification is right either way, but the operator never sees the claim.
