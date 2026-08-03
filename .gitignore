@@ -26,3 +26,14 @@ rc*.json
 recipients.yaml
 recipients.*.yaml
 !recipients.example.yaml
+
+# Claude Code local state. Deliberately NOT ignoring all of .claude/: shared
+# project config there (settings.json, agents/, skills/) is worth committing,
+# and a blanket ignore would hide it silently. Only the two machine-local
+# things are excluded.
+#
+# worktrees/ holds throwaway git worktrees. Each is its own repository, so
+# `git add -A` picks one up as an embedded repo rather than as files —
+# committed by accident once and amended back out.
+.claude/settings.local.json
+.claude/worktrees/
