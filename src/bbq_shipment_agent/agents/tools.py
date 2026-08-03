@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ..agent_configs import AGENT_KEYS, AgentConfig
+from ..agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 
 #: Agent key -> the tool names Python offers it. Design 6.2's registry, in the
 #: form the startup assertion needs.
@@ -48,6 +48,8 @@ from ..agent_configs import AGENT_KEYS, AgentConfig
 #: contradiction in favour of that grant. D1 refuses to run if its config
 #: declares a tool, which is this rule enforced a second time at invocation.
 TOOL_NAMES: dict[str, frozenset[str]] = {
+    # B1. Empty and staying empty: design 6.3 gives it no tool access.
+    "screenshot-extraction": frozenset(),
     "address-repair": frozenset({"validate_address"}),
     "manifest-verification": frozenset(),
     "review-narrator": frozenset({"propose_edit", "confirm_edit", "read_manifest"}),
@@ -112,7 +114,7 @@ def assert_tool_contract(configs: dict[str, AgentConfig]) -> None:
         if offered is None:
             problems.append(
                 f"{agent_key}: retrieved from LaunchDarkly but Python has no "
-                f"tool contract for it. Known agents: {', '.join(AGENT_KEYS)}."
+                f"tool contract for it. Known: {', '.join(LD_CONFIGURED_KEYS)}."
             )
             continue
         missing = sorted(set(config.declared_tools) - offered)

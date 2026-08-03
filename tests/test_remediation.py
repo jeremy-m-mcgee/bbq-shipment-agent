@@ -134,17 +134,17 @@ class TestAcrossARun:
 
 
 class TestItIsNotAnAgent:
-    def test_the_registry_has_three_agents(self):
+    def test_c4_asks_launchdarkly_for_nothing(self):
         # Design 6.3: C4's only open-ended move was splitting, and splitting is
         # impossible. What remained is arithmetic, and design 2 keeps a model
         # out of the path of a decision that can be computed.
-        from bbq_shipment_agent.agent_configs import AGENT_KEYS
+        #
+        # Asserted as absence rather than as a fixed registry size, because the
+        # registry means "gets model and instructions from LD" and gained an
+        # entry that is not an agent at all -- see LD_CONFIGURED_STAGES.
+        from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS
 
-        assert set(AGENT_KEYS) == {
-            "address-repair",
-            "manifest-verification",
-            "review-narrator",
-        }
+        assert "infeasibility-remediation" not in LD_CONFIGURED_KEYS
 
     def test_remediating_writes_no_invocation_record(self, quoter, tmp_path):
         # Nothing to record, because nothing was invoked.

@@ -121,7 +121,7 @@ def launchdarkly_metrics(
 
     from ldai.tracker import LDAIConfigTracker
 
-    from ..agent_configs import AGENT_STAGES
+    from ..agent_configs import LD_CONFIGURED_STAGES
 
     invocations = count(1)
 
@@ -137,7 +137,7 @@ def launchdarkly_metrics(
             variation_key=config.variation_key,
             version=config.version,
             context=to_ld_context(
-                run.context_for_stage(AGENT_STAGES[config.agent_key])
+                run.context_for_stage(LD_CONFIGURED_STAGES[config.agent_key])
             ),
             model_name=config.model or "unknown",
             provider_name=provider,

@@ -49,6 +49,7 @@ from typing import Any, Protocol
 
 from .context import (
     STAGE_ADDRESS_REPAIR,
+    STAGE_EXTRACTION,
     STAGE_MANIFEST_VERIFICATION,
     STAGE_REVIEW_NARRATOR,
     reason_code,
@@ -62,23 +63,37 @@ DEFAULT_SNAPSHOT_PATH = Path("config/ld-snapshot.json")
 #: failing a run.
 SNAPSHOT_SCHEMA_VERSION = 1
 
-#: The agents of design 6.2, each evaluated under its own `stage` context so
-#: one flag can target them independently. Written out rather than derived from
-#: the agent key by string substitution: the mapping between an LD config key
-#: and a stage identifier is a fact worth being able to read.
+#: Stages whose model and instruction text come from LaunchDarkly, each
+#: evaluated under its own `stage` context so one flag can target them
+#: independently. Written out rather than derived from the key by string
+#: substitution: the mapping between an LD config key and a stage identifier
+#: is a fact worth being able to read.
 #:
-#: Three, not four. `infeasibility-remediation` was demoted to ordinary Python
-#: once its only open-ended move turned out to be physically impossible -- see
-#: `planning/remediation` and design 6.3. `STAGE_INFEASIBILITY_REMEDIATION`
-#: survives in `context` because C4 is still a stage; it is just not one that
-#: asks LaunchDarkly for instructions.
-AGENT_STAGES: dict[str, str] = {
+#: **"LD-configured" is not the same as "agent", and this registry means the
+#: first.** `screenshot-extraction` is B1, which design 6.3 is explicit is a
+#: single-shot vision call with no loop and no tool access -- a model call,
+#: not an agent. It is here because design 6.1 puts "model, temperature, token
+#: ceiling" in LaunchDarkly unconditionally, and its dividing test asks
+#: whether a value could differ between two runs of identical code with both
+#: still correct, and whether you want to attribute an outcome to the
+#: difference. For which vision model reads a screenshot, that is emphatically
+#: yes: B1 is the one stage in this system with a ground-truth answer key
+#: (`tests/fixtures/screenshots/`), so extraction accuracy per variation is a
+#: number that can actually be computed rather than an anecdote.
+#:
+#: `infeasibility-remediation` was here and is not: C4 was demoted to ordinary
+#: Python once its only open-ended move turned out to be physically impossible
+#: (`planning/remediation`, design 6.3). `STAGE_INFEASIBILITY_REMEDIATION`
+#: survives in `context` because C4 is still a stage; it just does not ask
+#: LaunchDarkly for anything.
+LD_CONFIGURED_STAGES: dict[str, str] = {
+    "screenshot-extraction": STAGE_EXTRACTION,  # B1 -- not an agent
     "address-repair": STAGE_ADDRESS_REPAIR,
     "manifest-verification": STAGE_MANIFEST_VERIFICATION,
     "review-narrator": STAGE_REVIEW_NARRATOR,
 }
 
-AGENT_KEYS: tuple[str, ...] = tuple(AGENT_STAGES)
+LD_CONFIGURED_KEYS: tuple[str, ...] = tuple(LD_CONFIGURED_STAGES)
 
 #: LD's envelope key on every AI Config value. Internal to the AI Config
 #: format rather than to any one SDK version, but confined to `_from_variation`
@@ -353,7 +368,7 @@ class ChainedAgentConfigs:
 def fetch_agent_configs(
     source: AgentConfigSource,
     context_for_agent: Any,
-    agent_keys: tuple[str, ...] = AGENT_KEYS,
+    agent_keys: tuple[str, ...] = LD_CONFIGURED_KEYS,
 ) -> dict[str, AgentConfig]:
     """Pull every agent config, each under its own stage context.
 
@@ -363,7 +378,7 @@ def fetch_agent_configs(
     ineffective, which is the whole point of the multi-context in 6.6.
     """
     return {
-        key: source.fetch(key, context_for_agent(AGENT_STAGES[key]))
+        key: source.fetch(key, context_for_agent(LD_CONFIGURED_STAGES[key]))
         for key in agent_keys
     }
 

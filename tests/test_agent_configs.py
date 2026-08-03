@@ -3,7 +3,7 @@ import json
 import pytest
 
 from bbq_shipment_agent.agent_configs import (
-    AGENT_KEYS,
+    LD_CONFIGURED_KEYS,
     SNAPSHOT_SCHEMA_VERSION,
     AgentConfig,
     AgentConfigError,
@@ -318,14 +318,14 @@ class TestFetchingEveryAgent:
     def test_each_agent_is_evaluated_under_its_own_stage(self):
         # Evaluating all four under one context would make the per-agent
         # targeting of 6.6 silently ineffective.
-        client = FakeClient({key: variation() for key in AGENT_KEYS})
+        client = FakeClient({key: variation() for key in LD_CONFIGURED_KEYS})
         configs = fetch_agent_configs(
             LaunchDarklyAgentConfigs(client),
             lambda stage: build_context(
                 run_id="r1", stage=stage, profile="baseline"
             ),
         )
-        assert set(configs) == set(AGENT_KEYS)
+        assert set(configs) == set(LD_CONFIGURED_KEYS)
         # The client is handed an SDK Context, so read the stage back the way
         # LaunchDarkly's targeting would.
         stages = {
@@ -333,7 +333,7 @@ class TestFetchingEveryAgent:
         }
         assert stages["manifest-verification"] == "manifest_verification"
         assert stages["address-repair"] == "address_repair"
-        assert len(set(stages.values())) == len(AGENT_KEYS)
+        assert len(set(stages.values())) == len(LD_CONFIGURED_KEYS)
 
 
 class TestWritingTheSnapshot:
@@ -384,3 +384,34 @@ class TestWritingTheSnapshot:
             "model_parameters", "instructions", "instruction_hash",
             "declared_tools",
         }
+
+
+class TestTheRegistryMeansLdConfigured:
+    """`LD_CONFIGURED_STAGES` is not a list of agents. Design 6.1 vs 6.3."""
+
+    def test_b1_is_in_it(self):
+        from bbq_shipment_agent.agent_configs import LD_CONFIGURED_STAGES
+
+        assert "screenshot-extraction" in LD_CONFIGURED_STAGES
+
+    def test_b1_is_offered_no_tools_and_never_will_be(self):
+        # Design 6.3: a single-shot vision call with no loop and no tool
+        # access. Being LD-configured buys it a model and a prompt, not
+        # agency.
+        from bbq_shipment_agent.agents.tools import TOOL_NAMES
+
+        assert TOOL_NAMES["screenshot-extraction"] == frozenset()
+
+    def test_every_key_has_its_own_stage(self):
+        # The stage kind is what makes per-stage targeting work at all; two
+        # entries sharing one would silently merge their targeting rules.
+        from bbq_shipment_agent.agent_configs import LD_CONFIGURED_STAGES
+
+        stages = list(LD_CONFIGURED_STAGES.values())
+        assert len(set(stages)) == len(stages)
+
+    def test_the_tool_contract_covers_every_key(self):
+        from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS
+        from bbq_shipment_agent.agents.tools import TOOL_NAMES
+
+        assert set(TOOL_NAMES) == set(LD_CONFIGURED_KEYS)

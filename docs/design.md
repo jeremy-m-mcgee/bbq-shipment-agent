@@ -302,6 +302,7 @@ Each model-driven loop is a separate agent config. They share no context, hand n
 
 | Agent | Stage | Tools offered | Model class | Metric |
 |---|---|---|---|---|
+| `screenshot-extraction` | B1 | *none* | Vision required | Recipients extracted correctly |
 | `address-repair` | B3 | Shippo validate, image region read | Vision required | Repair success rate |
 | `manifest-verification` | D1 | Manifest read, read-only | Text, cheap model viable | Errors caught before review |
 | `review-narrator` | D2 | Manifest read, re-solve trigger | Conversational, longer context | Operator edit count |
@@ -310,13 +311,19 @@ Separating them is justified independently of LD ergonomics: they differ on tool
 
 `infeasibility-remediation` was in this table and is not any more: C4 became ordinary Python once its only open-ended move turned out to be impossible. See 6.3 and section 10.
 
+`screenshot-extraction` is in it and **is not an agent** — 6.3 still says so, and it is offered no tools. It is here because this table conflated two things: *which stages have an AI Config* and *which stages are agents*. Those separate at B1. Design 6.1 puts "model, temperature, token ceiling" in LaunchDarkly unconditionally, and its dividing test — could this differ between two runs of identical code with both still correct, and do you want to attribute an outcome to the difference — is emphatically yes for which vision model reads a screenshot.
+
+There is a stronger reason than symmetry. Section 8 warns that at 22 packets across a few runs a year nothing here reaches significance. B1 is the sole exception: it is the only stage with a **ground-truth answer key**, so extraction accuracy per variation is a number that can be computed offline as often as you like, against `tests/fixtures/screenshots/`. Every other flag's metric is an anecdote. This one is a measurement, which makes B1 the best candidate for a served config in the system rather than a marginal one.
+
+The registry in code is named `LD_CONFIGURED_STAGES` for exactly this reason. It means "gets its model and instructions from LaunchDarkly", which is not the same claim as "is an agent".
+
 The flag set does not multiply with the agent count. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, six flags — and the sixth, `validation-mode`, belongs to a deterministic stage rather than an agent, which is the point: LaunchDarkly serves runtime behaviour, not just agent instructions.
 
 ### 6.3 What is not an agent
 
 Worth stating, because the boundary is easy to erode:
 
-- **B1 extraction** is a single-shot vision call with no loop and no tool access. It is a model call, not an agent.
+- **B1 extraction** is a single-shot vision call with no loop and no tool access. It is a model call, not an agent. It *does* take its model and prompt from LaunchDarkly (6.2), which is a statement about where configuration lives and not about agency. Being served a prompt does not make something an agent; having a loop and tools does, and B1 has neither.
 - **C5 pair solve** is brute force over six options. Deterministic.
 - **C4 infeasibility remediation** *was* an agent, on the strength of one open-ended move: splitting a shipment. Section 4 records the measurement that killed it — hold time does not depend on product mass, so a split is strictly worse. What remained was deciding whether a cooler month clears the gate, which is arithmetic, and saying so. Demoting it is what "agency is a cost, not a goal" means when the cost stops buying anything.
 - **D2 narration** explains the C5 result and is bound by the rule that every claim traces to a computed field. `review-narrator` describes the solve and does not participate in it.

@@ -8,7 +8,7 @@ from bbq_shipment_agent.capabilities import (
     KillSwitchEngaged,
     PlannerMode,
 )
-from bbq_shipment_agent.agent_configs import AGENT_KEYS, AgentConfig
+from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.context import STAGE_MANIFEST_VERIFICATION
 from bbq_shipment_agent.ledger import (
     AgentInvocationRecord,
@@ -415,7 +415,7 @@ class TestAgentConfigRetrieval:
             agent_source=StubAgentConfigs(),
             snapshot_path=tmp_path / "snap.json",
         )
-        assert set(run.agent_configs) == set(AGENT_KEYS)
+        assert set(run.agent_configs) == set(LD_CONFIGURED_KEYS)
 
     def test_each_agent_gets_its_own_stage_context(self, ledger, config_path, tmp_path):
         source = StubAgentConfigs()
@@ -429,13 +429,13 @@ class TestAgentConfigRetrieval:
             key: ctx["stage"]["key"] for key, ctx in source.seen.items()
         }
         assert stages["manifest-verification"] == "manifest_verification"
-        assert len(set(stages.values())) == len(AGENT_KEYS)
+        assert len(set(stages.values())) == len(LD_CONFIGURED_KEYS)
         # And every one of them under this run's identity.
         assert {ctx["run"]["key"] for ctx in source.seen.values()} == {run.run_id}
 
     def test_the_offline_default_retrieves_nothing_usable(self, ledger, config_path):
         run = initialize_run(ledger_root=ledger, config_path=config_path)
-        assert set(run.agent_configs) == set(AGENT_KEYS)
+        assert set(run.agent_configs) == set(LD_CONFIGURED_KEYS)
         assert not any(c.available for c in run.agent_configs.values())
 
     def test_the_snapshot_is_written_when_configs_arrive(
@@ -450,7 +450,7 @@ class TestAgentConfigRetrieval:
         )
         assert path.exists()
         stored = json.loads(path.read_text(encoding="utf-8"))
-        assert set(stored["agents"]) == set(AGENT_KEYS)
+        assert set(stored["agents"]) == set(LD_CONFIGURED_KEYS)
 
     def test_an_offline_run_writes_no_snapshot_at_all(
         self, ledger, config_path, tmp_path

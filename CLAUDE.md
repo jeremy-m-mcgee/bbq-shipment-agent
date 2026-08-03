@@ -27,8 +27,14 @@ Full design: @docs/design.md
 - Python holds all control flow, tool definitions, and tool execution.
 - If a change would express control flow in LD config, stop and ask.
 
-## Agents (3, independent, no handoff)
-address-repair (B3) | manifest-verification (D1) | review-narrator (D2)
+## LD-configured stages (4) — not all of them are agents
+screenshot-extraction (B1, *not* an agent) | address-repair (B3)
+manifest-verification (D1) | review-narrator (D2)
+
+The registry is `LD_CONFIGURED_STAGES`, meaning "model + instructions come
+from LD". B1 is in it because design 6.1 puts model choice in LD and B1 is the
+only stage with a ground-truth answer key, so its metric is a real
+measurement. It has no loop and no tools and never will — design 6.3.
 
 C4 was the fourth and was demoted to ordinary Python: its only open-ended move
 (splitting a shipment) is physically impossible, and what remained is

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bbq_shipment_agent.agent_configs import AGENT_KEYS, AgentConfig
+from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.agents.tools import (
     TOOL_NAMES,
     ToolContractError,
@@ -70,7 +70,7 @@ class TestTheContract:
     def test_every_agent_has_a_contract(self):
         # A retrieved config with no entry here has no answer to "what may it
         # do", and silence is the wrong default for that question.
-        assert set(TOOL_NAMES) == set(AGENT_KEYS)
+        assert set(TOOL_NAMES) == set(LD_CONFIGURED_KEYS)
 
     def test_manifest_verification_offers_nothing_and_should_stay_that_way(self):
         # Design 6.2 grants it "manifest read, read-only", and design 10
@@ -136,9 +136,9 @@ class TestTheAssertion:
     def test_a_demoted_agent_is_never_fetched(self, tmp_path):
         # The practical guarantee: leaving the AI Config live in LaunchDarkly
         # does not break a run, because nothing asks for it.
-        from bbq_shipment_agent.agent_configs import AGENT_KEYS
+        from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS
 
-        assert "infeasibility-remediation" not in AGENT_KEYS
+        assert "infeasibility-remediation" not in LD_CONFIGURED_KEYS
         run = run_a1(tmp_path, {"address-repair": config("address-repair")})
         assert "infeasibility-remediation" not in run.agent_configs
 
