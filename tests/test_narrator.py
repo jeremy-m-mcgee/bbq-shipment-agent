@@ -60,25 +60,6 @@ class ScriptedModel:
         return nxt
 
 
-class SpyMetrics:
-    def __init__(self):
-        self.begins = 0
-        self.events = []
-
-    def begin(self):
-        self.begins += 1
-        return self
-
-    def track_success(self):
-        self.events.append("success")
-
-    def track_error(self):
-        self.events.append("error")
-
-    def track_tokens(self, input_tokens, output_tokens):
-        self.events.append(("tokens", input_tokens, output_tokens))
-
-
 @pytest.fixture
 def session(tmp_path):
     (tmp_path / "capabilities.yaml").write_text(
@@ -101,11 +82,9 @@ def session(tmp_path):
     )
 
 
-def narrator(session, tmp_path, model, metrics=None):
+def narrator(session, tmp_path, model):
     run, review = session
-    return Narrator(
-        run, review, ledger_root=tmp_path / "ledger", model=model, metrics=metrics
-    )
+    return Narrator(run, review, ledger_root=tmp_path / "ledger", model=model)
 
 
 class TestTheToolLoop:
@@ -194,38 +173,6 @@ class TestToolFailuresStayInTheConversation:
             narrator(session, tmp_path, model).say("hello")
 
 
-class TestMetricsPerTurn:
-    def test_tokens_are_reported_once_for_the_whole_turn(self, session, tmp_path):
-        # An LD tracker records tokens exactly once. A turn with three tool
-        # round trips makes three model calls, and reporting each one meant
-        # the first was recorded and the rest dropped with a warning -- seen
-        # live before this was fixed.
-        spy = SpyMetrics()
-        model = ScriptedModel(
-            Completion(
-                text="",
-                input_tokens=100,
-                output_tokens=10,
-                tool_calls=(ToolCall(id="t1", name="read_manifest", arguments={}),),
-                raw_content=[{"type": "tool_use"}],
-            ),
-            Completion(text="done", input_tokens=200, output_tokens=20),
-        )
-        turn = narrator(session, tmp_path, model, spy).say("explain")
-        token_events = [e for e in spy.events if isinstance(e, tuple)]
-        assert token_events == [("tokens", 300, 30)]
-        # The same total the ledger line's iterations describe.
-        assert (turn.input_tokens, turn.output_tokens) == (300, 30)
-
-    def test_each_turn_gets_its_own_reporter(self, session, tmp_path):
-        spy = SpyMetrics()
-        voice = narrator(session, tmp_path, ScriptedModel(
-            Completion(text="a"), Completion(text="b")
-        ), spy)
-        voice.say("one")
-        voice.say("two")
-        assert spy.begins == 2
-        assert spy.events.count("success") == 2
 
 
 class TestTheLedger:

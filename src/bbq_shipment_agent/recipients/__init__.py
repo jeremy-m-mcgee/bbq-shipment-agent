@@ -13,7 +13,6 @@ Phase B decides *who* is shipped to, Phase C decides *how*.
 
 from .dedupe import SuppressionReport, dedupe_recipients
 from .extraction import (
-    CONFIG_KEY,
     ExtractionError,
     ExtractionResult,
     Unresolved,
@@ -49,7 +48,6 @@ __all__ = [
     "DEFAULT_ROSTER_PATH",
     "AddressValidationUnavailable",
     "AddressValidator",
-    "CONFIG_KEY",
     "ExtractionError",
     "ExtractionResult",
     "MAX_ITERATIONS",

@@ -18,7 +18,6 @@ decide what to do with the answer. No prompt text and no model name is written
 in this package.
 """
 
-from .metrics import AgentMetrics, LaunchDarklyMetrics, NoMetrics, launchdarkly_metrics
 from .model import (
     DEFAULT_MAX_TOKENS,
     AnthropicModel,
@@ -40,7 +39,6 @@ from .tools import (
     build_tools,
 )
 from .verification import (
-    AGENT_KEY,
     MAX_ATTEMPTS,
     Finding,
     Verification,
@@ -50,23 +48,19 @@ from .verification import (
 )
 
 __all__ = [
-    "AGENT_KEY",
     "DEFAULT_MAX_TOKENS",
     "MAX_ATTEMPTS",
     "MAX_TOOL_ITERATIONS",
     "TOOL_NAMES",
-    "AgentMetrics",
     "AnthropicModel",
     "Completion",
     "ConversingModel",
     "Finding",
     "Invocation",
-    "LaunchDarklyMetrics",
     "ModelClient",
     "ModelUnavailable",
     "Narrator",
     "NarratorUnavailable",
-    "NoMetrics",
     "RecordedModel",
     "Tool",
     "ToolCall",
@@ -76,7 +70,6 @@ __all__ = [
     "Verification",
     "assert_tool_contract",
     "build_tools",
-    "launchdarkly_metrics",
     "manifest_payload",
     "render_instructions",
     "verify_manifest",

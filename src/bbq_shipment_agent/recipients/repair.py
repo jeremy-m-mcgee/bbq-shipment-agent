@@ -47,7 +47,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..agents.metrics import AgentMetrics, NoMetrics
 from ..agents.model import Invocation, ModelUnavailable
 from ..agents.tools import Tool, ToolError, ToolImage, build_tools
 from ..agents.verification import render_instructions
@@ -102,7 +101,6 @@ def repair_addresses(
     model: Any,
     screenshots: Path | str | None = None,
     ledger_root: Path | str,
-    metrics: AgentMetrics | None = None,
 ) -> RepairResult:
     """B3. Returns repaired records and an escalation list.
 
@@ -126,7 +124,6 @@ def repair_addresses(
     invocation = Invocation.from_config(config, render_instructions(config, context))
     tools = build_tools(CONFIG_KEY, validator=validator, screenshots=screenshots)
     by_name = {tool.name: tool for tool in tools}
-    reporter = (metrics or NoMetrics()).begin()
 
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": _brief(needing_repair)}
@@ -140,7 +137,6 @@ def repair_addresses(
         try:
             completion = model.converse(invocation, messages, tools)
         except ModelUnavailable as exc:
-            reporter.track_error()
             raise RepairUnavailable(str(exc)) from exc
         tokens_in += completion.input_tokens
         tokens_out += completion.output_tokens
@@ -164,9 +160,7 @@ def repair_addresses(
             results.append(_run(by_name, call))
         messages.append({"role": "user", "content": results})
 
-    reporter.track_tokens(tokens_in, tokens_out)
     repaired, escalated, rejected = _adjudicate(needing_repair, parsed, validator)
-    reporter.track_success() if parsed is not None else reporter.track_error()
 
     record_agent_invocation(
         ledger_root,

@@ -42,12 +42,11 @@ from typing import Any
 
 from ..context import STAGE_REVIEW_NARRATOR
 from ..run import Run, record_agent_invocation
-from .metrics import AgentMetrics, NoMetrics
 from .model import Invocation, ModelUnavailable
 from .tools import Tool, ToolError, build_tools
 from .verification import render_instructions
 
-AGENT_KEY = "review-narrator"
+CONFIG_KEY = "review-narrator"
 
 #: Tool round trips allowed inside one operator turn. See the module
 #: docstring: a liveness bound, not a safety one.
@@ -93,16 +92,15 @@ class Narrator:
         *,
         ledger_root: Path | str,
         model: Any,
-        metrics: AgentMetrics | None = None,
     ) -> None:
-        config = run.agent_configs.get(AGENT_KEY)
+        config = run.agent_configs.get(CONFIG_KEY)
         if config is None or not config.available:
             reason = (
                 "no config was retrieved at run start"
                 if config is None
                 else f"{config.source}/{config.reason}"
             )
-            raise NarratorUnavailable(f"{AGENT_KEY}: {reason}")
+            raise NarratorUnavailable(f"{CONFIG_KEY}: {reason}")
 
         context = run.context_for_stage(STAGE_REVIEW_NARRATOR)
         self.invocation = Invocation.from_config(
@@ -112,8 +110,7 @@ class Narrator:
         self.session = session
         self.ledger_root = ledger_root
         self._model = model
-        self._metrics = metrics or NoMetrics()
-        self._tools: tuple[Tool, ...] = build_tools(AGENT_KEY, session=session)
+        self._tools: tuple[Tool, ...] = build_tools(CONFIG_KEY, session=session)
         self._by_name = {tool.name: tool for tool in self._tools}
         self.messages: list[dict[str, Any]] = []
         self.turns: list[Turn] = []
@@ -126,9 +123,6 @@ class Narrator:
         """One operator turn, including any tools the model runs for it."""
         turn = Turn(prompt=text)
         self.messages.append({"role": "user", "content": text})
-        # A fresh reporter per turn. One operator turn is one AI invocation,
-        # and an LD tracker records once -- see `AgentMetrics.begin`.
-        metrics = self._metrics.begin()
 
         for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
             turn.iterations = iteration
@@ -137,7 +131,6 @@ class Narrator:
                     self.invocation, self.messages, self._tools
                 )
             except ModelUnavailable as exc:
-                metrics.track_error()
                 self._record("unavailable", turn)
                 raise NarratorUnavailable(str(exc)) from exc
 
@@ -169,14 +162,6 @@ class Narrator:
                 "ask again, or read the manifest directly)"
             )
 
-        # Once per turn, with the whole turn's usage, not once per model call.
-        # A tracker records tokens exactly once, and a turn that ran three tool
-        # round trips makes three calls -- reporting each one meant the first
-        # was recorded and the rest were dropped with a warning. The turn is
-        # also the unit `iterations` counts on the ledger line, so the two
-        # numbers now describe the same thing.
-        metrics.track_tokens(turn.input_tokens, turn.output_tokens)
-        metrics.track_success()
         self._record("findings" if turn.tools_called else "clean", turn)
         self.turns.append(turn)
         return turn
@@ -219,7 +204,7 @@ class Narrator:
         record_agent_invocation(
             self.ledger_root,
             self.run,
-            AGENT_KEY,
+            CONFIG_KEY,
             outcome=outcome,
             iterations=turn.iterations,
         )

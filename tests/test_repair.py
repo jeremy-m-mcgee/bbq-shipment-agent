@@ -89,7 +89,7 @@ def validator():
 
 
 @pytest.fixture
-def needing_repair(run, validator):
+def needing_repair(run, validator, tmp_path):
     replies = json.loads((FIXTURES / "b1-extractions.json").read_text())["replies"]
     order = [p.name for p in IMAGES]
 
@@ -98,7 +98,9 @@ def needing_repair(run, validator):
             row = replies[order.pop(0)]
             return Completion(text=row["text"])
 
-    extracted = extract_from_images(run, IMAGES, model=ReplayVision())
+    extracted = extract_from_images(
+        run, IMAGES, model=ReplayVision(), ledger_root=tmp_path / "ledger"
+    )
     return validate_recipients(
         extracted.recipients, validator, ValidationMode.STRICT
     ).for_repair
@@ -273,10 +275,15 @@ class TestTheImageTool:
 
 class TestTheLedger:
     def test_the_invocation_is_recorded(self, result, tmp_path):
+        # B1 also writes one -- the fixture runs extraction to build the set
+        # -- so this asserts B3's record is present rather than that it is
+        # the only one.
         records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
-        assert [r.agent_key for r in records] == [CONFIG_KEY]
-        assert records[0].outcome.startswith("repaired:")
-        assert records[0].iterations == result.iterations
+        mine = [r for r in records if r.agent_key == CONFIG_KEY]
+        assert len(mine) == 1
+        assert mine[0].outcome.startswith("repaired:")
+        assert mine[0].iterations == result.iterations
+        assert "screenshot-extraction" in {r.agent_key for r in records}
 
 
 class TestRefusals:

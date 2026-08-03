@@ -62,6 +62,7 @@ from ..agents.verification import render_instructions
 from ..context import STAGE_EXTRACTION
 from ..planning.manifest import Excluded
 from ..planning.rates import Address
+from ..run import record_agent_invocation
 from .record import Provenance, Recipient, Region
 from .roster import slugify
 
@@ -146,6 +147,7 @@ def extract_from_images(
     images: tuple[Path, ...],
     *,
     model: Any,
+    ledger_root: Path | str,
     config: AgentConfig | None = None,
 ) -> ExtractionResult:
     """B1. One call per image, results concatenated.
@@ -153,6 +155,13 @@ def extract_from_images(
     `config` defaults to the one captured at A1 -- identity comes from run
     start, never a fresh lookup, for the same reason every other invocation
     record does.
+
+    The invocation is recorded, which matters more here than anywhere else.
+    Design 6.4 mitigation 2 wants the variation key, version and instruction
+    hash on every invocation, and B1 is the stage whose whole justification is
+    comparing variations against an answer key: without the record, the ledger
+    cannot say which prompt produced which extraction, and the comparison has
+    nothing to join on.
     """
     config = config or run.agent_configs.get(CONFIG_KEY)
     if config is None or not config.available:
@@ -182,6 +191,20 @@ def extract_from_images(
         found, missing = _records_from(parsed, path)
         recipients.extend(found)
         unresolved.extend(missing)
+
+    record_agent_invocation(
+        ledger_root,
+        run,
+        CONFIG_KEY,
+        outcome=(
+            f"extracted:{len(recipients)}"
+            + (f" unresolved:{len(unresolved)}" if unresolved else "")
+            + (f" unreadable:{len(unreadable)}" if unreadable else "")
+        ),
+        # One image is one call, so attempts across the batch is the honest
+        # iteration count -- a retried image costs two.
+        iterations=attempts,
+    )
 
     return ExtractionResult(
         recipients=tuple(recipients),

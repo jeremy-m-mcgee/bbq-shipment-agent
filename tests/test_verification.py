@@ -8,7 +8,6 @@ import pytest
 
 from bbq_shipment_agent.agent_configs import AgentConfig, SnapshotAgentConfigs
 from bbq_shipment_agent.agents import (
-    AGENT_KEY,
     Completion,
     Invocation,
     ModelUnavailable,
@@ -16,6 +15,7 @@ from bbq_shipment_agent.agents import (
     manifest_payload,
     verify_manifest,
 )
+from bbq_shipment_agent.agents.verification import CONFIG_KEY as AGENT_KEY
 from bbq_shipment_agent.ledger import AgentInvocationRecord, iter_records
 from bbq_shipment_agent.plan import plan_run
 from bbq_shipment_agent.planning import RecordedQuoter
@@ -360,73 +360,6 @@ class TestFindingCoercion:
         assert len(result.blockers) == 1
 
 
-class TestMetrics:
-    def test_tokens_and_success_are_reported(self, tmp_path):
-        class Spy:
-            def __init__(self):
-                self.events = []
-
-            def begin(self):
-                # One reporter per invocation, per AgentMetrics.begin.
-                return self
-
-            def track_success(self):
-                self.events.append("success")
-
-            def track_error(self):
-                self.events.append("error")
-
-            def track_tokens(self, input_tokens, output_tokens):
-                self.events.append(("tokens", input_tokens, output_tokens))
-
-        run = make_run(tmp_path)
-        manifest, _ = make_manifest(tmp_path, run)
-        spy = Spy()
-        verify_manifest(
-            run,
-            manifest,
-            ledger_root=tmp_path / "ledger",
-            model=StubModel('{"findings": []}'),
-            metrics=spy,
-        )
-        assert ("tokens", 10, 5) in spy.events
-        assert "success" in spy.events
-
-    def test_findings_still_count_as_a_successful_invocation(self, tmp_path):
-        # Success is about the invocation, not the manifest. An agent that
-        # correctly reports six blockers did its job; conflating the two would
-        # make the metric reward silence.
-        class Spy:
-            def __init__(self):
-                self.events = []
-
-            def begin(self):
-                # One reporter per invocation, per AgentMetrics.begin.
-                return self
-
-            def track_success(self):
-                self.events.append("success")
-
-            def track_error(self):
-                self.events.append("error")
-
-            def track_tokens(self, input_tokens, output_tokens):
-                pass
-
-        run = make_run(tmp_path)
-        manifest, _ = make_manifest(tmp_path, run)
-        spy = Spy()
-        reply = json.dumps(
-            {"findings": [{"check": "x", "severity": "blocker", "problem": "bad"}]}
-        )
-        verify_manifest(
-            run,
-            manifest,
-            ledger_root=tmp_path / "ledger",
-            model=StubModel(reply),
-            metrics=spy,
-        )
-        assert spy.events == ["success"]
 
 
 class TestWhichModelAnswered:
@@ -473,50 +406,3 @@ class TestWhichModelAnswered:
         )
         assert result.model_responded is None
         assert not result.model_drifted
-
-
-class TestMetricsAreReportedPerInvocation:
-    def test_begin_hands_back_a_fresh_reporter(self):
-        # LDAIConfigTracker records tokens and success once and then refuses,
-        # logging "already recorded on this tracker". A conversational agent
-        # makes one invocation per operator turn, so a tracker held for a
-        # whole review reports turn one and silently drops the rest. Caught
-        # live: a four-turn review logged two skips per turn after the first.
-        from bbq_shipment_agent.agents.metrics import LaunchDarklyMetrics, NoMetrics
-
-        made = []
-
-        def make_tracker():
-            tracker = object()
-            made.append(tracker)
-            return tracker
-
-        metrics = LaunchDarklyMetrics(make_tracker)
-        first, second = metrics.begin(), metrics.begin()
-        assert first is not second
-        # One tracker for the constructor, one per begin().
-        assert len(made) == 3
-
-        # NoMetrics has nothing to reset, so it may hand back itself.
-        assert NoMetrics().begin() is not None
-
-    def test_a_metrics_failure_never_fails_the_run(self):
-        # LaunchDarkly being unreachable is design 6.10's normal path. A run
-        # that planned correctly must not be reported failed because a
-        # telemetry event could not be delivered.
-        from bbq_shipment_agent.agents.metrics import LaunchDarklyMetrics
-
-        class Exploding:
-            def track_success(self):
-                raise RuntimeError("LD is down")
-
-            def track_error(self):
-                raise RuntimeError("LD is down")
-
-            def track_tokens(self, usage):
-                raise RuntimeError("LD is down")
-
-        metrics = LaunchDarklyMetrics(Exploding, tracker=Exploding())
-        metrics.track_success()
-        metrics.track_error()
-        metrics.track_tokens(1, 2)

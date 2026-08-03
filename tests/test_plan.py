@@ -240,8 +240,8 @@ class TestTheAgentBoundary:
         assert invocations == []
 
     def test_d1_runs_and_is_recorded_when_verification_is_on(self, workspace):
-        from bbq_shipment_agent.agents import AGENT_KEY, RecordedModel
-        from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+        from bbq_shipment_agent.agents import RecordedModel
+        from bbq_shipment_agent.agents.verification import CONFIG_KEY as AGENT_KEY
         from bbq_shipment_agent.ledger import AgentInvocationRecord
 
         result = run_plan(

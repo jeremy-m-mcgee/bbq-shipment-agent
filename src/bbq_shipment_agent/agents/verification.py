@@ -48,10 +48,9 @@ from ..context import STAGE_MANIFEST_VERIFICATION
 from ..ledger import AgentInvocationRecord
 from ..planning import Manifest
 from ..run import Run, record_agent_invocation
-from .metrics import AgentMetrics, NoMetrics
 from .model import Completion, Invocation, ModelClient, ModelUnavailable
 
-AGENT_KEY = "manifest-verification"
+CONFIG_KEY = "manifest-verification"
 
 #: Parse attempts before the reply is recorded unparseable. Two, because the
 #: failure this recovers from is a model wrapping JSON in prose, which one
@@ -239,7 +238,6 @@ def verify_manifest(
     ledger_root: Path | str,
     model: ModelClient,
     input_recipients: tuple[str, ...] = (),
-    metrics: AgentMetrics | None = None,
 ) -> Verification:
     """D1. Check the manifest against the run goal before a human sees it.
 
@@ -259,7 +257,7 @@ def verify_manifest(
             reason=f"verification-enabled is {run.capabilities.verification.value}",
         )
 
-    config = run.agent_configs.get(AGENT_KEY)
+    config = run.agent_configs.get(CONFIG_KEY)
     if config is None or not config.available:
         reason = (
             "no config was retrieved at run start"
@@ -278,7 +276,7 @@ def verify_manifest(
             outcome="unavailable",
             reason=(
                 f"the AI Config declares tools {list(config.declared_tools)} but "
-                f"{AGENT_KEY} is offered none (design 6.2: manifest read, "
+                f"{CONFIG_KEY} is offered none (design 6.2: manifest read, "
                 "read-only). Remove them in LaunchDarkly or grant them in Python."
             ),
         )
@@ -293,7 +291,6 @@ def verify_manifest(
         manifest_payload(manifest, input_recipients), indent=2, sort_keys=True
     )
 
-    reporter = (metrics or NoMetrics()).begin()
     attempts: list[_Attempt] = []
     prompt = payload
     for _ in range(MAX_ATTEMPTS):
@@ -304,13 +301,9 @@ def verify_manifest(
         except ModelUnavailable as exc:
             # A model that cannot be reached at all is not a bounded-retry
             # case: the same call would fail the same way.
-            reporter.track_error()
             return Verification(
                 outcome="unavailable", reason=str(exc), iterations=len(attempts)
             )
-        reporter.track_tokens(
-            attempt.completion.input_tokens, attempt.completion.output_tokens
-        )
 
         parsed = _parse(attempt.completion.text)
         if isinstance(parsed, str):
@@ -329,14 +322,6 @@ def verify_manifest(
         attempt.findings = _findings(parsed)
         attempt.clean = [str(c) for c in parsed.get("clean") or []]
         break
-
-    # Success is about the invocation, not about the manifest. An agent that
-    # correctly reports six blockers did its job; one that returned prose did
-    # not. Conflating them would make the metric reward silence.
-    if attempts[-1].parsed is None:
-        reporter.track_error()
-    else:
-        reporter.track_success()
 
     return _result(run, ledger_root, attempts, invocation)
 
@@ -421,7 +406,7 @@ def _result(
     record = record_agent_invocation(
         ledger_root,
         run,
-        AGENT_KEY,
+        CONFIG_KEY,
         outcome=outcome,
         iterations=len(attempts),
     )

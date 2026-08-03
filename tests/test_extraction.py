@@ -86,10 +86,12 @@ def run(tmp_path):
 
 
 @pytest.fixture
-def result(run):
+def result(run, tmp_path):
     recording = json.loads(REPLIES.read_text())
     model = RecordedVision(recording, tuple(p.name for p in IMAGES))
-    return extract_from_images(run, IMAGES, model=model)
+    return extract_from_images(
+        run, IMAGES, model=model, ledger_root=tmp_path / "ledger"
+    )
 
 
 def normalize(value):
@@ -101,11 +103,13 @@ def address_of(row):
 
 
 class TestItReadsEveryScreenshot:
-    def test_one_call_per_image(self, run):
+    def test_one_call_per_image(self, run, tmp_path):
         # Design 6.3: single shot, no loop. Seven images, seven calls.
         recording = json.loads(REPLIES.read_text())
         model = RecordedVision(recording, tuple(p.name for p in IMAGES))
-        extract_from_images(run, IMAGES, model=model)
+        extract_from_images(
+            run, IMAGES, model=model, ledger_root=tmp_path / "ledger"
+        )
         assert model.calls == len(IMAGES)
 
     def test_nothing_was_unreadable(self, result):
@@ -222,12 +226,15 @@ class TestDuplicatesReachB4:
 
 
 class TestRefusals:
-    def test_a_missing_config_is_an_error_not_an_empty_result(self, run):
+    def test_a_missing_config_is_an_error_not_an_empty_result(self, run, tmp_path):
         run.agent_configs.pop(CONFIG_KEY)
         with pytest.raises(ExtractionError, match="no config"):
-            extract_from_images(run, IMAGES, model=RecordedVision({"replies": {}}, ()))
+            extract_from_images(
+                run, IMAGES, model=RecordedVision({"replies": {}}, ()),
+                ledger_root=tmp_path / "ledger",
+            )
 
-    def test_an_unparseable_reply_is_retried_then_recorded_unreadable(self, run):
+    def test_an_unparseable_reply_is_retried_then_recorded_unreadable(self, run, tmp_path):
         class Prose:
             calls = 0
 
@@ -235,7 +242,7 @@ class TestRefusals:
                 Prose.calls += 1
                 return Completion(text="I could not read that screenshot, sorry.")
 
-        result = extract_from_images(run, IMAGES[:1], model=Prose())
+        result = extract_from_images(run, IMAGES[:1], model=Prose(), ledger_root=tmp_path / "ledger")
         assert result.unreadable == (IMAGES[0].name,)
         assert Prose.calls == 2
         assert result.recipients == ()

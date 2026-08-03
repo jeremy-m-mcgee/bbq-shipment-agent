@@ -54,7 +54,6 @@ from pathlib import Path
 from typing import Any
 
 from .agents import (
-    AgentMetrics,
     ModelClient,
     ModelUnavailable,
     Verification,
@@ -173,7 +172,6 @@ def plan_run(
     repairer: Any = None,
     screenshots: Path | str | None = None,
     verifier: ModelClient | None = None,
-    metrics: AgentMetrics | None = None,
 ) -> PlanResult:
     """B2 through C6 against an already-initialized run.
 
@@ -212,7 +210,6 @@ def plan_run(
                 model=repairer,
                 screenshots=screenshots,
                 ledger_root=ledger_root,
-                metrics=metrics,
             )
         except RepairUnavailable:
             # No repair loop is a normal path, the same way no verification
@@ -286,7 +283,6 @@ def plan_run(
             ledger_root=ledger_root,
             model=verifier or _NoModel(),
             input_recipients=tuple(r.key for r in roster.recipients),
-            metrics=metrics,
         )
 
     return PlanResult(

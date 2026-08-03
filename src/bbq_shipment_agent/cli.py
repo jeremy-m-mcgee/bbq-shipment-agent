@@ -26,11 +26,9 @@ from .agent_configs import (
     SnapshotAgentConfigs,
 )
 from .agents import (
-    AGENT_KEY,
     AnthropicModel,
     ModelUnavailable,
     RecordedModel,
-    launchdarkly_metrics,
 )
 from .capabilities import (
     DEFAULT_CONFIG_PATH,
@@ -265,7 +263,9 @@ def _roster(args: argparse.Namespace, run=None):
         raise ExtractionError(f"no .png screenshots in {args.screenshots}")
 
     print(f"  B1           reading {len(images)} screenshot(s)")
-    extracted = extract_from_images(run, images, model=AnthropicModel())
+    extracted = extract_from_images(
+        run, images, model=AnthropicModel(), ledger_root=args.ledger
+    )
     print(f"               {extracted.describe()}")
     for u in extracted.unresolved:
         print(f"               no address: {u.name} — {u.note[:70]}")
@@ -331,17 +331,6 @@ def _verifier(args: argparse.Namespace, mode: VerificationMode):
     return AnthropicModel()
 
 
-def _metrics(client, run, agent_key: str = AGENT_KEY):
-    """Report an invocation back to LaunchDarkly, when there is an LD to
-    report to. Built from the config A1 captured, not a fresh lookup."""
-    config = run.agent_configs.get(agent_key)
-    if client is None or config is None:
-        from .agents import NoMetrics
-
-        return NoMetrics()
-    return launchdarkly_metrics(client, run, config)
-
-
 def _cmd_run_plan(args: argparse.Namespace) -> int:
     """A1 through C6, then D1: a roster in, a verified manifest out.
 
@@ -390,7 +379,6 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
             repairer=_repairer(args, run.capabilities.planner),
             screenshots=args.screenshots,
             verifier=_verifier(args, verification),
-            metrics=_metrics(client, run, "address-repair"),
         )
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
@@ -466,7 +454,6 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
             repairer=_repairer(args, run.capabilities.planner),
             screenshots=args.screenshots,
             verifier=_verifier(args, verification),
-            metrics=_metrics(client, run, "address-repair"),
         )
         if result.manifest is None:
             print(f"no manifest: {result.reason}")
@@ -546,7 +533,6 @@ def _review(args: argparse.Namespace, run, roster, result, client) -> int:
             session,
             ledger_root=args.ledger,
             model=AnthropicModel(),
-            metrics=_metrics(client, run, "review-narrator"),
         )
     except (NarratorUnavailable, ModelUnavailable) as exc:
         print(f"\nreview-narrator unavailable ({exc}). Reading the manifest directly.")
