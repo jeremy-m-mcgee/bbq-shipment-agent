@@ -208,6 +208,43 @@ def offline_reason(requested: bool) -> str:
     return "LD_UNREACHABLE"
 
 
+#: Which environment key each live path reaches for, and what to call the
+#: path when telling the operator it will fail.
+_CREDENTIALS = (
+    ("ANTHROPIC_API_KEY", "extractions", "B1 extraction", True),
+    ("ANTHROPIC_API_KEY", "repairs", "B3 repair", True),
+    ("ANTHROPIC_API_KEY", "completions", "D1 verification", False),
+    ("SHIPPO_API_KEY", "quotes", "C2 rate quotes", False),
+    ("SHIPPO_API_KEY", "validations", "B2 address validation", False),
+)
+
+
+def missing_credentials(options: RunOptions) -> dict[str, tuple[str, ...]]:
+    """Live paths this run may take that have no key to take them with.
+
+    A warning rather than a verdict, and the distinction is worth keeping.
+    Capabilities are not resolved until A1, so `verification-enabled` may be
+    off and D1 may never ask; `validation-mode` may be off and B2 likewise.
+    What this can say without guessing is narrower and still useful: a stage
+    with no recording will reach for a key, and the key is not there.
+
+    Empty counts as unset. `.env` is seeded from `.env.example`, so an
+    unconfigured key is present-but-empty rather than absent -- and the most
+    common cause of all is a `.env` that was never loaded, because `uv run`
+    reads it only when `UV_ENV_FILE` points at it.
+    """
+    missing: dict[str, list[str]] = {}
+    for key, recording, stage, needs_screenshots in _CREDENTIALS:
+        if getattr(options, recording) is not None:
+            continue  # replayed, so nothing live is reached for
+        if needs_screenshots and options.screenshots is None:
+            continue  # B1 and B3 only run when there are images
+        if os.environ.get(key):
+            continue
+        missing.setdefault(key, []).append(stage)
+    return {key: tuple(stages) for key, stages in missing.items()}
+
+
 def flag_sources(options: RunOptions, client: Any) -> tuple[str, Any, Any]:
     """The provider and agent-config source for a run, live or offline.
 

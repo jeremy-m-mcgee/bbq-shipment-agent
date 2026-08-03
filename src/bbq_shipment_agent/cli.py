@@ -50,6 +50,7 @@ from .wiring import (
     PrintProgress,
     RunOptions,
     ScreenshotSelection,
+    missing_credentials,
     open_run,
     plan_with,
     quoter,
@@ -425,6 +426,26 @@ def _print_partial(solve) -> None:
         )
 
 
+def _warn_about_credentials(options: RunOptions) -> None:
+    """Name the keys the live stages will reach for and not find.
+
+    Not an abort. A fully replayed launch needs no keys at all, and someone
+    who only wants to look at the page should not be stopped from doing it.
+    """
+    missing = missing_credentials(options)
+    if not missing:
+        return
+    print("\n  WARNING — these runs will fail:")
+    for key, stages in sorted(missing.items()):
+        print(f"    {key:<20} unset or empty, needed by {', '.join(stages)}")
+    print(
+        "\n  If the key is in .env, the process did not load it. `uv run` reads\n"
+        "  that file only when UV_ENV_FILE points at it — the devcontainer sets\n"
+        "  it, a plain shell may not. Restart with:\n\n"
+        "    UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui"
+    )
+
+
 def _cmd_ui(args: argparse.Namespace) -> int:
     """Serve the planning UI on the loopback interface.
 
@@ -444,7 +465,17 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     print(f"  ledger                  {args.ledger}")
     print(f"  screenshots             {args.screenshots}")
     print(f"  replay                  {'yes' if options.replaying else 'no (live calls)'}")
-    print("\n  ctrl-c to stop\n")
+
+    # Said here rather than discovered on the worker thread. A server that
+    # starts cleanly implies it is ready to run, and without this the first
+    # sign of a missing key is a failed run several clicks later -- which the
+    # CLI never had, because it fails on the way to the first stage.
+    _warn_about_credentials(options)
+    print("\n  ctrl-c to stop\n", flush=True)
+    # Flushed explicitly: stdout is block-buffered when it is not a terminal,
+    # so a banner printed before `uvicorn.run` blocks would sit unseen in the
+    # buffer for the life of the server. Which is exactly the case where the
+    # warning above matters most -- someone piping the log to a file.
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     return 0
 

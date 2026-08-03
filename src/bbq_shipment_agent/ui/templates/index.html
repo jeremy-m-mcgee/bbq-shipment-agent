@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block body %}
 
+{% if missing_keys %}
+<div class="notice bad">
+  <b>A live run will fail.</b> These keys are unset or empty in this process:
+  <ul style="margin:6px 0 6px 18px;padding:0">
+    {% for key, stages in missing_keys.items() %}
+    <li><code>{{ key }}</code> — needed by {{ stages|join(', ') }}</li>
+    {% endfor %}
+  </ul>
+  If they are in <code>.env</code>, the process did not load it: <code>uv run</code>
+  reads that file only when <code>UV_ENV_FILE</code> points at it, which the
+  devcontainer sets and a plain shell may not. Stop the server and restart with
+  <code>UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui</code>.
+</div>
+{% endif %}
+
 {% if active %}
 <div class="notice">
   A run is already going —
@@ -31,6 +46,8 @@
         <button type="button" class="ghost" id="none">clear</button>
       </div>
 
+      <p id="chosen" class="dim" style="font-size:13px;margin:0 0 12px"></p>
+
       <div id="sample" style="display:none;margin-bottom:14px">
         <div style="display:flex;gap:12px">
           <label class="field" style="flex:1">how many
@@ -50,8 +67,11 @@
 
       <div class="shots" id="shots">
         {% for shot in screenshots %}
-        <label class="shot on" data-name="{{ shot.name }}">
-          <input type="checkbox" name="screenshot" value="{{ shot.name }}" checked>
+        {# Unticked by default. Every selected image is a live vision call, and
+           a picker that arrives pre-armed turns "look at the page" into
+           "spend seven calls" on one click. #}
+        <label class="shot" data-name="{{ shot.name }}">
+          <input type="checkbox" name="screenshot" value="{{ shot.name }}">
           <img src="/screenshots/{{ shot.name }}" alt="{{ shot.name }}" loading="lazy">
           <span class="cap">
             <b>{{ shot.name }}</b>
@@ -117,7 +137,9 @@
         <code>--repairs</code> to enable replay.
         {% endif %}
       </p>
-      <button type="submit" {% if active %}disabled{% endif %}>Generate manifest</button>
+      <button type="submit" id="go" {% if active %}disabled data-locked="1"{% endif %}>
+        Generate manifest
+      </button>
     </div>
 
     <div class="panel">
@@ -152,26 +174,59 @@
 <script>
 const shots = document.getElementById('shots');
 const sample = document.getElementById('sample');
-const setOn = (label) => label.classList.toggle('on', label.querySelector('input').checked);
+const chosen = document.getElementById('chosen');
+const go = document.getElementById('go');
 
 if (shots) {
-  shots.addEventListener('change', (e) => setOn(e.target.closest('.shot')));
+  const total = shots.querySelectorAll('.shot').length;
+  const mode = () => document.querySelector('input[name=mode]:checked').value;
+  const calls = (n) => `${n} vision call${n === 1 ? '' : 's'}`;
+
+  // One function, called on every change and once on load, so the button, the
+  // dimming and the count can never disagree about what is selected.
+  function refresh() {
+    const explicit = mode() === 'explicit';
+    const picked = shots.querySelectorAll('input:checked').length;
+
+    sample.style.display = mode() === 'sample' ? 'block' : 'none';
+    // The checkboxes only mean something when picking. Dimming them in the
+    // other two modes is the honest signal: a sample ignores what you ticked.
+    shots.style.opacity = explicit ? '1' : '.45';
+    shots.querySelectorAll('input').forEach(i => { i.disabled = !explicit; });
+    shots.querySelectorAll('.shot').forEach(
+      label => label.classList.toggle('on', label.querySelector('input').checked)
+    );
+
+    if (explicit) {
+      chosen.textContent = picked
+        ? `${picked} of ${total} selected — ${calls(picked)}`
+        : 'Nothing selected. Pick the images you want B1 to read.';
+    } else if (mode() === 'all') {
+      chosen.textContent = `All ${total} — ${calls(total)}`;
+    } else {
+      chosen.textContent = 'A random sample, named and seeded on the run row.';
+    }
+
+    // Refuse an empty explicit run here as well as server-side. The POST
+    // already rejects it; this stops the click rather than explaining it
+    // afterwards. `data-locked` means a run is already going, and that
+    // disabling outranks anything the picker says.
+    if (go && !go.hasAttribute('data-locked')) {
+      go.disabled = explicit && picked === 0;
+    }
+  }
+
+  shots.addEventListener('change', refresh);
+  document.querySelectorAll('input[name=mode]').forEach(r => { r.onchange = refresh; });
   document.getElementById('all').onclick = () => {
-    shots.querySelectorAll('input').forEach(i => { i.checked = true; setOn(i.closest('.shot')); });
+    shots.querySelectorAll('input').forEach(i => { i.checked = true; });
+    refresh();
   };
   document.getElementById('none').onclick = () => {
-    shots.querySelectorAll('input').forEach(i => { i.checked = false; setOn(i.closest('.shot')); });
+    shots.querySelectorAll('input').forEach(i => { i.checked = false; });
+    refresh();
   };
-  // The checkboxes only mean something in "pick images" mode. Dimming them in
-  // the other two is the honest signal: a sample ignores what you ticked.
-  document.querySelectorAll('input[name=mode]').forEach(radio => {
-    radio.onchange = () => {
-      const explicit = document.querySelector('input[name=mode]:checked').value === 'explicit';
-      sample.style.display = radio.value === 'sample' && radio.checked ? 'block' : 'none';
-      shots.style.opacity = explicit ? '1' : '.45';
-      shots.querySelectorAll('input').forEach(i => { i.disabled = !explicit; });
-    };
-  });
+  refresh();
 }
 </script>
 {% endblock %}

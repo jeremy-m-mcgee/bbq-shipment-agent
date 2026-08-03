@@ -301,3 +301,64 @@ class TestReplayingTheModelCalls:
         assert isinstance(
             repair_model(options, PlannerMode.ON), RecordedConversation
         )
+
+
+class TestSayingWhichKeysAreMissing:
+    """The most common failure in this repo is a `.env` that was never loaded.
+
+    `uv run` reads it only when `UV_ENV_FILE` points at it, and a key that is
+    present-but-unloaded looks identical to one that was never set. The UI
+    made this worse than the CLI had it: a server starts cleanly and the first
+    sign of trouble is a failed run several clicks later.
+    """
+
+    def test_a_live_run_with_no_keys_names_both(self, monkeypatch, tmp_path):
+        from bbq_shipment_agent.wiring import missing_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        missing = missing_credentials(RunOptions(screenshots=tmp_path))
+        assert set(missing) == {"ANTHROPIC_API_KEY", "SHIPPO_API_KEY"}
+        assert "B1 extraction" in missing["ANTHROPIC_API_KEY"]
+        assert "C2 rate quotes" in missing["SHIPPO_API_KEY"]
+
+    def test_an_empty_key_counts_as_unset(self, monkeypatch):
+        # setup.sh seeds .env from .env.example, so an unconfigured key is
+        # present-but-empty rather than absent.
+        from bbq_shipment_agent.wiring import missing_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "x")
+        assert "ANTHROPIC_API_KEY" in missing_credentials(RunOptions())
+
+    def test_no_screenshots_means_no_vision_stages_are_named(self, monkeypatch):
+        # B1 and B3 only run when there are images, so naming them on a roster
+        # run would be a warning about something that cannot happen.
+        from bbq_shipment_agent.wiring import missing_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "x")
+        stages = missing_credentials(RunOptions())["ANTHROPIC_API_KEY"]
+        assert stages == ("D1 verification",)
+
+    def test_a_recorded_path_reaches_for_nothing(self, monkeypatch, tmp_path):
+        from bbq_shipment_agent.wiring import missing_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        options = RunOptions(
+            screenshots=tmp_path,
+            quotes=tmp_path / "q",
+            validations=tmp_path / "v",
+            completions=tmp_path / "c",
+            extractions=tmp_path / "e",
+            repairs=tmp_path / "r",
+        )
+        assert missing_credentials(options) == {}
+
+    def test_keys_that_are_set_are_not_reported(self, monkeypatch, tmp_path):
+        from bbq_shipment_agent.wiring import missing_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-something")
+        monkeypatch.setenv("SHIPPO_API_KEY", "shippo_something")
+        assert missing_credentials(RunOptions(screenshots=tmp_path)) == {}
