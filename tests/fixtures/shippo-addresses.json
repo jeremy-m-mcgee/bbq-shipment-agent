@@ -8,6 +8,91 @@
     "street1": "1 Infinite Loop",
     "zip": "95014-2083"
   },
+  "1 telegraph hill blvd|san francisco|ca|94133|us": {
+    "city": "San Francisco",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CA",
+    "street1": "1 Telegraph Hill Blvd",
+    "zip": "94133-3106"
+  },
+  "1000 4th ave|seattle|wa|98104|us": {
+    "city": "Seattle",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "WA",
+    "street1": "1000 4th Ave",
+    "zip": "98104-1109"
+  },
+  "1000 5th ave|new york|ny|10028|us": {
+    "city": "New York",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "NY",
+    "street1": "1000 5th Ave",
+    "zip": "10028-0113"
+  },
+  "1000 jefferson dr|washington|dc|20560|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Street address (directional or suffix only) was corrected to validate the address. Please check this correction prior to using address.",
+      "The address belongs to a unique ZIP code (large business, government agency or university). Precise delivery and correctness is not guaranteed. "
+    ],
+    "state": "DC",
+    "street1": "1000 Jefferson Dr SW",
+    "zip": "20560-0008"
+  },
+  "1060 w addison st|chicago|il|60631|us": {
+    "city": "Chicago",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address.",
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "IL",
+    "street1": "1060 W Addison St",
+    "zip": "60613-4566"
+  },
+  "11 n 4th st|st. louis|mo|63102|us": {
+    "city": "SAINT LOUIS",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "The delivery point isn't receiving deliveries. This may be because the building has been unoccupied for 90 days. Please correct this information.",
+      "Different spelling for city and or state abbreviation than standard. Corrected city and/or state spelling to standard."
+    ],
+    "state": "MO",
+    "street1": "11 N 4TH ST",
+    "zip": "63102-1810"
+  },
+  "111 s michigan ave|chicago|il|60603|us": {
+    "city": "Chicago",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "IL",
+    "street1": "111 S Michigan Ave",
+    "zip": "60603-6110"
+  },
+  "116 rep. john lewis way n|nashville|tn|3721?|us": {
+    "city": "Nashville",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "TN",
+    "street1": "116 Rep John Lewis Way N",
+    "zip": "37219-2309"
+  },
   "1600 pennsylvania ave nw|washington|dc|20500-0005|us": {
     "city": "Washington",
     "country": "US",
@@ -25,6 +110,122 @@
     "state": "DC",
     "street1": "1600 Pennsylvania Ave NW",
     "zip": "20500-0005"
+  },
+  "225 baker st nw|atlanta|ga|30313|us": {
+    "city": "Atlanta",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "GA",
+    "street1": "225 Baker St NW",
+    "zip": "30313-1809"
+  },
+  "233 s wacker dr|chicago|il|60606|us": {
+    "city": "Chicago",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address.",
+      "Street address (directional or suffix only) was corrected to validate the address. Please check this correction prior to using address."
+    ],
+    "state": "IL",
+    "street1": "233 S Wacker Dr",
+    "zip": "60606-7147"
+  },
+  "2800 e observatory rd|los angeles|ca|90072|us": {
+    "city": "Los Angeles",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field",
+      "Street address (directional or suffix only) was corrected to validate the address. Please check this correction prior to using address."
+    ],
+    "state": "CA",
+    "street1": "2800 E Observatory Ave",
+    "zip": "90027-1255"
+  },
+  "300 alamo plaza|san antonio|tx|782??|us": {
+    "city": "San Antonio",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "TX",
+    "street1": "300 Alamo Plz",
+    "zip": "78205-2606"
+  },
+  "350 5th ave|new york|ny|10118|us": {
+    "city": "New York",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "NY",
+    "street1": "350 5th Ave",
+    "zip": "10118-0110"
+  },
+  "350 fifth avenue|new york|ny|10018|us": {
+    "city": "New York",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address.",
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "NY",
+    "street1": "350 5th Ave",
+    "zip": "10118-0110"
+  },
+  "4 jersey st|boston|ma|02215|us": {
+    "city": "Boston",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "MA",
+    "street1": "4 Jersey St",
+    "zip": "02215-4148"
+  },
+  "4 south market|boston|ma|02109|us": {
+    "city": "BOSTON",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "MA",
+    "street1": "4 S MARKET ST",
+    "zip": "02109-6201"
+  },
+  "400 broad st|seattle|wa|98109|us": {
+    "city": "Seattle",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "WA",
+    "street1": "400 Broad St",
+    "zip": "98109-4607"
+  },
+  "50 massachusetts ave ne|washington|dc|20002|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "DC",
+    "street1": "50 Massachusetts Ave NE",
+    "zip": "20002-4214"
+  },
+  "520 chestnut st|philadelpia|pa|19106|us": {
+    "city": "PHILADELPIA",
+    "country": "US",
+    "is_valid": false,
+    "messages": [
+      "Unable to find a valid city, state or 5-digit zip. Please check the accuracy of the submitted address."
+    ],
+    "state": "PA",
+    "street1": "520 CHESTNUT ST",
+    "zip": "19106"
   },
   "64 divisadero st|san francisco|ca|94110|us": {
     "city": "San Francisco",
