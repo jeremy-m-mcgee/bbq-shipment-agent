@@ -1,0 +1,48 @@
+{
+  "instruction_hash": "814acd9683af42c6",
+  "model": "claude-sonnet-5",
+  "replies": {
+    "01-imessage-thread.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 408,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Ana Ruiz\",\n      \"street1\": \"1600 Pennsylvania Ave NW\",\n      \"city\": \"Washington\",\n      \"state\": \"DC\",\n      \"zip\": \"20500\",\n      \"region\": {\"x\": 75, \"y\": 940, \"width\": 730, \"height\": 100},\n      \"confidence\": 0.98,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Marcus Feld\",\n      \"street1\": \"233 S Wacker Dr\",\n      \"city\": \"Chicago\",\n      \"state\": \"IL\",\n      \"zip\": \"60606\",\n      \"region\": {\"x\": 75, \"y\": 1455, \"width\": 700, \"height\": 100},\n      \"confidence\": 0.95,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Hector\",\n      \"street1\": \"11 N 4th St\",\n      \"city\": \"St. Louis\",\n      \"state\": \"MO\",\n      \"zip\": \"63102\",\n      \"region\": {\"x\": 75, \"y\": 1855, \"width\": 730, \"height\": 110},\n      \"confidence\": 0.95,\n      \"note\": \"Initially sent as 11 S 4th St, corrected to 11 N 4th St in follow-up message; corrected address used.\"\n    }\n  ]\n}"
+    },
+    "02-whatsapp-dm.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 322,
+      "text": "{\"recipients\": [{\"name\": \"Priya Nandakumar\", \"street1\": \"350 5th Ave\", \"city\": \"New York\", \"state\": \"NY\", \"zip\": \"10118\", \"region\": {\"x\": 51, \"y\": 715, \"width\": 730, \"height\": 90}, \"confidence\": 0.98, \"note\": \"\"}, {\"name\": \"Devon Clarke\", \"street1\": \"400 Broad St\", \"city\": \"Seattle\", \"state\": \"WA\", \"zip\": \"98109\", \"region\": {\"x\": 51, \"y\": 1075, \"width\": 400, \"height\": 260}, \"confidence\": 0.97, \"note\": \"name from prior message, street and city/state/zip combined from two messages\"}, {\"name\": \"Isabel Moreno\", \"street1\": \"225 Baker St NW\", \"city\": \"Atlanta\", \"state\": \"GA\", \"zip\": \"30313\", \"region\": {\"x\": 51, \"y\": 1480, \"width\": 740, \"height\": 90}, \"confidence\": 0.97, \"note\": \"\"}]}"
+    },
+    "03-instagram-dm.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 428,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Sofia Alvarez\",\n      \"street1\": \"1 Telegraph Hill Blvd\",\n      \"city\": \"San Francisco\",\n      \"state\": \"CA\",\n      \"zip\": \"94133\",\n      \"region\": {\"x\": 172, \"y\": 1080, \"width\": 700, \"height\": 150},\n      \"confidence\": 0.98,\n      \"note\": \"Address given jointly with roommate Nadia Alvarez, same place\"\n    },\n    {\n      \"name\": \"Nadia Alvarez\",\n      \"street1\": \"1 Telegraph Hill Blvd\",\n      \"city\": \"San Francisco\",\n      \"state\": \"CA\",\n      \"zip\": \"94133\",\n      \"region\": {\"x\": 172, \"y\": 1080, \"width\": 700, \"height\": 150},\n      \"confidence\": 0.98,\n      \"note\": \"Address given jointly with roommate Sofia Alvarez, same place\"\n    },\n    {\n      \"name\": \"Raj Patel\",\n      \"street1\": \"111 S Michigan Ave\",\n      \"city\": \"Chicago\",\n      \"state\": \"IL\",\n      \"zip\": \"60603\",\n      \"region\": {\"x\": 172, \"y\": 1575, \"width\": 715, \"height\": 155},\n      \"confidence\": 0.97,\n      \"note\": \"\"\n    }\n  ]\n}"
+    },
+    "04-slack-thread.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 498,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Tom Becker\",\n      \"street1\": \"4 Jersey St\",\n      \"city\": \"Boston\",\n      \"state\": \"MA\",\n      \"zip\": \"02215\",\n      \"region\": {\"x\": 178, \"y\": 405, \"width\": 940, \"height\": 45},\n      \"confidence\": 0.98,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Wendy Cho\",\n      \"street1\": \"1000 4th Ave\",\n      \"city\": \"Seattle\",\n      \"state\": \"WA\",\n      \"zip\": \"98104\",\n      \"region\": {\"x\": 178, \"y\": 622, \"width\": 890, \"height\": 70},\n      \"confidence\": 0.97,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Grace Liu\",\n      \"street1\": \"1000 5th Ave\",\n      \"city\": \"New York\",\n      \"state\": \"NY\",\n      \"zip\": \"10028\",\n      \"region\": {\"x\": 178, \"y\": 900, \"width\": 850, \"height\": 70},\n      \"confidence\": 0.97,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Priya Nandakumar\",\n      \"street1\": \"350 Fifth Avenue\",\n      \"city\": \"New York\",\n      \"state\": \"NY\",\n      \"zip\": \"10018\",\n      \"region\": {\"x\": 178, \"y\": 1120, \"width\": 900, \"height\": 70},\n      \"confidence\": 0.95,\n      \"note\": \"Corrected to work address; there may be additional context in the 2 replies not shown.\"\n    }\n  ]\n}"
+    },
+    "05-email.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 413,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Owen Doyle\",\n      \"street1\": \"1000 Jefferson Dr\",\n      \"city\": \"Washington\",\n      \"state\": \"DC\",\n      \"zip\": \"20560\",\n      \"region\": {\"x\": 55, \"y\": 1080, \"width\": 1030, \"height\": 150},\n      \"confidence\": 0.95,\n      \"note\": \"Apartment side entrance, leave with desk.\"\n    },\n    {\n      \"name\": \"Lena Ford\",\n      \"street1\": \"1060 W Addison St\",\n      \"city\": \"Chicago\",\n      \"state\": \"IL\",\n      \"zip\": \"60631\",\n      \"region\": {\"x\": 55, \"y\": 1330, \"width\": 1030, \"height\": 90},\n      \"confidence\": 0.95,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Gus Whitfield\",\n      \"street1\": \"520 Chestnut St\",\n      \"city\": \"Philadelpia\",\n      \"state\": \"PA\",\n      \"zip\": \"19106\",\n      \"region\": {\"x\": 55, \"y\": 1390, \"width\": 1030, \"height\": 90},\n      \"confidence\": 0.9,\n      \"note\": \"City spelled 'Philadelpia' in original message; likely meant Philadelphia.\"\n    }\n  ]\n}"
+    },
+    "06-imessage-dark.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 541,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Cody Barnes\",\n      \"street1\": \"50 Massachusetts Ave NE\",\n      \"city\": \"Washington\",\n      \"state\": \"DC\",\n      \"zip\": \"20002\",\n      \"region\": {\"x\": 75, \"y\": 762, \"width\": 600, \"height\": 130},\n      \"confidence\": 0.97,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Farah\",\n      \"street1\": \"300 Alamo Plaza\",\n      \"city\": \"San Antonio\",\n      \"state\": \"TX\",\n      \"zip\": \"782??\",\n      \"region\": {\"x\": 75, \"y\": 1040, \"width\": 700, \"height\": 130},\n      \"confidence\": 0.6,\n      \"note\": \"ZIP partially obscured by heart emoji reaction; last name not given\"\n    },\n    {\n      \"name\": \"Beau Tanner\",\n      \"street1\": \"4 South Market\",\n      \"city\": \"Boston\",\n      \"state\": \"MA\",\n      \"zip\": \"02109\",\n      \"region\": {\"x\": 75, \"y\": 1215, \"width\": 700, \"height\": 130},\n      \"confidence\": 0.95,\n      \"note\": \"\"\n    }\n  ]\n}"
+    },
+    "07-whatsapp-group.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 645,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Marina Kovac\",\n      \"street1\": \"2800 E Observatory Rd\",\n      \"city\": \"Los Angeles\",\n      \"state\": \"CA\",\n      \"zip\": \"90072\",\n      \"region\": {\"x\": 51, \"y\": 490, \"width\": 800, \"height\": 100},\n      \"confidence\": 0.9,\n      \"note\": \"Zip corrected in later message at 1:22 PM (originally omitted).\"\n    },\n    {\n      \"name\": \"Yuki Tanaka\",\n      \"street1\": \"116 Rep. John Lewis Way N\",\n      \"city\": \"Nashville\",\n      \"state\": \"TN\",\n      \"zip\": \"3721?\",\n      \"region\": {\"x\": 51, \"y\": 913, \"width\": 1119, \"height\": 80},\n      \"confidence\": 0.5,\n      \"note\": \"ZIP code appears cut off by screen edge, only partially visible.\"\n    },\n    {\n      \"name\": \"jules_g\",\n      \"street1\": null,\n      \"city\": null,\n      \"state\": null,\n      \"zip\": null,\n      \"region\": {\"x\": 51, \"y\": 1240, \"width\": 800, \"height\": 100},\n      \"confidence\": 0.0,\n      \"note\": \"Says 'you know where I am' but never provides an actual address in the visible thread.\"\n    }\n  ]\n}"
+    }
+  }
+}

@@ -12,6 +12,13 @@ Phase B decides *who* is shipped to, Phase C decides *how*.
 """
 
 from .dedupe import SuppressionReport, dedupe_recipients
+from .extraction import (
+    CONFIG_KEY,
+    ExtractionError,
+    ExtractionResult,
+    Unresolved,
+    extract_from_images,
+)
 from .record import Provenance, Recipient, Region, to_shipments
 from .roster import (
     DEFAULT_ROSTER_PATH,
@@ -36,10 +43,14 @@ __all__ = [
     "DEFAULT_ROSTER_PATH",
     "AddressValidationUnavailable",
     "AddressValidator",
+    "CONFIG_KEY",
+    "ExtractionError",
+    "ExtractionResult",
     "Provenance",
     "Recipient",
     "RecordedAddressValidator",
     "Region",
+    "Unresolved",
     "Roster",
     "RosterError",
     "ShippoAddressValidator",
@@ -49,6 +60,7 @@ __all__ = [
     "ValidationResult",
     "classify",
     "dedupe_recipients",
+    "extract_from_images",
     "default_ship_dates",
     "load_roster",
     "to_shipments",
