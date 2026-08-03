@@ -65,6 +65,15 @@ class Roster:
     def packet_count(self) -> int:
         return len(self.recipients)
 
+    def with_recipients(self, recipients: tuple[Recipient, ...]) -> Roster:
+        """The same run settings, a different recipient list.
+
+        B1 supplies the people; the file still supplies the origin, the
+        candidate ship dates and the lane declarations, because a screenshot
+        says nothing about any of them.
+        """
+        return replace(self, recipients=recipients)
+
 
 def default_ship_dates(after: date) -> tuple[date, ...]:
     """The next Saturday, Monday and Tuesday strictly after `after`.
@@ -92,8 +101,12 @@ def load_roster(
     *,
     today: date | None = None,
     lane_book: Any = None,
+    require_recipients: bool = True,
 ) -> Roster:
     """Parse the run input file. See the module docstring for the strictness.
+
+    `require_recipients` is relaxed when B1 will supply them: the file then
+    describes the run rather than the people in it.
 
     `lane_book` supplies the ambient assumption for recipients that declare no
     lane of their own. Without one they fall back to `DEFAULT_LANE`, which is
@@ -121,8 +134,16 @@ def load_roster(
     origin = _address(raw.get("origin"), f"{path}: origin", default_name="Origin")
     lanes = _lanes(raw.get("lanes") or {}, path)
     entries = raw.get("recipients")
-    if not isinstance(entries, list) or not entries:
-        raise RosterError(f"{path}: `recipients` must be a non-empty list.")
+    if entries is None and not require_recipients:
+        # Extraction will supply them. The file is still the run's settings:
+        # origin, candidate dates and lane declarations are not in a
+        # screenshot and have to come from somewhere.
+        entries = []
+    elif not isinstance(entries, list) or not entries:
+        raise RosterError(
+            f"{path}: `recipients` must be a non-empty list. Omit the key "
+            "entirely if the recipients come from screenshots."
+        )
 
     recipients_out: list[Recipient] = []
     seen: dict[str, str] = {}

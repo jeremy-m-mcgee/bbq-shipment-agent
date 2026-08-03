@@ -12,8 +12,12 @@ strictly downstream: it reads the finished manifest and reports, and cannot
 alter a single field on it (design 10 settles that reading). A run with
 verification off is the same run without the critique pass.
 
-B3 (repair) is step 7 and is not in the sequence, so a failed address
-escalates rather than being repaired.
+B3 sits between B2 and B4, on exactly the set B2 could not pass, and is gated
+by `planner-mode`. In `shadow` it runs and its repairs are *not* applied: the
+call is paid for, the ledger records what it would have done, and the
+escalations stand. That is design 6.7's promotion mechanism rather than a
+half-measure -- you cannot tell whether turning a repair loop on is safe
+without seeing what it would have repaired.
 
 C4 is in the sequence and makes no model call: it was demoted to ordinary
 Python once its only open-ended move turned out to be impossible. See
@@ -56,7 +60,7 @@ from .agents import (
     Verification,
     verify_manifest,
 )
-from .capabilities import ValidationMode
+from .capabilities import PlannerMode, ValidationMode
 from .ledger import LedgerWriter, RunRecord
 from .planning import (
     Address,
@@ -74,9 +78,12 @@ from .recipients import (
     AddressValidationUnavailable,
     AddressValidator,
     Roster,
+    RepairResult,
+    RepairUnavailable,
     SuppressionReport,
     ValidationReport,
     dedupe_recipients,
+    repair_addresses,
     to_shipments,
     validate_recipients,
 )
@@ -125,6 +132,9 @@ class PlanResult:
     validation: ValidationReport
     suppression: SuppressionReport
     solve: Solve
+    #: B3's result, or None when `planner-mode` is off or nothing needed
+    #: repairing. Present even in shadow, where it was computed and not used.
+    repair: RepairResult | None
     #: C4's recommendations, one per shipment nothing can carry. Empty in the
     #: usual case, which is why it is not on the manifest.
     remediations: tuple[Remediation, ...]
@@ -138,7 +148,16 @@ class PlanResult:
 
     @property
     def escalated(self) -> tuple[Excluded, ...]:
+        """Who needs a human. B3's list when it ran and was applied, B2's
+        otherwise -- including in shadow, where the repairs were computed and
+        deliberately not used."""
+        if self.repair is not None and self.applied_repairs:
+            return self.repair.escalated
         return self.validation.escalated
+
+    @property
+    def applied_repairs(self) -> bool:
+        return self.run.capabilities.planner is PlannerMode.ON
 
 
 def plan_run(
@@ -151,6 +170,8 @@ def plan_run(
     model: ThermalModel | None = None,
     ship_dates: tuple[date, ...] | None = None,
     lane_book: Any = None,
+    repairer: Any = None,
+    screenshots: Path | str | None = None,
     verifier: ModelClient | None = None,
     metrics: AgentMetrics | None = None,
 ) -> PlanResult:
@@ -172,12 +193,42 @@ def plan_run(
         mode,
     )
 
+    # B3, on exactly the set B2 could not pass. Gated by `planner-mode`,
+    # which is not a boolean: `shadow` runs the loop and logs what it would
+    # have done *without acting on it*, which is design 6.7's mechanism for a
+    # capability earning promotion. So a shadow run pays for the model call
+    # and keeps the escalations, and the ledger records what it would have
+    # repaired -- which is the only way to know whether turning it on is safe.
+    eligible = validation.eligible
+    escalated = validation.escalated
+    repair: RepairResult | None = None
+    planner = run.capabilities.planner
+    if repairer is not None and validation.for_repair and planner is not PlannerMode.OFF:
+        try:
+            repair = repair_addresses(
+                run,
+                validation.for_repair,
+                validator=validator if validator is not None else _NoValidator(),
+                model=repairer,
+                screenshots=screenshots,
+                ledger_root=ledger_root,
+                metrics=metrics,
+            )
+        except RepairUnavailable:
+            # No repair loop is a normal path, the same way no verification
+            # is: the set stays escalated, which is the safe direction.
+            repair = None
+        else:
+            if planner is PlannerMode.ON:
+                eligible = eligible + repair.repaired
+                escalated = repair.escalated
+
     # B4, after B2 rather than before it. Design 4 orders them that way and
     # validation is why it matters: two recipients at one doorstep are only
     # *identical* once the validator has canonicalised both addresses to the
     # same ZIP+4. Deduping the submitted forms would miss a pair that differed
     # by a typo the validator was about to fix.
-    suppression = dedupe_recipients(validation.eligible)
+    suppression = dedupe_recipients(eligible)
 
     # The B4 -> C1 boundary. Provenance and confidence stop here: phase C has
     # no business re-reading a screenshot, and cannot, because it is not
@@ -211,7 +262,7 @@ def plan_run(
             run.run_id,
             solve,
             suppressed=suppression.suppressed,
-            escalated=validation.escalated,
+            escalated=escalated,
             advisories=validation.advisories(),
             cap_fingerprint=run.cap_fingerprint,
         )
@@ -243,6 +294,7 @@ def plan_run(
         roster=roster,
         validation=validation,
         suppression=suppression,
+        repair=repair,
         solve=solve,
         remediations=remediations,
         manifest=manifest,

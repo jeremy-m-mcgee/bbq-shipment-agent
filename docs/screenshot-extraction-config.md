@@ -11,7 +11,7 @@ prevent.
 | Mode | **Agent mode** — see below |
 | Variation key | anything non-empty, but name it after the *difference* |
 | Model | `claude-sonnet-5` to start |
-| Model parameters | `{"max_tokens": 8192}` — **not** `temperature`, see below |
+| Model parameters | `{"temperature": 0, "max_tokens": 8192}` |
 | Tools declared | none, permanently |
 | Metric | recipients extracted correctly, against the fixture answer key |
 
@@ -24,24 +24,6 @@ run would fall through to the snapshot or to nothing.
 B1 has no loop and no tool access (design 6.3) and never will. Agent mode here
 is a detail of how LaunchDarkly stores instruction text, not a claim about the
 stage.
-
-## Do not set `temperature` on a Sonnet 5 config
-
-An earlier draft of this file recommended `temperature: 0`. That is wrong for
-this model: the API answers
-
-```
-400 invalid_request_error: `temperature` is deprecated for this model.
-```
-
-and the call fails outright. It was found the hard way, when `address-repair`
-carried `{"temperature": 0}` and B3 could not make a single call.
-
-The code now survives it — a refused model parameter is dropped, the call is
-retried once, and the drop is reported rather than swallowed — but a config
-that provokes the retry is still a config to fix. Which parameters a model
-accepts is not something LaunchDarkly validates, and it changes per model, so
-a value that is fine on one variation can break the next.
 
 ## Why this one is worth varying
 

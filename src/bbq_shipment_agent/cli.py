@@ -55,9 +55,11 @@ from .planning import (
 from .recipients import (
     DEFAULT_ROSTER_PATH,
     AddressValidationUnavailable,
+    ExtractionError,
     RecordedAddressValidator,
     RosterError,
     ShippoAddressValidator,
+    extract_from_images,
     load_roster,
 )
 from .run import (
@@ -244,6 +246,55 @@ def _lane_book(args: argparse.Namespace):
     return LaneBook.load(args.lanes)
 
 
+def _roster(args: argparse.Namespace, run=None):
+    """The run input, from the file and — when asked — from screenshots.
+
+    The file always supplies the origin, the candidate ship dates and the lane
+    declarations, because a screenshot says nothing about any of them. With
+    `--screenshots`, B1 supplies the people and the file's `recipients` key
+    becomes optional.
+    """
+    if not args.screenshots:
+        return load_roster(args.recipients, lane_book=_lane_book(args))
+
+    roster = load_roster(
+        args.recipients, lane_book=_lane_book(args), require_recipients=False
+    )
+    images = tuple(sorted(Path(args.screenshots).glob("*.png")))
+    if not images:
+        raise ExtractionError(f"no .png screenshots in {args.screenshots}")
+
+    print(f"  B1           reading {len(images)} screenshot(s)")
+    extracted = extract_from_images(run, images, model=AnthropicModel())
+    print(f"               {extracted.describe()}")
+    for u in extracted.unresolved:
+        print(f"               no address: {u.name} — {u.note[:70]}")
+    for name in extracted.unreadable:
+        print(f"               UNREADABLE: {name}")
+
+    # Lanes are assigned from the file's book, the same as for a hand-written
+    # roster -- extraction produces an address, not an ambient assumption.
+    book = _lane_book(args)
+    recipients = extracted.recipients
+    if book is not None and roster.ship_dates:
+        from dataclasses import replace as _replace
+
+        season = roster.ship_dates[0]
+        recipients = tuple(
+            _replace(r, lane=book.lane_for(r.address.state, season)) for r in recipients
+        )
+    return roster.with_recipients(recipients)
+
+
+def _repairer(args: argparse.Namespace, planner):
+    """B3's model, when `planner-mode` is not off and there are images."""
+    from .capabilities import PlannerMode
+
+    if planner is PlannerMode.OFF or not args.screenshots:
+        return None
+    return AnthropicModel()
+
+
 def _quoter(args: argparse.Namespace):
     """Recorded quotes if asked for, live Shippo otherwise.
 
@@ -299,7 +350,6 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
     blocker -- there is a plan to look at either way, but neither is something
     to hand over as though it were finished.
     """
-    roster = load_roster(args.recipients, lane_book=_lane_book(args))
     client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
     # Held open through planning rather than closed after A1: D1 reports its
     # metrics against the variation LaunchDarkly served, and that needs the
@@ -315,10 +365,13 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
             snapshot_path=args.snapshot,
             profile=args.profile,
             campaign=args.campaign,
-            packet_count=roster.packet_count,
         )
         _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
 
+        # After A1, because B1 needs the config A1 captured. The packet count
+        # is therefore not a run-context attribute any more: it is not known
+        # until extraction has run, and a guess would mis-target every flag.
+        roster = _roster(args, run)
         mode = run.capabilities.validation
         verification = run.capabilities.verification
         print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
@@ -334,8 +387,10 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
             quoter=_quoter(args),
             validator=_validator(args, mode),
             lane_book=_lane_book(args),
+            repairer=_repairer(args, run.capabilities.planner),
+            screenshots=args.screenshots,
             verifier=_verifier(args, verification),
-            metrics=_metrics(client, run),
+            metrics=_metrics(client, run, "address-repair"),
         )
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
@@ -347,6 +402,12 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
     # as open, along with what should be done about it.
     if result.validation.corrected_count:
         print(f"B2 corrected {result.validation.corrected_count} address(es).")
+    if result.repair is not None:
+        applied = "" if result.applied_repairs else "  (shadow: NOT applied)"
+        print(f"B3  {result.repair.describe()}{applied}")
+        for r in result.repair.repaired:
+            print(f"    repaired {r.name}: {r.address.street1}, {r.address.city} "
+                  f"{r.address.state} {r.address.zip}")
     for excluded in result.escalated:
         print(f"escalated: {excluded.name} — {excluded.reason}")
     # C4. Empty in the usual case; a recommendation, never an action.
@@ -373,7 +434,6 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
     that ends in approved, approved with exclusions, or rejected -- which is
     now the last thing that happens to a run, since dispatch was removed.
     """
-    roster = load_roster(args.recipients, lane_book=_lane_book(args))
     client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
     try:
         connection, provider, agent_source = _flag_sources(args, client)
@@ -386,10 +446,10 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
             snapshot_path=args.snapshot,
             profile=args.profile,
             campaign=args.campaign,
-            packet_count=roster.packet_count,
         )
         _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
 
+        roster = _roster(args, run)
         mode = run.capabilities.validation
         verification = run.capabilities.verification
         print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
@@ -403,8 +463,10 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
             quoter=_quoter(args),
             validator=_validator(args, mode),
             lane_book=_lane_book(args),
+            repairer=_repairer(args, run.capabilities.planner),
+            screenshots=args.screenshots,
             verifier=_verifier(args, verification),
-            metrics=_metrics(client, run),
+            metrics=_metrics(client, run, "address-repair"),
         )
         if result.manifest is None:
             print(f"no manifest: {result.reason}")
@@ -664,6 +726,11 @@ def build_parser() -> argparse.ArgumentParser:
             help="seconds between quote attempts, multiplied each time (default: 4)",
         )
         sub.add_argument(
+            "--screenshots", type=Path, default=None,
+            help="extract recipients from the .png files in this directory (B1). "
+                 "The roster file still supplies origin, ship dates and lanes.",
+        )
+        sub.add_argument(
             "--lanes", type=Path, default=DEFAULT_LANES_PATH,
             help=f"ambient assumptions per destination (default: {DEFAULT_LANES_PATH})",
         )
@@ -688,6 +755,7 @@ def main(argv: list[str] | None = None) -> int:
         AddressValidationUnavailable,
         CapabilityConfigError,
         ContextError,
+        ExtractionError,
         KillSwitchEngaged,
         LaneBookError,
         ModelUnavailable,

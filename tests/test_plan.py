@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
 from bbq_shipment_agent.capabilities import ValidationMode
 from bbq_shipment_agent.ledger import RunRecord, iter_records, rebuild
 from bbq_shipment_agent.plan import plan_run
@@ -377,3 +378,76 @@ class TestDedupeIsInTheSpine:
         result = run_plan(workspace)
         assert result.suppression.suppressed == ()
         assert result.manifest.suppressed == ()
+
+
+class TestRepairIsInTheSpine:
+    """B3 between B2 and B4, gated by `planner-mode`."""
+
+    def _needing_repair_run(self, workspace, planner):
+        (workspace / "capabilities.yaml").write_text(
+            textwrap.dedent(CONFIG)
+            .replace('planner: "off"', f'planner: "{planner}"')
+            .format(validation="strict", verification="off"),
+            encoding="utf-8",
+        )
+        return workspace
+
+    def test_planner_off_never_calls_the_repairer(self, workspace):
+        called = []
+
+        class Spy:
+            def converse(self, *a, **k):
+                called.append(1)
+                raise AssertionError("planner is off; B3 must not run")
+
+        run_plan(workspace, validation="strict", verifier=None)
+        result = run_plan(workspace, validation="strict")
+        assert result.repair is None
+        assert called == []
+
+    def test_shadow_runs_the_loop_and_does_not_apply_it(self, workspace):
+        # A second recipient whose address is *correctable*, so strict mode
+        # actually gives B3 something to do. Ana alone validates clean --
+        # ZIP+4 enrichment is not a material change.
+        # Design 6.7: shadow runs the path and logs its output without acting
+        # on it, which is how a capability earns promotion. A shadow run that
+        # quietly applied repairs would be `on` wearing a different name.
+        import json as _json
+
+        from bbq_shipment_agent.agents.model import Completion
+
+        self._needing_repair_run(workspace, "shadow")
+        (workspace / "recipients.yaml").write_text(
+            ROSTER + """  - key: sloppy
+    name: Sloppy Sam
+    street1: 64 divisadero st
+    city: san francisco
+    state: CA
+    zip: "94110"
+""",
+            encoding="utf-8",
+        )
+        roster = load_roster(workspace / "recipients.yaml")
+        run = initialize_run(
+            ledger_root=workspace / "ledger",
+            config_path=workspace / "capabilities.yaml",
+            agent_source=SnapshotAgentConfigs(SNAPSHOT),
+            snapshot_path=workspace / "snapshot.json",
+        )
+
+        class Repairs:
+            def converse(self, invocation, messages, tools=()):
+                return Completion(text=_json.dumps({"repairs": [], "escalations": []}))
+
+        result = plan_run(
+            run,
+            roster,
+            ledger_root=workspace / "ledger",
+            quoter=RecordedQuoter.from_file(QUOTES),
+            validator=RecordedAddressValidator.from_file(VALIDATIONS),
+            repairer=Repairs(),
+        )
+        assert result.repair is not None, "shadow still runs the loop"
+        assert not result.applied_repairs
+        # The escalations are B2's, untouched by what B3 would have done.
+        assert result.escalated == result.validation.escalated
