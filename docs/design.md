@@ -196,6 +196,10 @@ Questions, changes, approval. Edits re-enter the pipeline at the correct upstrea
 
 Opens with a narration of the C5 tradeoff rather than a bare table: which pair won, what the runners-up would have cost, what is given up by taking a cheaper partially covering pair, and which constraint is doing the most work. If a Saturday shipment forced USPS into the pair, that is stated as the reason rather than left implicit in the ranking. Every claim in the narration must be traceable to a computed field on the manifest, since this stage explains the solve and does not participate in it.
 
+That rule constrains Python as much as it constrains the agent, and the constraint runs the other way than it first appears: **a claim the narration is asked to make must have a field to rest on, or the agent will invent one.** The manifest originally carried `forced_by_saturday` as a bare boolean. Asked live which constraint was doing the most work, `review-narrator` correctly identified the Saturday requirement, then named the wrong recipient and reasoned from it for two turns — because the boolean says a constraint bound without saying whose, and the instructions require an answer grounded in a field. `Solve` had computed `saturday_only` all along and C6 was discarding it. Attaching it fixed the narration.
+
+The general form: every question section 4 asks the narrator to answer needs a field that answers it. A boolean where the operator will ask "who?" is a hallucination waiting to happen, and the fix belongs in C6 rather than in the instruction text.
+
 Edit handling is one mechanism, not three. Always re-solve from C5, then compare the new optimal pair against the previous one:
 
 | Situation | Behavior |
@@ -574,7 +578,17 @@ Measured against the live validator, one address came back *"Street address (dir
 
 The work is deciding what to do with it, not how to plumb it — the messages are already on `ValidationResult`. Options, roughly: surface them on the manifest against the affected row; count them in the run summary the way corrections are counted; or treat "validator claims a correction the fields do not show" as its own outcome distinct from clean. The last is the most honest and the most disruptive, since it puts a fourth value on a three-way enum that design 4 fixes at three.
 
-**Escalation queue interface.** B3 failures need somewhere to go. Whether that is a section of the D2 review or a separate step before planning is unresolved.
+**Escalation queue interface — half resolved.** The question was whether B3 and B2 failures belong in a section of the D2 review or in a separate step before planning. Step 8 settled the placement: **the D2 review**. Escalations travel from B2 into the review session, onto the manifest, into `review-narrator`'s payload and into the rendered output, so the operator sees who could not be validated at the moment they are deciding what to approve. No separate step is needed and none should be added.
+
+What is not settled is whether the review can *act* on one. `EditKind` today is `ship_date` and `exclude`, so an operator looking at a failed address can drop that recipient or leave them escalated, and nothing else. The obvious missing edit is an address correction, and it is missing for a reason worth stating rather than hiding: an address change re-enters at B2, which means re-validating and then re-quoting a lane nothing has priced. That is a live Shippo round trip in the middle of a review, and it is the one edit whose cost is not bounded by the enumeration already in memory.
+
+Three readings, and they are not equivalent:
+
+- **Leave it read-only.** The escalation list is a to-do the operator works outside the run, and the next run picks up the corrected address. Cheapest, and honest about what a review is for.
+- **Add an `address` edit.** D2 gains the B2 round trip. Correct per section 4's "edits re-enter at the correct upstream stage", and the most useful, but it puts a network call and a possible failure inside the review loop.
+- **Route it to B3 instead.** The escalation is the repair loop's input, so the review triggers B3 rather than editing the address itself. Consistent with the agent registry, and blocked on step 7.
+
+The third is probably right and cannot be built yet, which is why this stays open rather than being decided now.
 
 **D1 revises, but has no tools to revise with.** Section 4 says the D1 loop "revises and re-checks within a bounded budget". Section 6.2 grants `manifest-verification` "manifest read, read-only". A read-only agent cannot revise a manifest, so one of the two is wrong.
 
