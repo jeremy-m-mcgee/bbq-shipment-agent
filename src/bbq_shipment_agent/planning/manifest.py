@@ -147,6 +147,13 @@ class Manifest:
     #: Feasible nowhere. C4's input, and not the same thing as stranded.
     infeasible: tuple[str, ...] = ()
     forced_by_saturday: bool = False
+    #: Recipients that can ship *only* on a Saturday, which is what forced a
+    #: Saturday-capable carrier into the set. Carried because
+    #: `forced_by_saturday` alone says a constraint bound without saying who
+    #: bound it, and D2 must trace every claim to a computed field. Asked to
+    #: name the recipient with only the boolean available, `review-narrator`
+    #: named the wrong one and reasoned from it for two turns.
+    saturday_only: tuple[str, ...] = ()
     cap_fingerprint: str | None = None
 
     @property
@@ -223,6 +230,7 @@ def assemble_manifest(
         stranded=plan.stranded,
         infeasible=solve.infeasible,
         forced_by_saturday=plan.forced_by_saturday,
+        saturday_only=solve.saturday_only,
         cap_fingerprint=cap_fingerprint,
     )
 
@@ -249,7 +257,12 @@ def render(manifest: Manifest) -> str:
     lines: list[str] = [
         f"{manifest.run_id}",
         f"  carriers      {'+'.join(manifest.carriers) or '(none)'}"
-        + ("   [USPS forced by a Saturday shipment]" if manifest.forced_by_saturday else ""),
+        + (
+            f"   [Saturday-only: {', '.join(manifest.saturday_only)} forced a "
+            "Saturday-capable carrier]"
+            if manifest.forced_by_saturday
+            else ""
+        ),
         f"  packets       {manifest.packet_count}",
         f"  total cost    ${manifest.total_cost:,.2f}",
     ]

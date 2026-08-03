@@ -156,11 +156,22 @@ class TestSaturdayForcingSurfaces:
         assert manifest.forced_by_saturday
         assert "USPS" in manifest.carriers
 
+    def test_the_manifest_names_who_forced_it(self, quoter):
+        # `forced_by_saturday` alone says a constraint bound without saying
+        # whose. Asked to explain the plan with only the boolean available,
+        # `review-narrator` picked the wrong recipient and reasoned from it.
+        ships = shipments(2) + (
+            Shipment("pinned", "Pinned", address=DEST, required_ship_date=SATURDAY),
+        )
+        manifest = manifest_for(quoter, ships, dates=(MONDAY, TUESDAY))
+        assert manifest.saturday_only == ("pinned",)
+
     def test_and_the_render_shows_it(self, quoter):
         ships = shipments(2) + (
             Shipment("pinned", "Pinned", address=DEST, required_ship_date=SATURDAY),
         )
-        assert "forced by a Saturday" in render(manifest_for(quoter, ships, dates=(MONDAY, TUESDAY)))
+        text = render(manifest_for(quoter, ships, dates=(MONDAY, TUESDAY)))
+        assert "Saturday-only" in text and "pinned" in text
 
 
 class TestRender:

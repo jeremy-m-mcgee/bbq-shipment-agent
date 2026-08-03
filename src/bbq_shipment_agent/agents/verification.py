@@ -164,6 +164,10 @@ def manifest_payload(
         "carriers": list(manifest.carriers),
         "carrier_count": len(manifest.carriers),
         "forced_by_saturday": manifest.forced_by_saturday,
+        # Who forced it. `forced_by_saturday` on its own says a constraint
+        # bound without saying whose, and an agent required to ground every
+        # claim in a field will otherwise pick a shipment and be wrong.
+        "saturday_only": list(manifest.saturday_only),
         "packet_count": manifest.packet_count,
         "total_cost": manifest.total_cost,
         "min_thermal_margin_c": manifest.min_thermal_margin_c,
@@ -287,7 +291,7 @@ def verify_manifest(
         manifest_payload(manifest, input_recipients), indent=2, sort_keys=True
     )
 
-    reporter = metrics or NoMetrics()
+    reporter = (metrics or NoMetrics()).begin()
     attempts: list[_Attempt] = []
     prompt = payload
     for _ in range(MAX_ATTEMPTS):

@@ -366,6 +366,10 @@ class TestMetrics:
             def __init__(self):
                 self.events = []
 
+            def begin(self):
+                # One reporter per invocation, per AgentMetrics.begin.
+                return self
+
             def track_success(self):
                 self.events.append("success")
 
@@ -395,6 +399,10 @@ class TestMetrics:
         class Spy:
             def __init__(self):
                 self.events = []
+
+            def begin(self):
+                # One reporter per invocation, per AgentMetrics.begin.
+                return self
 
             def track_success(self):
                 self.events.append("success")
@@ -465,3 +473,50 @@ class TestWhichModelAnswered:
         )
         assert result.model_responded is None
         assert not result.model_drifted
+
+
+class TestMetricsAreReportedPerInvocation:
+    def test_begin_hands_back_a_fresh_reporter(self):
+        # LDAIConfigTracker records tokens and success once and then refuses,
+        # logging "already recorded on this tracker". A conversational agent
+        # makes one invocation per operator turn, so a tracker held for a
+        # whole review reports turn one and silently drops the rest. Caught
+        # live: a four-turn review logged two skips per turn after the first.
+        from bbq_shipment_agent.agents.metrics import LaunchDarklyMetrics, NoMetrics
+
+        made = []
+
+        def make_tracker():
+            tracker = object()
+            made.append(tracker)
+            return tracker
+
+        metrics = LaunchDarklyMetrics(make_tracker)
+        first, second = metrics.begin(), metrics.begin()
+        assert first is not second
+        # One tracker for the constructor, one per begin().
+        assert len(made) == 3
+
+        # NoMetrics has nothing to reset, so it may hand back itself.
+        assert NoMetrics().begin() is not None
+
+    def test_a_metrics_failure_never_fails_the_run(self):
+        # LaunchDarkly being unreachable is design 6.10's normal path. A run
+        # that planned correctly must not be reported failed because a
+        # telemetry event could not be delivered.
+        from bbq_shipment_agent.agents.metrics import LaunchDarklyMetrics
+
+        class Exploding:
+            def track_success(self):
+                raise RuntimeError("LD is down")
+
+            def track_error(self):
+                raise RuntimeError("LD is down")
+
+            def track_tokens(self, usage):
+                raise RuntimeError("LD is down")
+
+        metrics = LaunchDarklyMetrics(Exploding, tracker=Exploding())
+        metrics.track_success()
+        metrics.track_error()
+        metrics.track_tokens(1, 2)

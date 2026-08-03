@@ -126,6 +126,9 @@ class Narrator:
         """One operator turn, including any tools the model runs for it."""
         turn = Turn(prompt=text)
         self.messages.append({"role": "user", "content": text})
+        # A fresh reporter per turn. One operator turn is one AI invocation,
+        # and an LD tracker records once -- see `AgentMetrics.begin`.
+        metrics = self._metrics.begin()
 
         for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
             turn.iterations = iteration
@@ -134,13 +137,13 @@ class Narrator:
                     self.invocation, self.messages, self._tools
                 )
             except ModelUnavailable as exc:
-                self._metrics.track_error()
+                metrics.track_error()
                 self._record("unavailable", turn)
                 raise NarratorUnavailable(str(exc)) from exc
 
             turn.input_tokens += completion.input_tokens
             turn.output_tokens += completion.output_tokens
-            self._metrics.track_tokens(
+            metrics.track_tokens(
                 completion.input_tokens, completion.output_tokens
             )
             self.messages.append(
@@ -169,7 +172,7 @@ class Narrator:
                 "ask again, or read the manifest directly)"
             )
 
-        self._metrics.track_success()
+        metrics.track_success()
         self._record("findings" if turn.tools_called else "clean", turn)
         self.turns.append(turn)
         return turn
