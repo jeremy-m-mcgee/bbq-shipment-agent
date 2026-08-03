@@ -27,7 +27,9 @@ from .model import (
     Invocation,
     ModelClient,
     ModelUnavailable,
+    RecordedConversation,
     RecordedModel,
+    RecordedVision,
     ToolCall,
 )
 from .narrator import MAX_TOOL_ITERATIONS, Narrator, NarratorUnavailable, Turn
@@ -65,7 +67,9 @@ __all__ = [
     "ModelUnavailable",
     "Narrator",
     "NarratorUnavailable",
+    "RecordedConversation",
     "RecordedModel",
+    "RecordedVision",
     "Tool",
     "ToolCall",
     "ToolContractError",

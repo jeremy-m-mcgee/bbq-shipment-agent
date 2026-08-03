@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}run {{ job.id }} — bbq-shipment-agent{% endblock %}
+{% block body %}
+
+<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+  <h1 style="font-size:18px;margin:0" class="mono">{{ header.run_id if header else job.id }}</h1>
+  <span class="tag {% if job.state == 'finished' %}on{% endif %}">{{ job.state }}</span>
+  {% if header %}<span class="dim">{{ header.connection }} &middot; profile {{ header.profile }}</span>{% endif %}
+  <span style="flex:1"></span>
+  <a href="/" class="dim" style="font-size:13px">new run</a>
+</div>
+
+{% if job.state == 'failed' %}
+<div class="notice bad">
+  <b>The run stopped.</b> {{ job.error }}
+  {% if job.traceback %}
+  <details style="margin-top:8px"><summary class="dim" style="cursor:pointer">traceback</summary>
+    <pre style="margin-top:8px">{{ job.traceback }}</pre></details>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2>Progress</h2>
+<div class="panel log" id="log">
+  {% for event in events %}
+  <div><span class="stage">{{ event.stage }}</span>{{ event.message }}</div>
+  {% endfor %}
+</div>
+
+{% if header %}
+<h2>Capabilities &mdash; A1 resolved these once, for the whole run</h2>
+<div class="grid2">
+  <div class="panel">
+    <table>
+      <tr><th>capability</th><th>value</th><th>why</th></tr>
+      {% for cap in header.capabilities %}
+      <tr>
+        <td class="mono">{{ cap.name }}</td>
+        <td class="mono">{{ cap.value }}</td>
+        <td class="dim">{{ cap.reason }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="dim" style="font-size:12px;margin:12px 0 0">
+      fingerprint <code>{{ header.fingerprint }}</code> &mdash; every row that
+      depends on these carries it. Flags: {{ header.flags.source }};
+      proposed {{ header.flags.overrides or '(nothing)' }}.
+    </p>
+  </div>
+  <div class="panel">
+    <table>
+      <tr><th>agent config</th><th>served</th></tr>
+      {% for agent in header.agents %}
+      <tr>
+        <td class="mono">{{ agent.key }}</td>
+        <td>
+          {% if agent.available %}
+          <span class="good">{{ agent.variation }}</span> rev {{ agent.version }}
+          <div class="dim mono" style="font-size:11px">{{ agent.instruction_hash }}{% if agent.model %} &middot; {{ agent.model }}{% endif %}</div>
+          {% else %}
+          <span class="dim">unavailable &mdash; {{ agent.reason }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="dim" style="font-size:12px;margin:12px 0 0">{{ header.snapshot }}</p>
+  </div>
+</div>
+{% endif %}
+
+{% if view %}
+{% set m = view.manifest %}
+
+{% if view.screenshots %}
+<h2>B1 read {{ view.screenshots|length }} screenshot(s)</h2>
+<div class="panel mono" style="font-size:13px">{{ view.screenshots|join(', ') }}
+  <p class="dim" style="font-family:inherit;font-size:12px;margin:8px 0 0">
+    Recorded on the run row. A hand-picked set has no seed, so the filenames are
+    the only account of what the run saw.</p>
+</div>
+{% endif %}
+
+{% if m %}
+<h2>Manifest</h2>
+<div class="panel">
+  <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:6px">
+    <div><div class="dim" style="font-size:12px">carriers</div>
+      <div style="font-size:18px">{{ m.carriers|join(' + ') or '(none)' }}</div></div>
+    <div><div class="dim" style="font-size:12px">packets</div>
+      <div style="font-size:18px">{{ m.packet_count }}</div></div>
+    <div><div class="dim" style="font-size:12px">total cost</div>
+      <div style="font-size:18px">${{ '%.2f'|format(m.total_cost) }}</div></div>
+    <div><div class="dim" style="font-size:12px">min thermal margin</div>
+      <div style="font-size:18px"
+           class="{% if m.min_margin is not none and m.min_margin < 1 %}warn{% endif %}">
+        {{ '%.2f'|format(m.min_margin) if m.min_margin is not none else '—' }}C</div></div>
+  </div>
+  {% if m.forced_by_saturday %}
+  <p class="warn" style="font-size:13px;margin:10px 0 0">
+    A Saturday-capable carrier was forced into the pair by
+    <b>{{ m.saturday_only|join(', ') or 'a Saturday requirement' }}</b>.
+    That is the highest-leverage interaction in the plan: one Saturday shipment
+    leaves exactly one free carrier slot for everyone else.
+  </p>
+  {% endif %}
+</div>
+
+{% for day in m.dates %}
+<div class="panel">
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+    <b>{{ day.date }}</b>
+    <span class="dim">{{ day.rows|length }} packet(s) &middot; ${{ '%.2f'|format(day.cost) }}</span>
+  </div>
+  <table class="rows">
+    <tr>
+      <th>recipient</th><th>carrier</th><th>service</th><th>box</th>
+      <th class="num">gel</th><th class="num">cost</th><th>arrives</th>
+      <th class="num">temp</th><th class="num">margin</th>
+    </tr>
+    {% for row in day.rows %}
+    <tr>
+      <td><b>{{ row.name }}</b><div class="dim" style="font-size:12px">{{ row.address }}</div>
+        {% if m.advisories.get(row.name) %}
+        <div class="warn" style="font-size:12px">validator notes:
+          {{ m.advisories[row.name]|join(' ') }}</div>
+        {% endif %}
+      </td>
+      <td>{{ row.carrier }}</td>
+      <td class="dim">{{ row.service }}</td>
+      <td>{{ row.box_size }}</td>
+      <td class="num">{{ row.gel_packs }}</td>
+      <td class="num">${{ '%.2f'|format(row.cost) }}</td>
+      <td>{{ row.arrival }}</td>
+      <td class="num">{{ '%.2f'|format(row.temp) }}C</td>
+      <td class="num {% if row.margin < 1 %}warn{% endif %}">{{ '%.2f'|format(row.margin) }}C</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+{% if m.runners_up %}
+<h2>What the other carrier pairs would have cost</h2>
+<div class="panel">
+  <table>
+    <tr><th>pair</th><th class="num">total</th><th class="num">extra</th>
+        <th class="num">covers</th><th>strands</th><th class="num">min margin</th></tr>
+    {% for r in m.runners_up %}
+    <tr>
+      <td class="mono">{{ r.carriers|join(' + ') }}</td>
+      <td class="num">${{ '%.2f'|format(r.total_cost) }}</td>
+      <td class="num {% if r.extra_cost > 0 %}dim{% endif %}">
+        {{ '+$%.2f'|format(r.extra_cost) if r.extra_cost >= 0 else '-$%.2f'|format(-r.extra_cost) }}</td>
+      <td class="num">{{ r.coverage }}</td>
+      <td class="dim">{{ r.stranded|join(', ') or '—' }}</td>
+      <td class="num">{{ '%.2f'|format(r.min_margin) if r.min_margin is not none else '—' }}C</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="dim" style="font-size:12px;margin:12px 0 0">
+    Kept visible on purpose: the pairs differ across cost, coverage, stranded
+    shipments and thermal margin at once, and that comparison is the one humans
+    do badly at the end of a review.
+  </p>
+</div>
+{% endif %}
+
+<p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
+  <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes</span></p>
+{% elif job.state == 'finished' %}
+<h2>No manifest</h2>
+<div class="panel">
+  <p style="margin-top:0">{{ view.reason }}</p>
+  {% if view.partial.infeasible %}
+  <p class="bad">Feasible nowhere: {{ view.partial.infeasible|join(', ') }}</p>
+  {% endif %}
+  {% if view.partial.plans %}
+  <table>
+    <tr><th>pair</th><th class="num">covers</th><th class="num">cost</th><th>strands</th></tr>
+    {% for p in view.partial.plans %}
+    <tr><td class="mono">{{ p.carriers|join(' + ') }}</td>
+      <td class="num">{{ p.coverage }}</td>
+      <td class="num">${{ '%.2f'|format(p.total_cost) }}</td>
+      <td class="dim">{{ p.stranded|join(', ') }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="dim">No carrier subset produced a plan at all.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if view.verification %}
+{% set v = view.verification %}
+<h2>D1 verification</h2>
+<div class="panel">
+  <p style="margin-top:0">
+    {% if v.blockers %}<span class="bad">&#9632;</span>{% elif v.ran %}<span class="good">&#9632;</span>{% endif %}
+    {{ v.describe }}
+  </p>
+  {% if v.ran %}
+  <p class="dim" style="font-size:12px">
+    {{ v.model_requested }} &mdash; {{ v.iterations }} iteration(s),
+    {{ v.input_tokens }}+{{ v.output_tokens }} tokens
+    {% if v.drifted %}<br>LaunchDarkly served {{ v.model_requested }}, but
+      {{ v.model_responded }} answered.{% endif %}
+  </p>
+  {% endif %}
+  {% for f in v.findings %}
+  <div style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+    <span class="{% if f.blocking %}bad{% else %}warn{% endif %}">{{ f.severity }}</span>
+    <b>{{ f.check }}</b>
+    {% if f.shipments %}<span class="dim">[{{ f.shipments|join(', ') }}]</span>{% endif %}
+    <div>{{ f.problem }}</div>
+    {% if f.evidence %}<div class="dim" style="font-size:12px">evidence: {{ f.evidence }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% if v.raw %}<details style="margin-top:10px"><summary class="dim" style="cursor:pointer">raw reply</summary>
+    <pre style="margin-top:8px">{{ v.raw }}</pre></details>{% endif %}
+</div>
+{% endif %}
+
+{% if view.escalated or view.suppressed or view.remediations or view.repair %}
+<h2>Everyone not on the plan</h2>
+<div class="panel">
+  {% if view.repair %}
+  <p style="margin-top:0">B3 &mdash; {{ view.repair.describe }}
+    {% if not view.repair.applied %}<span class="warn">(shadow: NOT applied)</span>{% endif %}</p>
+  {% for r in view.repair.repaired %}
+  <div class="dim" style="font-size:13px">repaired {{ r.name }}: {{ r.address }}</div>
+  {% endfor %}
+  {% endif %}
+
+  {% if view.escalated %}
+  <p><b>Escalated</b> <span class="dim">&mdash; a human has to chase these</span></p>
+  <table>{% for e in view.escalated %}
+    <tr><td><b>{{ e.name }}</b></td><td class="dim">{{ e.reason }}</td></tr>
+  {% endfor %}</table>
+  {% endif %}
+
+  {% if view.suppressed %}
+  <p style="margin-top:14px"><b>Suppressed</b>
+    <span class="dim">&mdash; duplicates and same-address consolidations</span></p>
+  <table>{% for e in view.suppressed %}
+    <tr><td><b>{{ e.name }}</b></td><td class="dim">{{ e.reason }}</td></tr>
+  {% endfor %}</table>
+  {% endif %}
+
+  {% if view.consolidated %}
+  <p class="dim" style="font-size:12px;margin-top:12px">
+    The packer needs this the other way round &mdash; one parcel, two names on the card:
+    {% for key, folded in view.consolidated.items() %}
+      <code>{{ key }}</code> covers {{ folded|join(', ') }}{% if not loop.last %}; {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+
+  {% if view.remediations %}
+  <p style="margin-top:14px"><b>C4 recommendations</b>
+    <span class="dim">&mdash; a proposal, never an action</span></p>
+  {% for r in view.remediations %}<div style="font-size:13px">{{ r.describe }}</div>{% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{% if job.state == 'running' %}
+<script>
+const log = document.getElementById('log');
+const source = new EventSource('/runs/{{ job.id }}/events?after={{ events|length - 1 }}');
+source.onmessage = (message) => {
+  const event = JSON.parse(message.data);
+  if (event.kind === 'end') { source.close(); location.reload(); return; }
+  const line = document.createElement('div');
+  const stage = document.createElement('span');
+  stage.className = 'stage';
+  stage.textContent = event.stage || '';
+  line.appendChild(stage);
+  line.appendChild(document.createTextNode(event.message));
+  if (event.kind === 'error') line.className = 'bad';
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+};
+</script>
+{% endif %}
+{% endblock %}
