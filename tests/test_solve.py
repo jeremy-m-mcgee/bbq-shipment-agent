@@ -300,3 +300,46 @@ class TestSaturdayForcing:
         solve = solve_carriers(shipments(3), ORIGIN, ALL_DAYS, quoter)
         assert solve.saturday_only == ()
         assert not any(p.forced_by_saturday for p in solve.covering)
+
+
+class TestTiesAndDuplicatePlans:
+    """Both found by a live review that pinned a shipment onto Saturday."""
+
+    def _saturday_forced(self, quoter):
+        # One Saturday pin makes USPS mandatory, so the one-carrier subset and
+        # the two-carrier one produce the same assignments at the same cost.
+        ships = shipments(2) + (
+            Shipment("pinned", "Pinned", address=DEST, required_ship_date=SATURDAY),
+        )
+        return solve_carriers(ships, ORIGIN, (SATURDAY, MONDAY), quoter)
+
+    def test_a_cost_tie_prefers_fewer_carriers(self, quoter):
+        # Design 3 caps carriers at two for "operational simplicity at
+        # drop-off"; the same reasoning prefers one over two at equal cost.
+        # Tuple ordering used to pick ("UPS", "USPS") over ("USPS",).
+        solve = self._saturday_forced(quoter)
+        best = solve.best
+        assert best is not None
+        ties = [p for p in solve.covering if p.total_cost == best.total_cost]
+        assert len(best.carriers) == min(len(p.carriers) for p in ties)
+
+    def test_the_winner_uses_every_carrier_it_names(self, quoter):
+        # A plan reported as two-carrier that makes one drop-off is a lie the
+        # packer acts on.
+        best = self._saturday_forced(quoter).best
+        assert set(best.carriers_used) == set(best.carriers)
+
+    def test_a_runner_up_identical_to_the_winner_is_dropped(self, quoter):
+        solve = self._saturday_forced(quoter)
+        best = solve.best
+        for other in solve.runners_up:
+            assert (other.carriers_used, other.total_cost) != (
+                best.carriers_used,
+                best.total_cost,
+            ), "a runner-up at +$0.00 with the same carriers shows no tradeoff"
+
+    def test_genuinely_different_runners_up_survive(self, quoter):
+        # The filter must not empty the list it exists to populate.
+        solve = solve_carriers(shipments(3), ORIGIN, (MONDAY,), quoter)
+        if len(solve.covering) > 1:
+            assert solve.runners_up

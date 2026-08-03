@@ -177,8 +177,24 @@ class Solve:
 
     @property
     def runners_up(self) -> tuple[CarrierPlan, ...]:
-        """Design C6 attaches these so the tradeoff stays visible."""
-        return self.covering[1:]
+        """Design C6 attaches these so the tradeoff stays visible.
+
+        A subset that produces the *same plan* as the winner is dropped. Two
+        subsets can differ on paper and be identical in practice: with a
+        Saturday shipment forcing USPS, both `("USPS",)` and `("UPS", "USPS")`
+        assign every packet to USPS at the same cost. Listing the loser as a
+        runner-up at `+$0.00` shows the operator a tradeoff that does not
+        exist, which is the opposite of what this list is for.
+        """
+        best = self.best
+        if best is None:
+            return ()
+        signature = (best.carriers_used, best.total_cost)
+        return tuple(
+            p
+            for p in self.covering[1:]
+            if (p.carriers_used, p.total_cost) != signature
+        )
 
 
 def shipment_options(
@@ -274,7 +290,17 @@ def solve_carriers(
         )
 
     covering = tuple(
-        sorted((p for p in plans if p.covers_all), key=lambda p: (p.total_cost, p.carriers))
+        sorted(
+            (p for p in plans if p.covers_all),
+            # Cost first, then *fewer carriers*. A tie between a one-carrier
+            # subset and a two-carrier one that only used one of them is not a
+            # tie operationally: design 3 caps carriers at two for "operational
+            # simplicity at drop-off", and the same reasoning prefers one over
+            # two when they cost the same. Without this, tuple ordering picked
+            # ("UPS", "USPS") over ("USPS",) and the manifest reported a
+            # two-carrier plan that made a single drop-off.
+            key=lambda p: (p.total_cost, len(p.carriers), p.carriers),
+        )
     )
     partial = tuple(
         sorted(
