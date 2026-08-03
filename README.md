@@ -14,11 +14,33 @@ cp recipients.example.yaml recipients.yaml
 uv run pytest
 ```
 
-`UV_ENV_FILE` is set by `.devcontainer/devcontainer.json` so `uv run` loads
-`.env`. If your shell does not have it — some non-interactive shells do not —
-prefix commands with `UV_ENV_FILE=$PWD/.env` or nothing will be configured.
+### Load the keys — do this once per shell
+
+```bash
+export UV_ENV_FILE=$PWD/.env
+```
+
+**Nothing that touches a key works without this.** `uv run` reads `.env` only
+when `UV_ENV_FILE` points at it. `.devcontainer/devcontainer.json` sets it via
+`remoteEnv`, but plenty of shells never see that — a new terminal, a
+non-interactive shell, `nohup`, a task runner. Skip it and every key reads as
+empty: LaunchDarkly quietly falls back to the `baseline` profile, while Shippo
+and Anthropic fail outright.
+
+Confirm it took:
+
+```bash
+uv run python -c "import os; print({k: bool(os.environ.get(k)) for k in ('LD_SDK_KEY','ANTHROPIC_API_KEY','SHIPPO_API_KEY')})"
+# {'LD_SDK_KEY': True, 'ANTHROPIC_API_KEY': True, 'SHIPPO_API_KEY': True}
+```
+
+Three `False` values mean the file was not loaded, not that the keys are
+missing. If you would rather not export, prefix each command instead:
+`UV_ENV_FILE=$PWD/.env uv run ...`.
 
 ## Commands
+
+Run these from the repo root, in a shell where the export above has been done.
 
 ```bash
 uv run bbq-shipment-agent run init      # A1 only: resolve capabilities, snapshot AI Configs
@@ -29,16 +51,34 @@ uv run bbq-shipment-agent ledger verify # parse every JSONL line, no database
 uv run bbq-shipment-agent ledger rebuild
 ```
 
+`run plan`, `run review` and `ui` all default `--ledger` to the committed
+`ledger/`, so a trial run appends a real row to it. Point them at
+`--ledger /tmp/scratch` while you are experimenting. Paths are relative to the
+working directory, so the repo root is also where `recipients.yaml`,
+`config/` and `tests/fixtures/screenshots` resolve from.
+
 ## The web UI
 
 ```bash
-UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui   # http://127.0.0.1:8765
+export UV_ENV_FILE=$PWD/.env                                    # once per shell
+uv run bbq-shipment-agent ui --ledger /tmp/ui-ledger            # http://127.0.0.1:8765
 ```
 
-The prefix is the same caveat as above and matters more here: without it the
-server starts perfectly and every run fails on a missing key several clicks
-later. It says so at launch and on the page rather than leaving you to find
-out, but the fix is to load the file.
+Both parts of that matter, and the UI is where forgetting either one hurts
+most:
+
+- **Without `UV_ENV_FILE`** the server starts perfectly and the page renders,
+  and you only find out there are no keys after picking images and clicking.
+  It now says so at launch and in a banner next to the button — but the fix is
+  to load the file.
+- **Without `--ledger`** a trial run appends to the committed `ledger/`. A
+  button feels cheaper to press than a command is to type, and the append is
+  just as real.
+
+**A live run costs real calls**: one vision call per selected screenshot, plus
+a Shippo validation per address and a few hundred rate quotes. The picker
+starts with every image ticked, so hitting the button unchanged is seven
+vision calls. Untick down to one or two while you are trying things out.
 
 Pick which screenshots B1 reads by looking at them, then generate a manifest.
 That is the one thing a terminal cannot do: `--screenshot-count 3` takes three
@@ -63,7 +103,8 @@ It binds `127.0.0.1` with no host option and has no authentication. That is the
 trade: nothing off this machine can reach it, and it serves real home addresses
 and screenshots of people's private messages.
 
-To drive it without spending anything, launch it with the recordings:
+To drive it without spending anything — no keys needed at all, so the export
+above is irrelevant here — launch it with the recordings:
 
 ```bash
 uv run bbq-shipment-agent ui --offline --ledger /tmp/ui-ledger \
