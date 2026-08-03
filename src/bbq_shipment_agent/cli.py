@@ -255,10 +255,10 @@ def _verifier(args: argparse.Namespace, mode: VerificationMode):
     return AnthropicModel()
 
 
-def _metrics(client, run):
-    """Report D1's invocation back to LaunchDarkly, when there is an LD to
+def _metrics(client, run, agent_key: str = AGENT_KEY):
+    """Report an invocation back to LaunchDarkly, when there is an LD to
     report to. Built from the config A1 captured, not a fresh lookup."""
-    config = run.agent_configs.get(AGENT_KEY)
+    config = run.agent_configs.get(agent_key)
     if client is None or config is None:
         from .agents import NoMetrics
 
@@ -337,6 +337,58 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
     return 1 if blocked else 0
 
 
+def _cmd_run_review(args: argparse.Namespace) -> int:
+    """A1 through D2: plan a run, then review and record it.
+
+    `run plan` stops at the manifest. This carries on into the conversation
+    that ends in approved, approved with exclusions, or rejected -- which is
+    now the last thing that happens to a run, since dispatch was removed.
+    """
+    roster = load_roster(args.recipients)
+    client = None if args.offline else launchdarkly_client(timeout_seconds=args.timeout)
+    try:
+        connection, provider, agent_source = _flag_sources(args, client)
+        before = args.snapshot.read_bytes() if args.snapshot.exists() else None
+        run = initialize_run(
+            ledger_root=args.ledger,
+            config_path=args.config,
+            provider=provider,
+            agent_source=agent_source,
+            snapshot_path=args.snapshot,
+            profile=args.profile,
+            campaign=args.campaign,
+            packet_count=roster.packet_count,
+        )
+        _print_run(run, connection, _snapshot_state(args.snapshot, before), args.ledger)
+
+        mode = run.capabilities.validation
+        verification = run.capabilities.verification
+        print(f"  roster       {roster.source}  ({roster.packet_count} recipients)")
+        print(f"  validation   {mode.value}")
+        print(f"  verification {verification.value}\n")
+
+        result = plan_run(
+            run,
+            roster,
+            ledger_root=args.ledger,
+            quoter=_quoter(args),
+            validator=_validator(args, mode),
+            verifier=_verifier(args, verification),
+            metrics=_metrics(client, run),
+        )
+        if result.manifest is None:
+            print(f"no manifest: {result.reason}")
+            _print_partial(result.solve)
+            return 1
+
+        print(render(result.manifest))
+        _print_verification(result.verification)
+        return _review(args, run, roster, result, client)
+    finally:
+        if client is not None:
+            client.close()
+
+
 def _print_verification(verification) -> bool:
     """Print D1's report. Returns whether it raised a blocker.
 
@@ -369,6 +421,94 @@ def _print_verification(verification) -> bool:
     if verification.raw:
         print(f"    raw reply: {verification.raw[:400]}")
     return bool(verification.blockers)
+
+
+def _review(args: argparse.Namespace, run, roster, result, client) -> int:
+    """D2. Conversational review over the manifest, then a terminal state.
+
+    Falls back to a plain prompt loop when `review-narrator` is unavailable.
+    Design 6.10's posture: no instructions means no agent, and a manually
+    read manifest is less helpful rather than less correct.
+    """
+    from .agents.narrator import Narrator, NarratorUnavailable
+    from .review import Edit, EditKind, ReviewError, ReviewSession
+
+    session = ReviewSession(
+        run,
+        result.validation.eligible,
+        roster.origin,
+        roster.ship_dates,
+        ledger_root=args.ledger,
+        quoter=_quoter(args),
+        escalated=result.validation.escalated,
+    )
+
+    narrator = None
+    try:
+        narrator = Narrator(
+            run,
+            session,
+            ledger_root=args.ledger,
+            model=AnthropicModel(),
+            metrics=_metrics(client, run, "review-narrator"),
+        )
+    except (NarratorUnavailable, ModelUnavailable) as exc:
+        print(f"\nreview-narrator unavailable ({exc}). Reading the manifest directly.")
+
+    if narrator is not None:
+        print("\n" + narrator.open().reply)
+
+    print(
+        "\ncommands: approve | reject | exclude <key> | pin <key> <YYYY-MM-DD> | "
+        "show | quit"
+        + ("  (anything else goes to the narrator)" if narrator else "")
+    )
+    while session.terminal is None:
+        try:
+            said = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nleaving the review open; nothing was recorded.")
+            return 1
+        if not said:
+            continue
+
+        verb, *rest = said.split()
+        try:
+            if verb == "quit":
+                print("leaving the review open; nothing was recorded.")
+                return 1
+            elif verb == "show":
+                print(render(session.manifest) if session.manifest else "no plan")
+            elif verb == "approve":
+                print(f"\n{session.approve().value}")
+            elif verb == "reject":
+                print(f"\n{session.reject(' '.join(rest)).value}")
+            elif verb == "confirm":
+                print(session.confirm().describe())
+            elif verb == "exclude" and rest:
+                print(session.propose(Edit(EditKind.EXCLUDE, rest[0])).describe())
+            elif verb == "pin" and len(rest) == 2:
+                from datetime import date as _date
+
+                print(
+                    session.propose(
+                        Edit(
+                            EditKind.SHIP_DATE, rest[0], ship_date=_date.fromisoformat(rest[1])
+                        )
+                    ).describe()
+                )
+            elif narrator is not None:
+                print("\n" + narrator.say(said).reply)
+            else:
+                print("unrecognised, and no narrator to ask.")
+        except (ReviewError, ValueError) as exc:
+            print(f"error: {exc}")
+        except NarratorUnavailable as exc:
+            print(f"narrator stopped: {exc}")
+            narrator = None
+
+    print(f"\nrecorded to {stream_path(args.ledger, RECORD_TYPES[0])}")
+    return 0
 
 
 def _print_partial(solve) -> None:
@@ -427,9 +567,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan = run_sub.add_parser(
         "plan", help="A1 through C6: a recipient file in, a manifest out"
     )
+    review = run_sub.add_parser(
+        "review", help="A1 through D2: plan a run, then review and record it"
+    )
 
-    # Everything A1 needs, which both commands run.
-    for sub in (init, plan):
+    # Everything A1 needs, which all three commands run.
+    for sub in (init, plan, review):
         sub.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER_ROOT)
         sub.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
         sub.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT_PATH)
@@ -454,55 +597,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.set_defaults(handler=_cmd_run_init)
 
-    # `plan` takes its packet count from the roster rather than an argument:
-    # the number is knowable, and a hand-typed one that disagrees with the file
-    # would mis-target every flag evaluated against the run context.
-    plan.add_argument(
-        "--recipients",
-        type=Path,
-        default=DEFAULT_ROSTER_PATH,
-        help=f"run input file (default: {DEFAULT_ROSTER_PATH})",
-    )
-    plan.add_argument(
-        "--quotes",
-        type=Path,
-        default=None,
-        help="replay recorded quotes instead of calling Shippo",
-    )
-    plan.add_argument(
-        "--validations",
-        type=Path,
-        default=None,
-        help="replay recorded address validations instead of calling Shippo",
-    )
-    plan.add_argument(
-        "--completions",
-        type=Path,
-        default=None,
-        help="replay a recorded D1 reply instead of calling the model",
-    )
-    plan.add_argument(
-        "--cache",
-        type=Path,
-        default=DEFAULT_CACHE_DIR,
-        help=f"where live answers are cached (default: {DEFAULT_CACHE_DIR})",
-    )
-    # A 22-recipient run is ~300 quote calls, and UPS answers "Too Many
-    # Requests" well before that on Shippo's shared master account. The
-    # library defaults suit a single lane; a real run wants more patience,
-    # and at three to five runs a year the extra minutes cost nothing.
-    plan.add_argument(
-        "--max-attempts",
-        type=int,
-        default=8,
-        help="quote attempts before a pinned carrier is called missing (default: 8)",
-    )
-    plan.add_argument(
-        "--backoff",
-        type=float,
-        default=4.0,
-        help="seconds between quote attempts, multiplied each time (default: 4)",
-    )
+    # `review` plans first, so it needs everything `plan` needs.
+    for sub in (plan, review):
+        sub.add_argument(
+            "--recipients",
+            type=Path,
+            default=DEFAULT_ROSTER_PATH,
+            help=f"run input file (default: {DEFAULT_ROSTER_PATH})",
+        )
+        sub.add_argument(
+            "--quotes", type=Path, default=None,
+            help="replay recorded quotes instead of calling Shippo",
+        )
+        sub.add_argument(
+            "--validations", type=Path, default=None,
+            help="replay recorded address validations instead of calling Shippo",
+        )
+        sub.add_argument(
+            "--completions", type=Path, default=None,
+            help="replay a recorded D1 reply instead of calling the model",
+        )
+        sub.add_argument(
+            "--cache", type=Path, default=DEFAULT_CACHE_DIR,
+            help=f"where live answers are cached (default: {DEFAULT_CACHE_DIR})",
+        )
+        sub.add_argument(
+            "--max-attempts", type=int, default=8,
+            help="quote attempts before a pinned carrier is called missing (default: 8)",
+        )
+        sub.add_argument(
+            "--backoff", type=float, default=4.0,
+            help="seconds between quote attempts, multiplied each time (default: 4)",
+        )
+    review.set_defaults(handler=_cmd_run_review)
+
+    # Neither takes a packet count: the number is knowable from the roster,
+    # and a hand-typed one that disagrees with the file would mis-target every
+    # flag evaluated against the run context.
     plan.add_argument(
         "--out", type=Path, default=None, help="also write the manifest here"
     )
