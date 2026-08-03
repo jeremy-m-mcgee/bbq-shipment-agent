@@ -32,8 +32,13 @@ uv run bbq-shipment-agent ledger rebuild
 ## The web UI
 
 ```bash
-uv run bbq-shipment-agent ui            # http://127.0.0.1:8765
+UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui   # http://127.0.0.1:8765
 ```
+
+The prefix is the same caveat as above and matters more here: without it the
+server starts perfectly and every run fails on a missing key several clicks
+later. It says so at launch and on the page rather than leaving you to find
+out, but the fix is to load the file.
 
 Pick which screenshots B1 reads by looking at them, then generate a manifest.
 That is the one thing a terminal cannot do: `--screenshot-count 3` takes three

@@ -13,6 +13,7 @@ the HTTP layer, against recorded answers, and reads the manifest off the page.
 
 import textwrap
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -366,3 +367,51 @@ class TestFailuresAreShownNotSwallowed:
     def test_an_unknown_run_is_a_404_not_a_crash(self, client):
         assert client.get("/runs/nope").status_code == 404
         assert client.get("/runs/nope/events").status_code == 404
+
+
+class TestTheMissingKeyBanner:
+    """A server that starts cleanly implies it is ready to run."""
+
+    def test_the_page_says_which_key_is_missing(self, options, workspace, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        live = _options_for(
+            options, directory=workspace / "shots", mode="all", names=[], count="",
+            seed="", profile="", campaign="", offline=True, replay=False,
+            no_screenshots=False,
+        )
+        client = TestClient(create_app(live, screenshot_dir=workspace / "shots"))
+        body = client.get("/").text
+        assert "A live run will fail" in body
+        assert "ANTHROPIC_API_KEY" in body
+        # And says the thing that is actually wrong nine times out of ten.
+        assert "UV_ENV_FILE" in body
+
+    def test_no_banner_when_everything_is_replayed(self, options, workspace, monkeypatch):
+        # Every live path has a recording, so no key is reached for and there
+        # is nothing to warn about. Note the launch options alone are not
+        # enough: B1 and B3 need --extractions and --repairs too, which is
+        # exactly what `replaying` insists on.
+        import json
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        (workspace / "b1.json").write_text(json.dumps({"replies": {}}))
+        (workspace / "b3.json").write_text(json.dumps({"turns": []}))
+        replayed = replace(
+            options,
+            extractions=workspace / "b1.json",
+            repairs=workspace / "b3.json",
+        )
+        client = TestClient(create_app(replayed, screenshot_dir=workspace / "shots"))
+        assert "A live run will fail" not in client.get("/").text
+
+    def test_the_fixture_launch_does_warn_about_the_vision_stages(
+        self, client, monkeypatch
+    ):
+        # The opposite case, pinned because it is the easy mistake: quotes,
+        # validations and completions recorded looks like a free run, and it
+        # is not -- B1 and B3 still call a model.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        body = client.get("/").text
+        assert "B1 extraction" in body

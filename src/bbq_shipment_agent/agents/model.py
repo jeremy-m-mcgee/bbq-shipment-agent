@@ -186,9 +186,14 @@ class AnthropicModel:
             # Shippo keys: `.env` is seeded from `.env.example`, so an
             # unconfigured key is present-but-empty rather than absent.
             raise ModelUnavailable(
-                "ANTHROPIC_API_KEY is unset or empty. Turn `verification-enabled` "
-                "off to run without the agent -- a run with no verification is a "
-                "normal run, and design 6.10 makes degrading the expected path."
+                "ANTHROPIC_API_KEY is unset or empty. If it is in `.env`, the "
+                "process did not load it: `uv run` only reads that file when "
+                "UV_ENV_FILE points at it, which the devcontainer sets but a "
+                "plain shell may not. Prefix with UV_ENV_FILE=$PWD/.env. "
+                "Otherwise, turn `verification-enabled` off to run without D1 "
+                "-- a run with no verification is a normal run, and design "
+                "6.10 makes degrading the expected path. B1 and B3 have no "
+                "such switch: they need the key or a recording."
             )
         self._key = key
         self._client: Any = None

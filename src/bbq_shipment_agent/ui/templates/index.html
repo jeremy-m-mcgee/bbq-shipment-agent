@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block body %}
 
+{% if missing_keys %}
+<div class="notice bad">
+  <b>A live run will fail.</b> These keys are unset or empty in this process:
+  <ul style="margin:6px 0 6px 18px;padding:0">
+    {% for key, stages in missing_keys.items() %}
+    <li><code>{{ key }}</code> — needed by {{ stages|join(', ') }}</li>
+    {% endfor %}
+  </ul>
+  If they are in <code>.env</code>, the process did not load it: <code>uv run</code>
+  reads that file only when <code>UV_ENV_FILE</code> points at it, which the
+  devcontainer sets and a plain shell may not. Stop the server and restart with
+  <code>UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui</code>.
+</div>
+{% endif %}
+
 {% if active %}
 <div class="notice">
   A run is already going —

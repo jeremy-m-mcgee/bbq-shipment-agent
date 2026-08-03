@@ -42,7 +42,12 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from starlette.responses import FileResponse
 
-from ..wiring import RunOptions, ScreenshotSelection, available_screenshots
+from ..wiring import (
+    RunOptions,
+    ScreenshotSelection,
+    available_screenshots,
+    missing_credentials,
+)
 from .service import RunInProgress, RunService
 from .view import screenshot_catalogue
 
@@ -96,6 +101,11 @@ def create_app(
                 "directory": str(directory) if directory else "",
                 "options": options,
                 "has_recordings": _has_recordings(options),
+                # Shown next to the button rather than left for the worker
+                # thread to discover. A key that is in `.env` but never loaded
+                # looks identical to one that was never set, and the page is
+                # where someone is about to spend a minute finding out.
+                "missing_keys": missing_credentials(options),
                 "active": runs.active,
                 "recent": runs.recent(),
             },
