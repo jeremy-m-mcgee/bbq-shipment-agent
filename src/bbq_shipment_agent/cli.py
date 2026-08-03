@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 from pathlib import Path
 
 from .agent_configs import (
@@ -244,6 +245,53 @@ def _lane_book(args: argparse.Namespace):
     return LaneBook.load(args.lanes)
 
 
+def _screenshots(args: argparse.Namespace) -> tuple[Path, ...]:
+    """The .png files B1 reads: every one, or a named random sample.
+
+    `--screenshot-count` exists to run B1 against part of a directory, which
+    for `tests/fixtures/screenshots/` means a cheaper pass over the answer key
+    than all seven images. Which subset was read is not incidental — extraction
+    accuracy is per-image, so a run that read three of seven is not comparable
+    to one that read a different three.
+
+    So the sample is named rather than merely taken. The population is sorted
+    before sampling, so the seed alone determines the choice regardless of
+    directory order; the seed is printed whether it was supplied or generated;
+    and the chosen filenames are printed too, because they are the account that
+    survives a change of Python's sampling internals.
+
+    Asking for more images than exist is an error rather than a clamp. A run
+    silently reading seven when it was told ten looks exactly like a run that
+    got what it asked for.
+    """
+    images = tuple(sorted(Path(args.screenshots).glob("*.png")))
+    if not images:
+        raise ExtractionError(f"no .png screenshots in {args.screenshots}")
+    if args.screenshot_count is None:
+        return images
+    if args.screenshot_count < 1:
+        raise ExtractionError(
+            f"--screenshot-count must be at least 1, got {args.screenshot_count}"
+        )
+    if args.screenshot_count > len(images):
+        raise ExtractionError(
+            f"--screenshot-count {args.screenshot_count} exceeds the "
+            f"{len(images)} .png file(s) in {args.screenshots}"
+        )
+
+    seed = args.screenshot_seed
+    if seed is None:
+        seed = random.randrange(2**32)
+    sample = tuple(sorted(random.Random(seed).sample(images, args.screenshot_count)))
+    print(
+        f"  B1           sampling {len(sample)} of {len(images)} screenshot(s), "
+        f"seed {seed}"
+    )
+    for image in sample:
+        print(f"               {image.name}")
+    return sample
+
+
 def _roster(args: argparse.Namespace, run=None):
     """The run input, from the file and — when asked — from screenshots.
 
@@ -253,14 +301,17 @@ def _roster(args: argparse.Namespace, run=None):
     becomes optional.
     """
     if not args.screenshots:
+        if args.screenshot_count is not None or args.screenshot_seed is not None:
+            raise ExtractionError(
+                "--screenshot-count and --screenshot-seed select from "
+                "--screenshots, which was not given. Nothing would sample."
+            )
         return load_roster(args.recipients, lane_book=_lane_book(args))
 
     roster = load_roster(
         args.recipients, lane_book=_lane_book(args), require_recipients=False
     )
-    images = tuple(sorted(Path(args.screenshots).glob("*.png")))
-    if not images:
-        raise ExtractionError(f"no .png screenshots in {args.screenshots}")
+    images = _screenshots(args)
 
     print(f"  B1           reading {len(images)} screenshot(s)")
     extracted = extract_from_images(
@@ -715,6 +766,16 @@ def build_parser() -> argparse.ArgumentParser:
             "--screenshots", type=Path, default=None,
             help="extract recipients from the .png files in this directory (B1). "
                  "The roster file still supplies origin, ship dates and lanes.",
+        )
+        sub.add_argument(
+            "--screenshot-count", type=int, default=None,
+            help="read a random sample of this many screenshots instead of the "
+                 "whole directory. The sample is printed, and so is its seed.",
+        )
+        sub.add_argument(
+            "--screenshot-seed", type=int, default=None,
+            help="seed for --screenshot-count, to re-read the same sample. "
+                 "Generated and printed when not supplied.",
         )
         sub.add_argument(
             "--lanes", type=Path, default=DEFAULT_LANES_PATH,

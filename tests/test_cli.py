@@ -6,9 +6,12 @@ nothing had ever called it. A CLI that cannot start is the most complete
 failure the program has, and it was the only one not covered.
 """
 
+import argparse
+
 import pytest
 
-from bbq_shipment_agent.cli import build_parser
+from bbq_shipment_agent.cli import _roster, _screenshots, build_parser
+from bbq_shipment_agent.recipients import ExtractionError
 
 
 @pytest.fixture(scope="module")
@@ -51,12 +54,23 @@ class TestPlanningArguments:
                 "--cache", ".c",
                 "--max-attempts", "3",
                 "--backoff", "1.5",
+                "--screenshots", "shots",
+                "--screenshot-count", "3",
+                "--screenshot-seed", "42",
                 "--offline",
             ]
         )
         assert str(args.recipients) == "r.yaml"
         assert args.max_attempts == 3
         assert args.offline is True
+        assert args.screenshot_count == 3
+        assert args.screenshot_seed == 42
+
+    @pytest.mark.parametrize("command", ["plan", "review"])
+    def test_sampling_is_off_unless_asked_for(self, parser, command):
+        args = parser.parse_args(["run", command])
+        assert args.screenshot_count is None
+        assert args.screenshot_seed is None
 
     @pytest.mark.parametrize("command", ["init", "plan", "review"])
     def test_every_run_command_takes_the_a1_arguments(self, parser, command):
@@ -75,6 +89,87 @@ class TestPlanningArguments:
         args = parser.parse_args(["run", "plan"])
         assert args.max_attempts > DEFAULT_MAX_ATTEMPTS
         assert args.backoff > DEFAULT_BACKOFF_S
+
+
+class TestScreenshotSampling:
+    """`--screenshot-count` picks a subset of B1's input.
+
+    The property that matters is not that the choice is random but that it is
+    *named*: extraction accuracy is per-image, so a run that read three of
+    seven is only comparable to another run if you can tell which three.
+    """
+
+    @pytest.fixture
+    def images(self, tmp_path):
+        for i in range(7):
+            (tmp_path / f"{i:02d}-shot.png").write_bytes(b"")
+        (tmp_path / "README.md").write_text("not a screenshot", encoding="utf-8")
+        return tmp_path
+
+    def args(self, images, count=None, seed=None):
+        return argparse.Namespace(
+            screenshots=images, screenshot_count=count, screenshot_seed=seed
+        )
+
+    def test_no_count_reads_the_whole_directory(self, images):
+        assert len(_screenshots(self.args(images))) == 7
+
+    def test_only_png_files_are_candidates(self, images):
+        assert all(p.suffix == ".png" for p in _screenshots(self.args(images)))
+
+    def test_a_count_reads_exactly_that_many(self, images):
+        assert len(_screenshots(self.args(images, count=3, seed=1))) == 3
+
+    def test_the_sample_comes_from_the_directory(self, images):
+        sample = _screenshots(self.args(images, count=3, seed=1))
+        assert set(sample) <= set(images.glob("*.png"))
+        assert len(set(sample)) == 3  # no image read twice
+
+    def test_the_same_seed_reads_the_same_sample(self, images):
+        first = _screenshots(self.args(images, count=3, seed=42))
+        second = _screenshots(self.args(images, count=3, seed=42))
+        assert first == second
+
+    def test_the_sample_is_ordered_regardless_of_the_draw(self, images):
+        # B1 reads in a stable order, so two runs that drew the same images
+        # cannot differ in the sequence they were handed to the model.
+        sample = _screenshots(self.args(images, count=4, seed=7))
+        assert list(sample) == sorted(sample)
+
+    def test_a_seed_is_generated_and_reported_when_none_is_given(self, images, capsys):
+        _screenshots(self.args(images, count=2))
+        assert "seed" in capsys.readouterr().out
+
+    def test_the_chosen_files_are_named_in_the_output(self, images, capsys):
+        sample = _screenshots(self.args(images, count=3, seed=5))
+        printed = capsys.readouterr().out
+        assert all(p.name in printed for p in sample)
+
+    def test_asking_for_more_than_exist_is_refused(self, images):
+        # Not clamped: a run silently reading 7 when told 10 looks like a run
+        # that got what it asked for.
+        with pytest.raises(ExtractionError, match="exceeds"):
+            _screenshots(self.args(images, count=10))
+
+    def test_asking_for_none_is_refused(self, images):
+        with pytest.raises(ExtractionError, match="at least 1"):
+            _screenshots(self.args(images, count=0))
+
+    def test_an_empty_directory_is_still_refused(self, tmp_path):
+        with pytest.raises(ExtractionError, match="no .png"):
+            _screenshots(self.args(tmp_path, count=1))
+
+    def test_sampling_without_a_directory_to_sample_is_refused(self, tmp_path):
+        # Otherwise the option is silently ignored, which reads as though a
+        # sample were taken.
+        args = argparse.Namespace(
+            screenshots=None,
+            screenshot_count=3,
+            screenshot_seed=None,
+            recipients=tmp_path / "r.yaml",
+        )
+        with pytest.raises(ExtractionError, match="was not given"):
+            _roster(args)
 
 
 class TestRefusals:
