@@ -77,8 +77,9 @@ most:
 
 **A live run costs real calls**: one vision call per selected screenshot, plus
 a Shippo validation per address and a few hundred rate quotes. The picker
-starts with every image ticked, so hitting the button unchanged is seven
-vision calls. Untick down to one or two while you are trying things out.
+therefore starts with **nothing selected** and the button disabled, and it
+shows the call count as you tick — because the number you are about to spend
+should be on screen before you press it, not in a log afterwards.
 
 Pick which screenshots B1 reads by looking at them, then generate a manifest.
 That is the one thing a terminal cannot do: `--screenshot-count 3` takes three

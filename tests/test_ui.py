@@ -119,6 +119,23 @@ class TestThePicker:
         body = client.get("/").text
         assert 'name="screenshot" value="01-imessage.png"' in body
 
+    def test_nothing_is_selected_by_default(self, client):
+        # Every ticked image is a live vision call. A picker that arrives
+        # pre-armed turns "look at the page" into "spend seven calls" on one
+        # click, which is exactly how it went the first time it was used.
+        body = client.get("/").text
+        # The tag itself, not the word: `checked` also appears in the script
+        # that keeps the count and the button in step.
+        assert 'value="01-imessage.png" checked' not in body
+        assert 'name="screenshot"' in body and 'class="shot on"' not in body
+
+    def test_the_button_starts_disabled_with_nothing_picked(self, client):
+        # Belt and braces: the POST already refuses an empty explicit
+        # selection. This stops the click rather than explaining it after.
+        body = client.get("/").text
+        assert 'id="go"' in body
+        assert "Nothing selected" in body or "go.disabled" in body
+
     def test_the_images_themselves_are_served(self, client):
         response = client.get("/screenshots/01-imessage.png")
         assert response.status_code == 200
