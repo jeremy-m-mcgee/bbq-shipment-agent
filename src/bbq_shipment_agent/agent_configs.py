@@ -49,7 +49,6 @@ from typing import Any, Protocol
 
 from .context import (
     STAGE_ADDRESS_REPAIR,
-    STAGE_INFEASIBILITY_REMEDIATION,
     STAGE_MANIFEST_VERIFICATION,
     STAGE_REVIEW_NARRATOR,
     reason_code,
@@ -63,13 +62,18 @@ DEFAULT_SNAPSHOT_PATH = Path("config/ld-snapshot.json")
 #: failing a run.
 SNAPSHOT_SCHEMA_VERSION = 1
 
-#: The four agents of design 6.2, each evaluated under its own `stage` context
-#: so one flag can target them independently. Written out rather than derived
-#: from the agent key by string substitution: the mapping between an LD config
-#: key and a stage identifier is a fact worth being able to read.
+#: The agents of design 6.2, each evaluated under its own `stage` context so
+#: one flag can target them independently. Written out rather than derived from
+#: the agent key by string substitution: the mapping between an LD config key
+#: and a stage identifier is a fact worth being able to read.
+#:
+#: Three, not four. `infeasibility-remediation` was demoted to ordinary Python
+#: once its only open-ended move turned out to be physically impossible -- see
+#: `planning/remediation` and design 6.3. `STAGE_INFEASIBILITY_REMEDIATION`
+#: survives in `context` because C4 is still a stage; it is just not one that
+#: asks LaunchDarkly for instructions.
 AGENT_STAGES: dict[str, str] = {
     "address-repair": STAGE_ADDRESS_REPAIR,
-    "infeasibility-remediation": STAGE_INFEASIBILITY_REMEDIATION,
     "manifest-verification": STAGE_MANIFEST_VERIFICATION,
     "review-narrator": STAGE_REVIEW_NARRATOR,
 }

@@ -49,7 +49,6 @@ from ..agent_configs import AGENT_KEYS, AgentConfig
 #: declares a tool, which is this rule enforced a second time at invocation.
 TOOL_NAMES: dict[str, frozenset[str]] = {
     "address-repair": frozenset({"validate_address"}),
-    "infeasibility-remediation": frozenset(),
     "manifest-verification": frozenset(),
     "review-narrator": frozenset({"propose_edit", "confirm_edit", "read_manifest"}),
 }

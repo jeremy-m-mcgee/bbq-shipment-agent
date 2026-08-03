@@ -36,6 +36,13 @@ from .configurations import (
 )
 from .lanes import DEFAULT_LANES_PATH, LaneBook, LaneBookError
 from .load import Load, define_load
+from .remediation import (
+    DEFAULT_HORIZON_MONTHS,
+    Remediation,
+    RemediationMove,
+    remediate,
+    remediate_all,
+)
 from .manifest import (
     Excluded,
     Manifest,
@@ -88,6 +95,7 @@ __all__ = [
     "CarrierPlan",
     "Configuration",
     "DEFAULT_LANE",
+    "DEFAULT_HORIZON_MONTHS",
     "DEFAULT_LANES_PATH",
     "Enumeration",
     "EvaluatedConfiguration",
@@ -106,6 +114,8 @@ __all__ = [
     "ManifestRow",
     "ParcelSpec",
     "Quote",
+    "Remediation",
+    "RemediationMove",
     "QuoteResult",
     "QuotingUnavailable",
     "RateQuoter",
@@ -127,6 +137,8 @@ __all__ = [
     "parcel_variants",
     "pin_carriers",
     "render",
+    "remediate",
+    "remediate_all",
     "ship_day_for",
     "shipment_options",
     "solve_carriers",

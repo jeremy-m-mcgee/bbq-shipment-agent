@@ -1,11 +1,10 @@
 """The spine, end to end. Build order step 3, plus B4 and D1.
 
-A1 -> B2 -> B4 -> C1 -> C2 -> C3 -> C5 -> C6 -> D1. Design 11 says steps 1
-through 3
-"produce a system that is useful on its own: it will plan a run correctly and
-hand over a manifest, with the operator supplying addresses by hand". Every
-stage existed before this module; none of them had a caller, which meant the
-claim was true of the parts and not of the whole.
+A1 -> B2 -> B4 -> C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> D1. Design 11 says
+steps 1 through 3 "produce a system that is useful on its own: it will plan a
+run correctly and hand over a manifest, with the operator supplying addresses
+by hand". Every stage existed before this module; none of them had a caller,
+which meant the claim was true of the parts and not of the whole.
 
 Everything through C6 is deterministic and makes no model call. D1 is the one
 agent in the sequence, it is gated by `verification-enabled`, and it is
@@ -15,6 +14,10 @@ verification off is the same run without the critique pass.
 
 B3 (repair) is step 7 and is not in the sequence, so a failed address
 escalates rather than being repaired.
+
+C4 is in the sequence and makes no model call: it was demoted to ordinary
+Python once its only open-ended move turned out to be impossible. See
+`planning/remediation`.
 
 B4 sits between B2 and C1 and is the reason `suppressed` on a manifest is no
 longer always empty. It runs *after* validation on purpose -- see the comment
@@ -27,10 +30,11 @@ nothing here computes a cost, a temperature or a ranking. The two judgement
 calls it does make are stated below because they are not in any stage:
 
 * **A run that covers nobody is not an exception.** `assemble_manifest`
-  refuses to build from a partial plan, and it is right to -- but that is
-  C4's cue, and C4 is build order step 11. Until then the honest output is
-  the solve itself, with its partial plans, so the operator can see what
-  stranded and why. `PlanResult.manifest` is None in that case.
+  refuses to build from a partial plan, and it is right to. The honest output
+  is the solve itself, with its partial plans, so the operator can see what
+  stranded and why. `PlanResult.manifest` is None in that case, and C4's
+  recommendations are on `remediations` either way -- a shipment nothing can
+  carry does not stop the others being planned.
 * **Planning results are appended to the run record, without `completed_at`.**
   Design 7 makes a ledger line a partial update, so the counts and the
   proposed total cost land on the run row opened at A1. `completed_at` is
@@ -43,6 +47,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from .agents import (
     AgentMetrics,
@@ -60,7 +65,9 @@ from .planning import (
     RateQuoter,
     Solve,
     ThermalModel,
+    Remediation,
     assemble_manifest,
+    remediate_all,
     solve_carriers,
 )
 from .recipients import (
@@ -117,6 +124,9 @@ class PlanResult:
     validation: ValidationReport
     suppression: SuppressionReport
     solve: Solve
+    #: C4's recommendations, one per shipment nothing can carry. Empty in the
+    #: usual case, which is why it is not on the manifest.
+    remediations: tuple[Remediation, ...]
     manifest: Manifest | None
     #: Why there is no manifest, when there is none.
     reason: str | None = None
@@ -139,6 +149,7 @@ def plan_run(
     validator: AddressValidator | None = None,
     model: ThermalModel | None = None,
     ship_dates: tuple[date, ...] | None = None,
+    lane_book: Any = None,
     verifier: ModelClient | None = None,
     metrics: AgentMetrics | None = None,
 ) -> PlanResult:
@@ -173,6 +184,18 @@ def plan_run(
         ship_dates or roster.ship_dates,
         quoter,
         model,
+    )
+
+    # C4, and only when C3 left something with nothing feasible anywhere.
+    # Deterministic since the demotion -- see planning/remediation.
+    remediations = remediate_all(
+        suppression.eligible,
+        solve.infeasible,
+        roster.origin,
+        ship_dates or roster.ship_dates,
+        quoter,
+        lane_book=lane_book,
+        model=model,
     )
 
     manifest: Manifest | None = None
@@ -214,6 +237,7 @@ def plan_run(
         validation=validation,
         suppression=suppression,
         solve=solve,
+        remediations=remediations,
         manifest=manifest,
         reason=reason,
         verification=verification,

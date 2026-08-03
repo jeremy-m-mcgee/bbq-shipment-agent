@@ -27,9 +27,12 @@ Full design: @docs/design.md
 - Python holds all control flow, tool definitions, and tool execution.
 - If a change would express control flow in LD config, stop and ask.
 
-## Agents (4, independent, no handoff)
-address-repair (B3) | infeasibility-remediation (C4)
-manifest-verification (D1) | review-narrator (D2)
+## Agents (3, independent, no handoff)
+address-repair (B3) | manifest-verification (D1) | review-narrator (D2)
+
+C4 was the fourth and was demoted to ordinary Python: its only open-ended move
+(splitting a shipment) is physically impossible, and what remained is
+arithmetic. Design 2 keeps a model out of the path of a computable decision.
 
 ## Build order
 See docs/design.md section 11. Steps 1, 2 and 3 are done. `run plan` runs
@@ -41,14 +44,14 @@ state, and B4 runs between B2 and C1. Step 4 is done in the
 sense the step meant: `LumpedCapacitanceModel` is C3's default. Calibration
 is not coming — E3 was removed, so design 5 now says the model will not be
 calibrated, and the lane ambient in design 10 is the only thermal lever left.
-Remaining: 5 (B1, needs screenshots), 7 (B3), 9 (C4). Step 6 is done.
+Remaining: 5 (B1, needs screenshots) and 7 (B3, needs B1). Steps 6, 9 and 10 done.
 
 ## Layout
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
 - `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
 - `src/bbq_shipment_agent/recipients/` — roster.py (the run input file), validation.py (B2), dedupe.py (B4)
-- `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), solve (C5), manifest (C6)
+- `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
 - `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes

@@ -333,6 +333,7 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
             ledger_root=args.ledger,
             quoter=_quoter(args),
             validator=_validator(args, mode),
+            lane_book=_lane_book(args),
             verifier=_verifier(args, verification),
             metrics=_metrics(client, run),
         )
@@ -348,6 +349,9 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
         print(f"B2 corrected {result.validation.corrected_count} address(es).")
     for excluded in result.escalated:
         print(f"escalated: {excluded.name} — {excluded.reason}")
+    # C4. Empty in the usual case; a recommendation, never an action.
+    for remediation in result.remediations:
+        print(f"C4  {remediation.describe()}")
 
     if result.manifest is None:
         print(f"\nno manifest: {result.reason}")
@@ -398,6 +402,7 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
             ledger_root=args.ledger,
             quoter=_quoter(args),
             validator=_validator(args, mode),
+            lane_book=_lane_book(args),
             verifier=_verifier(args, verification),
             metrics=_metrics(client, run),
         )

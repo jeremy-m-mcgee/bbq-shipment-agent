@@ -115,16 +115,32 @@ class TestTheAssertion:
     def test_the_message_names_the_agent_and_both_sides(self):
         with pytest.raises(ToolContractError) as exc:
             assert_tool_contract(
-                {
-                    "infeasibility-remediation": config(
-                        "infeasibility-remediation", tools=["read_ledger"]
-                    )
-                }
+                {"manifest-verification": config("manifest-verification",
+                                                 tools=["read_ledger"])}
             )
         message = str(exc.value)
-        assert "infeasibility-remediation" in message
+        assert "manifest-verification" in message
         assert "read_ledger" in message
         assert "offers nothing" in message
+
+    def test_a_config_for_an_agent_python_does_not_know_is_refused(self):
+        # C4 was demoted from the registry (design 6.3). A stale AI Config
+        # left live in LaunchDarkly is not fetched at all -- see
+        # test_a_demoted_agent_is_never_fetched -- but if one reaches the
+        # assertion by another route, silence would be the wrong answer.
+        with pytest.raises(ToolContractError, match="no tool contract"):
+            assert_tool_contract(
+                {"infeasibility-remediation": config("infeasibility-remediation")}
+            )
+
+    def test_a_demoted_agent_is_never_fetched(self, tmp_path):
+        # The practical guarantee: leaving the AI Config live in LaunchDarkly
+        # does not break a run, because nothing asks for it.
+        from bbq_shipment_agent.agent_configs import AGENT_KEYS
+
+        assert "infeasibility-remediation" not in AGENT_KEYS
+        run = run_a1(tmp_path, {"address-repair": config("address-repair")})
+        assert "infeasibility-remediation" not in run.agent_configs
 
     def test_the_message_lists_what_is_offered_when_there_is_something(self):
         with pytest.raises(ToolContractError) as exc:

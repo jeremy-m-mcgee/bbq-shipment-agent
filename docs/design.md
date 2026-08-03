@@ -96,7 +96,7 @@ flowchart TD
     D2 -->|approve| E2[E2 Write ledger]
 
     classDef agentic fill:#F2C230,stroke:#8A6D00,stroke-width:2px,color:#1A1A1A
-    class B3,C4,D1,D2 agentic
+    class B3,D1,D2 agentic
 ```
 
 Yellow nodes are model-driven loops. Everything else is deterministic.
@@ -301,11 +301,12 @@ Each model-driven loop is a separate agent config. They share no context, hand n
 | Agent | Stage | Tools offered | Model class | Metric |
 |---|---|---|---|---|
 | `address-repair` | B3 | Shippo validate, image region read | Vision required | Repair success rate |
-| `infeasibility-remediation` | C4 | Thermal model, config enumeration, ledger read | Text | Stranded shipments rescued |
 | `manifest-verification` | D1 | Manifest read, read-only | Text, cheap model viable | Errors caught before review |
 | `review-narrator` | D2 | Manifest read, re-solve trigger | Conversational, longer context | Operator edit count |
 
 Separating them is justified independently of LD ergonomics: they differ on tools, on model requirements, on success criteria, and on rollout timeline. A single fused agent would mean a vision model performing a read-only critique pass and one instruction set covering four unrelated jobs.
+
+`infeasibility-remediation` was in this table and is not any more: C4 became ordinary Python once its only open-ended move turned out to be impossible. See 6.3 and section 10.
 
 The flag set does not multiply with the agent count. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, six flags — and the sixth, `validation-mode`, belongs to a deterministic stage rather than an agent, which is the point: LaunchDarkly serves runtime behaviour, not just agent instructions.
 
@@ -315,6 +316,7 @@ Worth stating, because the boundary is easy to erode:
 
 - **B1 extraction** is a single-shot vision call with no loop and no tool access. It is a model call, not an agent.
 - **C5 pair solve** is brute force over six options. Deterministic.
+- **C4 infeasibility remediation** *was* an agent, on the strength of one open-ended move: splitting a shipment. Section 4 records the measurement that killed it — hold time does not depend on product mass, so a split is strictly worse. What remained was deciding whether a cooler month clears the gate, which is arithmetic, and saying so. Demoting it is what "agency is a cost, not a goal" means when the cost stops buying anything.
 - **D2 narration** explains the C5 result and is bound by the rule that every claim traces to a computed field. `review-narrator` describes the solve and does not participate in it.
 
 ### 6.4 Mitigating instruction drift
@@ -326,7 +328,7 @@ Moving instruction text to LD breaks the guarantee that instructions and tool si
 
    Hash the un-rendered template, never the interpolated text. A rendered hash differs on every run by construction, so it would flag a difference every time and discriminate nothing, and for `address-repair` it would write recipient data into a committed append-only file.
 3. **Snapshot LD configs into the repo.** Pull all four agent configs to a versioned file at the start of every run and commit it. This is not the source of truth, it is an audit trail and the offline cache in one artifact.
-4. **Read-only agents are the safe place to iterate.** `manifest-verification` and `review-narrator` touch no tools with changing signatures. Instruction churn there carries close to zero drift risk. `address-repair` and `infeasibility-remediation` call tools that will change while the system is being built, and their instructions should be treated as more expensive to edit.
+4. **Read-only agents are the safe place to iterate.** `manifest-verification` and `review-narrator` touch no tools with changing signatures. Instruction churn there carries close to zero drift risk. `address-repair` calls tools that will change while the system is being built, and its instructions should be treated as more expensive to edit.
 
 ### 6.5 Authority stays in the repo
 
@@ -590,7 +592,7 @@ Calibrating UA against real transit data is no longer on the table at all — E3
 
 `TestThermalGate` pins the *properties* rather than the numbers — more gel packs never arrives warmer, the larger box is never thermally better, zero gel packs never survives. Those should survive recalibration; no constant should, which is why none is pinned.
 
-**C4 may not deserve to be an agent any more.** Section 6.2 lists `infeasibility-remediation` as one of the four model-driven loops, and its AI Config is live. The justification was that it "explores moves that C2 does not enumerate" — an open input space, which is section 2's bar for spending agency.
+**C4 is no longer an agent — resolved.** `infeasibility-remediation` was one of four model-driven loops, justified by exploring "moves that C2 does not enumerate" — an open input space, which is section 2's bar for spending agency.
 
 Splitting was the open-ended move, and it is now known to be impossible (section 4). What remains is two moves and a computation:
 
@@ -599,13 +601,11 @@ Splitting was the open-ended move, and it is now known to be impossible (section
 
 Both are decidable by running the thermal model over the candidate months and reading off the answer, which is exactly what section 2 says a model should not be in the path of, and what section 6.3 lists as the boundary that is easy to erode.
 
-Three readings:
+Demoted. `planning/remediation.py` is C4, the registry is three agents, and the AI Config should be deleted in LaunchDarkly — nothing fetches it, so a stale one is inert rather than dangerous.
 
-- **Demote it to deterministic logic**, delete the AI Config, and amend 6.2 to three agents. Most consistent with "agency is a cost, not a goal", and the cheapest.
-- **Keep the agent for the reason it writes down.** The computation says *which* month works; a human still has to be told why a recipient is being dropped or delayed, and phrasing that for twenty-two strangers is the kind of open-ended job the narrator earns its keep on. This makes C4 an explainer like D2 rather than a decider.
-- **Keep it as specified** and accept that its remaining decisions are computable. Weakest, and the reading this section exists to prevent.
+Two things the demotion bought that were not obvious going in. C4 now refuses a shipment that is *not* globally infeasible rather than answering, because the answer would be a recommendation to defer something that ships fine today; that guard found a real case, since 40C still clears on a one-day service. And a deferral now carries the ambient it was computed at and a warning that a future run's rates will differ, which an instruction could have asked for and a function simply does.
 
-Deliberately not decided here: the AI Config was written and reviewed against the three-move version, so whichever way this goes, that instruction text needs rewriting before C4 runs at all.
+What is *not* resolved is where a recommendation goes. C4 proposes; nothing accepts. `PlanResult.remediations` is printed and then dropped, because acting on a deferral means editing the roster for a future run and D2's `EditKind` has no move for it. Related to the escalation-queue entry above, and blocked on the same question.
 
 **Validator advisories on clean addresses are captured and never shown.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
@@ -645,7 +645,7 @@ Sequenced so that each step de-risks the next.
 6. **Tool contract assertion.** The startup check from 6.4, before any tool-using agent exists. Building it first means it is never retrofitted onto a system that has already drifted.
 7. **Repair loop.** B3, the first tool-using agent, and the one with the clearest payoff.
 8. **Review interface.** D2, including the re-solve and pair-comparison logic, plus the `review-narrator` agent. Terminal states write E2's shipment rows.
-9. **Infeasibility remediation.** C4, last because it is the rarest path.
+9. **Infeasibility remediation.** C4, last because it is the rarest path. *Done, and not as an agent* — see 6.3.
 10. **Dedupe and suppress.** B4, last because it is the lowest-value step: it automates a check the operator does by eye while typing the list. *Done.* It also made D1's first check answerable — "every input recipient appears in exactly one of eligible, suppressed or escalated" needs a suppressed list that can be non-empty.
 
 Dispatch and backfill were steps 9 and 10 and are gone; section 9 records why.
