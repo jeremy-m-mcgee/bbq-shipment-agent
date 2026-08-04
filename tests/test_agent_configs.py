@@ -3,19 +3,22 @@ import json
 import pytest
 
 from bbq_shipment_agent.agent_configs import (
+    EXTRACTION_KEY,
     LD_CONFIGURED_KEYS,
     SNAPSHOT_SCHEMA_VERSION,
     AgentConfig,
+    archived_variations,
     AgentConfigError,
     ChainedAgentConfigs,
     LaunchDarklyAgentConfigs,
     OfflineAgentConfigs,
     SnapshotAgentConfigs,
     fetch_agent_configs,
+    fetch_extraction_configs,
     snapshot_document,
     write_snapshot,
 )
-from bbq_shipment_agent.context import build_context
+from bbq_shipment_agent.context import ContextBuilder, ImageIdentity
 
 AGENT = "manifest-verification"
 
@@ -59,7 +62,9 @@ class FakeClient:
 
 @pytest.fixture
 def context():
-    return build_context(run_id="r1", stage="manifest_verification", profile="baseline")
+    return ContextBuilder(run_id="r1", profile="baseline").for_stage(
+        "manifest_verification"
+    )
 
 
 class TestInstructionHash:
@@ -151,9 +156,12 @@ class TestReadingLaunchDarkly:
         # A declaration to assert against Python's registry, and stable order
         # keeps the committed snapshot from churning on dict iteration order.
         source = LaunchDarklyAgentConfigs(FakeClient({AGENT: variation()}))
-        config = source.fetch(AGENT, build_context(
-            run_id="r1", stage="manifest_verification", profile="baseline"
-        ))
+        config = source.fetch(
+            AGENT,
+            ContextBuilder(run_id="r1", profile="baseline").for_stage(
+                "manifest_verification"
+            ),
+        )
         assert config.declared_tools == ("cost_table_read", "manifest_read")
 
     def test_a_missing_flag_is_unavailable_not_an_error(self, context):
@@ -321,9 +329,7 @@ class TestFetchingEveryAgent:
         client = FakeClient({key: variation() for key in LD_CONFIGURED_KEYS})
         configs = fetch_agent_configs(
             LaunchDarklyAgentConfigs(client),
-            lambda stage: build_context(
-                run_id="r1", stage=stage, profile="baseline"
-            ),
+            ContextBuilder(run_id="r1", profile="baseline").for_stage,
         )
         assert set(configs) == set(LD_CONFIGURED_KEYS)
         # The client is handed an SDK Context, so read the stage back the way
@@ -334,6 +340,99 @@ class TestFetchingEveryAgent:
         assert stages["manifest-verification"] == "manifest_verification"
         assert stages["address-repair"] == "address_repair"
         assert len(set(stages.values())) == len(LD_CONFIGURED_KEYS)
+
+
+class TestFetchingB1PerImage:
+    """Design 6.2: B1 is the only stage with a ground-truth answer key, so it
+    is the only one whose config is retrieved per unit rather than per run."""
+
+    def images(self, count=3):
+        return tuple(ImageIdentity(key=f"img{i}", name=f"{i:02d}.png") for i in range(count))
+
+    def test_one_fetch_per_image(self):
+        client = FakeClient({EXTRACTION_KEY: variation()})
+        configs = fetch_extraction_configs(
+            LaunchDarklyAgentConfigs(client),
+            ContextBuilder(run_id="r1", profile="baseline"),
+            self.images(),
+        )
+        assert set(configs) == {"img0", "img1", "img2"}
+        assert len(client.seen) == 3
+
+    def test_each_fetch_carries_its_own_image_key(self):
+        # Retrieving once and reusing the answer would leave the context
+        # correct and the behaviour uniform, which is a rollout that does not
+        # roll out.
+        client = FakeClient({EXTRACTION_KEY: variation()})
+        fetch_extraction_configs(
+            LaunchDarklyAgentConfigs(client),
+            ContextBuilder(run_id="r1", profile="baseline"),
+            self.images(),
+        )
+        keys = {ctx.get_individual_context("image").key for _, ctx in client.seen}
+        assert keys == {"img0", "img1", "img2"}
+
+    def test_no_images_means_no_fetches(self):
+        client = FakeClient({EXTRACTION_KEY: variation()})
+        configs = fetch_extraction_configs(
+            LaunchDarklyAgentConfigs(client),
+            ContextBuilder(run_id="r1", profile="baseline"),
+            (),
+        )
+        assert configs == {}
+        assert client.seen == []
+
+
+class TestArchivingASecondVariation:
+    """Design 6.4 mitigation 2: an instruction hash in the ledger has to join
+    to text committed in the repo. A rollout serving two variations of B1 in
+    one run would otherwise leave the losing one's text nowhere."""
+
+    def config(self, variation_key, instructions="text"):
+        return AgentConfig(
+            agent_key=EXTRACTION_KEY,
+            enabled=True,
+            variation_key=variation_key,
+            instructions=instructions,
+        )
+
+    def test_a_single_variation_archives_nothing(self):
+        canonical = {EXTRACTION_KEY: self.config("sonnet-baseline")}
+        per_image = {"img0": self.config("sonnet-baseline")}
+        assert archived_variations(canonical, per_image) == {}
+
+    def test_a_second_variation_is_archived_under_its_own_key(self):
+        canonical = {EXTRACTION_KEY: self.config("sonnet-baseline")}
+        per_image = {
+            "img0": self.config("sonnet-baseline"),
+            "img1": self.config("haiku-trial", "different text"),
+        }
+        archived = archived_variations(canonical, per_image)
+        assert set(archived) == {f"{EXTRACTION_KEY}#haiku-trial"}
+        assert archived[f"{EXTRACTION_KEY}#haiku-trial"].instructions == "different text"
+
+    def test_an_unavailable_config_is_not_archived(self):
+        canonical = {EXTRACTION_KEY: self.config("sonnet-baseline")}
+        per_image = {"img0": AgentConfig(agent_key=EXTRACTION_KEY, enabled=False)}
+        assert archived_variations(canonical, per_image) == {}
+
+    def test_the_archived_key_is_not_reachable_by_the_offline_reader(self, tmp_path):
+        # The archive is an audit trail, never a cache. `SnapshotAgentConfigs`
+        # looks up bare agent keys, so a `#`-suffixed entry can never be
+        # served back as if LD had chosen it.
+        path = tmp_path / "snap.json"
+        write_snapshot(
+            {
+                EXTRACTION_KEY: self.config("sonnet-baseline", "canonical"),
+                f"{EXTRACTION_KEY}#haiku-trial": self.config("haiku-trial", "other"),
+            },
+            path,
+        )
+        served = SnapshotAgentConfigs(path).fetch(EXTRACTION_KEY, {})
+        assert served.instructions == "canonical"
+        assert "haiku-trial" in json.loads(path.read_text())["agents"][
+            f"{EXTRACTION_KEY}#haiku-trial"
+        ]["variation_key"]
 
 
 class TestWritingTheSnapshot:

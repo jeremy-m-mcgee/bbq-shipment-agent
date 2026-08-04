@@ -62,7 +62,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
-- `src/bbq_shipment_agent/context.py` — LD multi-context (run / stage / shipment), reason codes
+- `src/bbq_shipment_agent/context.py` — `ContextBuilder`, the only place a LD context is constructed (run / stage / image kinds), `ImageIdentity`, reason codes
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
 - `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
 - `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
@@ -92,6 +92,10 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - Unmet prerequisites demote and record why. They never abort the run.
 - LD serves `planner-mode`, `memory-mode`, `verification-enabled` and nothing else. `authority-level` is never asked for — see `CAPABILITY_FLAGS`.
 - An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
+- B1's config is retrieved once per screenshot, under an `image` context keyed on the file's content hash — the only unit a rollout can mean anything on, since `run.key` is a fresh UUID. Screenshots are therefore resolved before A1, not in `build_roster`. B1 records one invocation per image, carrying `image_key`.
+- LaunchDarkly is never given a filename. The `image` kind is key-only and the key is a content hash; `evaluation_reasons["screenshot_keys"]` on the run row is what resolves it locally.
+- A variation the canonical snapshot entry does not hold is archived under `agent-key#variation-key`, so every `instruction_hash` in the ledger has bytes committed in the repo. The offline reader looks up bare agent keys and cannot serve one back.
+- `ContextBuilder` is the only thing that constructs an evaluation context, and `context.py` the only module calling `Context.from_dict`. A second construction site is how the run and stage contexts drift apart, which is what a percentage rollout cannot survive. Context attributes are declared per kind in `_ATTRIBUTES`; an undeclared one is refused, not forwarded, because a context is sent to LD's servers.
 - Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
 

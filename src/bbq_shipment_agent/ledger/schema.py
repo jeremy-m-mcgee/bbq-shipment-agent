@@ -279,6 +279,11 @@ class AgentInvocationRecord(LedgerRecord):
 
     agent_key: str = _req("VARCHAR")
     shipment_key: str | None = _opt("VARCHAR")
+    #: The screenshot this invocation read, as a content hash. B1 only: it is
+    #: retrieved per image, so a run where a rollout served two variations has
+    #: to say which image got which, or the answer-key comparison design 6.2
+    #: rests on has nothing to join on. Null for every other agent.
+    image_key: str | None = _opt("VARCHAR")
     instruction_variation_key: str | None = _opt("VARCHAR")
     instruction_version: int | None = _opt("INTEGER")
     instruction_hash: str | None = _opt("VARCHAR")

@@ -436,6 +436,62 @@ def fetch_agent_configs(
     }
 
 
+#: B1's config key. The one stage retrieved per unit rather than per run.
+EXTRACTION_KEY = "screenshot-extraction"
+
+
+def fetch_extraction_configs(
+    source: AgentConfigSource,
+    contexts: Any,
+    images: tuple[Any, ...],
+) -> dict[str, AgentConfig]:
+    """B1's config, once per image, keyed by the image's content hash.
+
+    Every other configured stage is retrieved once for the run, because the
+    run is the unit it varies over. B1 is not: design 6.2 makes it the only
+    stage with a ground-truth answer key, so which variation read which image
+    is a measurement rather than an anecdote, and an image is a unit that
+    exists ~7 times per run and keeps its identity across runs. That is what a
+    percentage rollout needs and what a fresh run UUID cannot give.
+
+    `contexts` is the run's `ContextBuilder`. Fetching per image is what makes
+    a rollout on the `image` kind observable; retrieving once and reusing it
+    would leave the context correct and the behaviour uniform.
+    """
+    return {
+        image.key: source.fetch(
+            EXTRACTION_KEY,
+            contexts.for_image(LD_CONFIGURED_STAGES[EXTRACTION_KEY], image),
+        )
+        for image in images
+    }
+
+
+def archived_variations(
+    canonical: dict[str, AgentConfig], per_image: dict[str, AgentConfig]
+) -> dict[str, AgentConfig]:
+    """Per-image configs whose variation the canonical snapshot would not hold.
+
+    Design 6.4 mitigation 2 makes the instruction hash on a ledger line join
+    to the committed snapshot with no network call. A rollout that serves two
+    variations of `screenshot-extraction` in one run breaks that join for the
+    losing one: the snapshot holds a single entry per agent key, so the other
+    variation's text would exist in a ledger hash and nowhere in the repo.
+
+    These are keyed `agent-key#variation-key` so they archive the text without
+    being reachable by the offline reader, which looks up bare agent keys.
+    They are an audit trail, never a cache.
+    """
+    served = canonical.get(EXTRACTION_KEY)
+    canonical_variation = served.variation_key if served else None
+    archived: dict[str, AgentConfig] = {}
+    for config in per_image.values():
+        if not config.available or config.variation_key == canonical_variation:
+            continue
+        archived[f"{config.agent_key}#{config.variation_key}"] = config
+    return archived
+
+
 def snapshot_document(configs: dict[str, AgentConfig]) -> dict[str, Any]:
     """The committed artifact. Design 6.4 mitigation 3.
 

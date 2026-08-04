@@ -47,6 +47,7 @@ from .agents import (
     RecordedModel,
     RecordedVision,
 )
+from .context import ImageIdentity
 from .capabilities import (
     DEFAULT_CONFIG_PATH,
     PlannerMode,
@@ -383,6 +384,36 @@ def resolve_screenshots(
     return chosen
 
 
+def screenshots_for(
+    options: RunOptions, progress: Progress | None = None
+) -> tuple[Path, ...]:
+    """Which images B1 will read, resolved before A1 rather than during B1.
+
+    This used to happen inside `build_roster`, during planning, which was the
+    natural place while the images were only B1's input. They are also the
+    thing an `image` evaluation context is keyed on, and A1 is where agent
+    configs are retrieved -- so an image resolved after A1 cannot influence
+    what LaunchDarkly serves for the stage that reads it. Resolving here is
+    what makes the `image` kind able to do anything at all.
+
+    Two things fall out and both are improvements. A bad `--screenshot-count`
+    now fails before the SDK client is constructed rather than after a run row
+    has been appended, and the filenames are known in time to go on the run
+    record at A1 instead of being attached later.
+
+    A run with no screenshot directory resolves to nothing rather than
+    raising: the roster file supplies the people, which is the ordinary path.
+    """
+    if options.screenshots is None:
+        if options.selection is not None:
+            raise ExtractionError(
+                "a screenshot selection was given without a screenshot "
+                "directory. Nothing would sample."
+            )
+        return ()
+    return resolve_screenshots(options, progress)
+
+
 def extraction_reasons(
     images: tuple[Path, ...], selection: ScreenshotSelection | None
 ) -> dict[str, Any]:
@@ -393,6 +424,13 @@ def extraction_reasons(
     from a browser could not say afterwards what it had read.
     """
     reasons: dict[str, Any] = {"screenshots": [p.name for p in images]}
+    # LaunchDarkly is given a content hash and never a filename, so this map
+    # is the only thing that can say which file a served variation read. It
+    # lives in the committed ledger, which is where design 2 requires a
+    # surprising run to be diagnosable from.
+    reasons["screenshot_keys"] = {
+        image.name: image.key for image in map(ImageIdentity.of, images)
+    }
     if selection is not None and selection.seed is not None:
         reasons["screenshot_seed"] = selection.seed
     return reasons
@@ -413,8 +451,11 @@ def extraction_model(options: RunOptions, images: tuple[Path, ...]) -> Any:
 
 
 def build_roster(
-    options: RunOptions, run: Any = None, progress: Progress | None = None
-) -> tuple[Any, tuple[Path, ...]]:
+    options: RunOptions,
+    run: Any = None,
+    images: tuple[Path, ...] = (),
+    progress: Progress | None = None,
+) -> Any:
     """The run input, from the file and -- when asked -- from screenshots.
 
     The file always supplies the origin, the candidate ship dates and the lane
@@ -422,24 +463,19 @@ def build_roster(
     screenshot directory, B1 supplies the people and the file's `recipients`
     key becomes optional.
 
-    Returns the roster and the images that were read, because the caller has
-    to record the second on the run row.
+    `images` is resolved by `screenshots_for` before A1 and passed in, rather
+    than chosen here: B1's config is retrieved at run start under a context
+    keyed on the images, so this function cannot be the one that picks them.
     """
     progress = progress or NullProgress()
-    if options.screenshots is None:
-        if options.selection is not None:
-            raise ExtractionError(
-                "a screenshot selection was given without a screenshot "
-                "directory. Nothing would sample."
-            )
-        return load_roster(options.recipients, lane_book=lane_book(options, progress)), ()
+    if not images:
+        return load_roster(options.recipients, lane_book=lane_book(options, progress))
 
     roster = load_roster(
         options.recipients,
         lane_book=lane_book(options, progress),
         require_recipients=False,
     )
-    images = resolve_screenshots(options, progress)
 
     progress.emit("B1", f"reading {len(images)} screenshot(s)", count=len(images))
     extracted = extract_from_images(
@@ -448,8 +484,11 @@ def build_roster(
     progress.emit("B1", extracted.describe(), summary=extracted.describe())
     for u in extracted.unresolved:
         progress.emit("", f"no address: {u.name} — {u.note[:70]}", unresolved=u.name)
-    for name in extracted.unreadable:
-        progress.emit("", f"UNREADABLE: {name}", unreadable=name)
+    for u in extracted.unreadable:
+        # The reason, not just the filename: "no JSON object in the reply" is
+        # a console edit and "invalid JSON" is a model choice, and the
+        # operator watching a run is the person who can tell them apart.
+        progress.emit("", f"UNREADABLE: {u.name} — {u.reason}", unreadable=u.name)
 
     # Lanes are assigned from the file's book, the same as for a hand-written
     # roster -- extraction produces an address, not an ambient assumption.
@@ -460,7 +499,7 @@ def build_roster(
         recipients = tuple(
             replace(r, lane=book.lane_for(r.address.state, season)) for r in recipients
         )
-    return roster.with_recipients(recipients), images
+    return roster.with_recipients(recipients)
 
 
 def repair_model(options: RunOptions, planner: PlannerMode) -> Any:
@@ -531,7 +570,14 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
     needs the same client -- closing after A1 would silently drop every AI
     Config metric. The SDK also runs a background thread, so a caller that
     forgets will hang.
+
+    Screenshots are resolved first, before the client exists: they are part of
+    what A1 evaluates against, and a bad selection should not cost a socket or
+    leave a run row behind.
     """
+    progress = progress or NullProgress()
+    images = screenshots_for(options, progress)
+
     client = None if options.offline else launchdarkly_client(
         timeout_seconds=options.timeout
     )
@@ -547,6 +593,10 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
             profile=options.profile,
             campaign=options.campaign,
             packet_count=options.packet_count,
+            # B1's config is retrieved once per image, under a context keyed
+            # on each image's content hash. This is why they are resolved
+            # before A1 rather than during planning.
+            images=tuple(map(ImageIdentity.of, images)),
         )
     except BaseException:
         if client is not None:
@@ -557,6 +607,8 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
         connection=connection,
         snapshot=snapshot_state(options.snapshot, before),
         client=client,
+        images=images,
+        extra_reasons=extraction_reasons(images, options.selection) if images else {},
     )
 
 
@@ -573,10 +625,10 @@ def plan_with(
 
     progress = progress or NullProgress()
     run = context.run
-    roster, images = build_roster(options, run, progress)
+    # `images` and `extra_reasons` were settled by `open_run`, which is what
+    # lets B1's config be retrieved under a context keyed on them.
+    roster = build_roster(options, run, context.images, progress)
     context.roster = roster
-    context.images = images
-    context.extra_reasons = extraction_reasons(images, options.selection) if images else {}
 
     mode = run.capabilities.validation
     verification = run.capabilities.verification

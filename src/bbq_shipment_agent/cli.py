@@ -43,6 +43,7 @@ from .recipients import (
     RosterError,
     to_shipments,
 )
+from .run import record_run_reasons
 from .wiring import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DB_PATH,
@@ -50,6 +51,7 @@ from .wiring import (
     PrintProgress,
     RunOptions,
     ScreenshotSelection,
+    build_roster,
     missing_credentials,
     open_run,
     plan_with,
@@ -184,6 +186,63 @@ def _cmd_run_init(args: argparse.Namespace) -> int:
         if context.client is not None:
             context.client.close()
 
+
+
+def _cmd_run_extract(args: argparse.Namespace) -> int:
+    """A1 and B1, then stop. Nothing downstream of extraction runs.
+
+    B1 is the stage worth iterating on alone: design 6.2 makes it the only one
+    with a ground-truth answer key, and 6.6 now retrieves its config per image,
+    so which variation read which screenshot is the thing you change and
+    re-check. Everything after it is expensive for reasons that have nothing to
+    do with extraction -- C2 quotes every configuration of every shipment
+    against a live carrier API, which is minutes of waiting to learn nothing
+    about a prompt.
+
+    No Shippo call happens here: B2 is downstream. So this is also the run to
+    reach for when only `ANTHROPIC_API_KEY` is set.
+
+    The run record is still written, because A1 really did open a run and the
+    ledger is append-only. Pass a throwaway `--ledger` when iterating.
+    """
+    options = _options(args)
+    if options.screenshots is None:
+        print("run extract needs --screenshots; there is nothing for B1 to read.")
+        return 2
+
+    context = open_run(options, PrintProgress())
+    try:
+        _print_run(context.run, context.connection, context.snapshot, args.ledger)
+        # B1 runs inside `build_roster` and nothing after it does, which is
+        # what makes this a seam rather than a special case.
+        roster = build_roster(options, context.run, context.images, PrintProgress())
+        # `plan_with` records this on the way through planning; this command
+        # stops before planning, so it has to do it itself or the hash on
+        # every invocation record names a file the ledger cannot resolve.
+        record_run_reasons(options.ledger, context.run, context.extra_reasons)
+    finally:
+        # The SDK runs a background thread. Leaving it open hangs the CLI.
+        if context.client is not None:
+            context.client.close()
+
+    print(f"\nB1 read {len(context.images)} screenshot(s):")
+    for image in context.images:
+        key = context.extra_reasons.get("screenshot_keys", {}).get(image.name, "?")
+        config = context.run.image_configs.get(key)
+        variation = config.variation_key if config else "?"
+        model = (config.model if config else None) or "?"
+        print(f"  {image.name:<28} {key}  {variation}  {model}")
+
+    print(f"\n{roster.packet_count} recipient(s):")
+    for recipient in roster.recipients:
+        address = recipient.address
+        confidence = "" if recipient.confidence is None else f"  ({recipient.confidence:.2f})"
+        source = recipient.provenance.source_image if recipient.provenance else "?"
+        print(
+            f"  {recipient.name:<22} {address.street1}, {address.city} "
+            f"{address.state} {address.zip}{confidence}  [{source}]"
+        )
+    return 0
 
 
 def _cmd_run_plan(args: argparse.Namespace) -> int:
@@ -513,6 +572,9 @@ def build_parser() -> argparse.ArgumentParser:
     init = run_sub.add_parser(
         "init", help="A1: open a run against the live LaunchDarkly environment"
     )
+    extract = run_sub.add_parser(
+        "extract", help="A1 and B1 only: read screenshots, print what was found"
+    )
     plan = run_sub.add_parser(
         "plan", help="A1 through C6: a recipient file in, a manifest out"
     )
@@ -526,7 +588,7 @@ def build_parser() -> argparse.ArgumentParser:
     ui.set_defaults(handler=_cmd_ui)
 
     # Everything A1 needs, which all four commands run.
-    for sub in (init, plan, review, ui):
+    for sub in (init, extract, plan, review, ui):
         sub.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER_ROOT)
         sub.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
         sub.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT_PATH)
@@ -550,11 +612,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--packet-count", type=int, default=None, help="run context attribute"
     )
     init.set_defaults(handler=_cmd_run_init)
+    extract.set_defaults(handler=_cmd_run_extract)
 
     # `review` plans first, so it needs everything `plan` needs, and the UI
     # plans too -- its form supplies only the screenshot selection and the
     # profile, so every other input still arrives as a command-line default.
-    for sub in (plan, review, ui):
+    for sub in (extract, plan, review, ui):
         sub.add_argument(
             "--recipients",
             type=Path,

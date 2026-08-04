@@ -350,6 +350,8 @@ Moving instruction text to LD breaks the guarantee that instructions and tool si
 
    Hash the un-rendered template, never the interpolated text. A rendered hash differs on every run by construction, so it would flag a difference every time and discriminate nothing, and for `address-repair` it would write recipient data into a committed append-only file.
 3. **Snapshot LD configs into the repo.** Pull all four agent configs to a versioned file at the start of every run and commit it. This is not the source of truth, it is an audit trail and the offline cache in one artifact.
+
+   Per-image retrieval of B1 (6.6) put a hole in mitigation 2 that this had to close. The snapshot holds one entry per agent key, so a rollout serving two variations of `screenshot-extraction` in one run would leave the losing variation's text in a ledger hash and nowhere in the repo — the join the hash exists to provide, broken in exactly the run it was most wanted for. Any variation the canonical entry does not hold is therefore archived alongside it under `agent-key#variation-key`. The offline reader looks up bare agent keys and so can never serve one back: it is an audit trail, never a cache.
 4. **Read-only agents are the safe place to iterate.** `manifest-verification` and `review-narrator` touch no tools with changing signatures. Instruction churn there carries close to zero drift risk. `address-repair` calls tools that will change while the system is being built, and its instructions should be treated as more expensive to edit.
 
 ### 6.5 Authority stays in the repo
@@ -367,14 +369,11 @@ What it must not become is decorative. A reader should be able to tell that noth
 One flag, evaluated against a multi-context, rather than parallel config trees per stage.
 
 ```python
-context = {
-    "kind": "multi",
-    "run":      {"key": run.id, "profile": "planner_trial",
-                 "campaign": "aug-cook", "packet_count": 22},
-    "stage":    {"key": "address_repair"},
-    "shipment": {"key": recipient.key, "variant": "large",
-                 "zone": 6, "prior_failures": 3},
-}
+context = run.contexts.for_stage("address_repair")
+# {"kind": "multi",
+#  "run":   {"key": run.id, "profile": "planner_trial",
+#            "campaign": "aug-cook", "packet_count": 22},
+#  "stage": {"key": "address_repair"}}
 
 mode = flags.variation("planner-mode", context, default="off")
 ```
@@ -383,7 +382,19 @@ mode = flags.variation("planner-mode", context, default="off")
 
 Capability flags are not evaluated that way. A1 resolves all four once, under `stage: run_init`, and every stage reads the resolved set. A targeting rule written against `stage: address_repair` for `memory-mode` would therefore never fire — this section previously implied it would, with an example about memory being on for one stage and off for another.
 
-That is a deliberate limitation rather than an oversight, and section 7 depends on it: one run has one resolved capability set and one fingerprint, and every shipment row points at it. Per-stage capability resolution would mean several sets per run and a fingerprint that names none of them. The `shipment` context kind has the same status — available, evaluated at A1 only, and section 7 records what would have to change before it could vary per recipient.
+That is a deliberate limitation rather than an oversight, and section 7 depends on it: one run has one resolved capability set and one fingerprint, and every shipment row points at it. Per-stage capability resolution would mean several sets per run and a fingerprint that names none of them.
+
+**A `shipment` kind was defined here and has been removed.** It was in the example above, keyed by recipient with `variant`, `zone` and `prior_failures` attributes, and described as the way a record that has failed before could be pre-flagged without a code change. Nothing ever evaluated against it: no caller in `src/` passed a recipient key, so every context the system built had two kinds in it and this one was a claim the code did not make. Section 6.5 says of `authority-level` that what it must not become is decorative, and the test it offers — a reader should be able to tell whether anything consults it — is one this kind failed. Per-unit targeting is not abandoned by removing it. It moves to an `image` kind at B1 — the one stage where a variation can be scored against an answer key rather than admired.
+
+**The `image` kind, and why it is the only unit worth having.** Its key is the content hash of one screenshot, and it carries no attributes at all. B1's config is retrieved once per image at A1, so a targeting rule or a percentage rollout can serve different instructions or a different vision model to different images inside one run.
+
+That is not symmetry with the other kinds, it is the only kind a rollout can mean anything on. `run.key` is a fresh UUID, so bucketing on it re-rolls every run and an experiment accumulates three to five samples a year; section 8's caveat applies to that with full force. An image is stable across runs, appears seven-odd times within one, and — uniquely in this system — has an answer key to be scored against. A rollout on the `image` kind splits *within a single run* and is measurable offline against `tests/fixtures/screenshots/ground_truth.json` as often as you like.
+
+The key is a content hash rather than a filename for two reasons, and the privacy one is the load-bearing one: these are screenshots of private message threads, and a context is sent to LaunchDarkly's servers. Nothing about the file leaves this machine — not the name, not the directory. What the hash refers to goes on the run row as `evaluation_reasons["screenshot_keys"]`, committed but local, which is what keeps section 2's "diagnosable from the committed JSONL" true for the one stage whose variation is worth diagnosing. The second reason is that the same bytes are the same unit: a renamed or re-sorted directory is not a new population to bucket, which is also why `RecordedVision` matches replays on content.
+
+Two consequences were forced by building it. Screenshots are now resolved **before** A1 rather than inside `build_roster` during planning — a config retrieved at run start cannot be keyed on an image chosen later, and the reordering also means a bad `--screenshot-count` fails before a run row has been appended to an append-only file. And B1 records **one invocation per image** rather than one per batch, carrying `image_key`, because a batch-level record cannot express a run in which two variations were served, which is precisely the run a rollout is executed to measure.
+
+**One builder constructs every context.** `ContextBuilder` holds the run's targeting identity, is built at the top of A1 before the capability provider is contacted, and is carried on the run; `context.py` is the only module that calls `Context.from_dict`, and a test pins that. This is not tidiness. A percentage rollout is only coherent if every evaluation of that flag within a run presents the same attributes, and an experiment is only attributable if the evaluation event and the metric event carry the same context. Both held before, by coincidence: each call site rebuilt the dict from the run's fields and A1 hand-built its own, because it runs before the run exists. Attributes are declared per kind in one list and anything undeclared is refused rather than forwarded — the same shape as `resolve` rejecting unknown capability keys, and for the reason the ledger has a secrets rule, since a context is sent to LaunchDarkly's servers.
 
 ### 6.7 Profiles
 
@@ -516,20 +527,33 @@ makes the diff unreadable. Naming the equivalence class is the fingerprint's
 whole job; storing a hash beside the values it hashes is not.
 
 This assumes a shipment's capabilities are the run's, which holds because A1
-resolves once and nothing re-evaluates per shipment. If 6.6's `shipment`
-context kind is ever used to vary a flag per recipient, that assumption breaks:
-a fingerprint on a shipment row could then name a set no run row describes. The
-fix at that point is a `capability_sets` stream keyed by fingerprint and
-written once per distinct set, deliberately not built for a case that does not
-yet exist.
+resolves once and nothing re-evaluates per shipment. The assumption is what
+keeps capability flags run-scoped even though AI Config retrieval is not: if
+any context kind below the run were ever used to vary a *capability* per unit,
+a fingerprint on a shipment row could name a set no run row describes. The fix
+at that point is a `capability_sets` stream keyed by fingerprint and written
+once per distinct set, deliberately not built for a case that does not yet
+exist.
+
+6.6's `shipment` kind was the case this paragraph was written against, and it
+has been removed for never having been evaluated. The `image` kind that
+replaced it is not a counterexample: it varies which instruction text and
+model B1 is served, never a capability, so one run still resolves one set and
+carries one fingerprint however many variations B1 saw.
 
 Per agent invocation:
 
 ```
-run_id, shipment_key, agent_key, instruction_variation_key,
-instruction_version, instruction_hash, model, iterations,
-outcome, timestamp
+run_id, shipment_key, image_key, agent_key,
+instruction_variation_key, instruction_version, instruction_hash,
+model, iterations, outcome, timestamp
 ```
+
+`image_key` is B1's and null everywhere else. B1's config is retrieved per
+screenshot (6.6), so a run where a rollout served two variations has to say
+which image got which or the answer-key comparison has nothing to join on. It
+is the content hash, and `evaluation_reasons["screenshot_keys"]` on the run row
+is what resolves it back to a filename — LaunchDarkly is never given one.
 
 The capability fingerprint and snapshot are not optional. Without them, the question of why one run behaved differently from another produces anecdotes rather than data. The instruction hash carries the same weight under the medium split, for the reasons in 6.4.
 

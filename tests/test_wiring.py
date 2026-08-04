@@ -18,7 +18,9 @@ from bbq_shipment_agent.wiring import (
     RunOptions,
     ScreenshotSelection,
     extraction_reasons,
+    open_run,
     resolve_screenshots,
+    screenshots_for,
 )
 
 
@@ -145,6 +147,58 @@ class TestSelectionIsOneThingOrTheOther:
     def test_a_seed_with_nothing_to_seed_is_refused(self):
         with pytest.raises(ExtractionError, match="no count was given"):
             ScreenshotSelection(seed=7)
+
+
+class TestImagesAreSettledBeforeA1:
+    """B1's config is retrieved at run start, so the images have to exist by
+    then. Resolving them during planning -- where this used to happen -- means
+    an `image` evaluation context could never influence what LD serves."""
+
+    def test_a_run_with_no_screenshot_directory_resolves_to_nothing(self):
+        # The ordinary roster-file path. Not an error: the file supplies the
+        # people, and B1 does not run.
+        assert screenshots_for(RunOptions()) == ()
+
+    def test_a_selection_without_a_directory_is_still_refused(self):
+        with pytest.raises(ExtractionError, match="Nothing would sample"):
+            screenshots_for(RunOptions(selection=ScreenshotSelection(count=2)))
+
+    def test_it_resolves_the_same_set_planning_would_have(self, images):
+        assert screenshots_for(options(images, count=3, seed=5)) == resolve_screenshots(
+            options(images, count=3, seed=5)
+        )
+
+    def test_open_run_settles_them_before_planning(self, images, tmp_path):
+        # The property step 2 exists for: after A1 alone, with no call to
+        # `plan_with`, the run already knows which images it will read.
+        context = open_run(
+            RunOptions(
+                ledger=tmp_path / "ledger",
+                snapshot=tmp_path / "snap.json",
+                screenshots=images,
+                selection=ScreenshotSelection(count=3, seed=5),
+                offline=True,
+            )
+        )
+        assert len(context.images) == 3
+        assert context.extra_reasons["screenshot_seed"] == 5
+        assert len(context.extra_reasons["screenshots"]) == 3
+
+    def test_a_bad_selection_fails_before_a_run_row_exists(self, images, tmp_path):
+        # Asking for ten of seven used to append a run record and then fail.
+        # The ledger is append-only, so that row could not be taken back.
+        ledger = tmp_path / "ledger"
+        with pytest.raises(ExtractionError, match="exceeds"):
+            open_run(
+                RunOptions(
+                    ledger=ledger,
+                    snapshot=tmp_path / "snap.json",
+                    screenshots=images,
+                    selection=ScreenshotSelection(count=10),
+                    offline=True,
+                )
+            )
+        assert not (ledger / "runs.jsonl").exists()
 
 
 class TestWhatReachesTheRunRow:

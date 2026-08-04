@@ -60,7 +60,7 @@ from ..agent_configs import AgentConfig
 from ..agents.metrics import metrics_for
 from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.verification import render_instructions
-from ..context import STAGE_EXTRACTION
+from ..context import STAGE_EXTRACTION, ImageIdentity
 from ..planning.manifest import Excluded
 from ..planning.rates import Address
 from ..run import record_agent_invocation
@@ -102,14 +102,35 @@ class Unresolved:
 
 
 @dataclass(frozen=True)
+class Unreadable:
+    """An image whose reply could not be parsed, and why it could not be.
+
+    The reason is the point. `_parse` computes a diagnosis -- prose instead of
+    JSON, malformed JSON, a JSON object with no `recipients` list -- and until
+    this record existed it was used for the retry nudge and then discarded, so
+    the ledger recorded a bare `unreadable` and design 2's "diagnosable from
+    the committed JSONL" did not hold for the one stage whose variations are
+    meant to be compared.
+
+    It distinguishes the failures that matter to different people. An
+    instruction variation that stopped asking for JSON is a console edit; a
+    model that wraps JSON in prose is a model choice; an empty reply is
+    neither. All three read as "unreadable" without the reason.
+    """
+
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class ExtractionResult:
     """B1's output for one run."""
 
     recipients: tuple[Recipient, ...] = ()
     unresolved: tuple[Unresolved, ...] = ()
-    #: Images that produced no parseable reply. Distinct from an image with no
-    #: recipients in it, which is a valid answer.
-    unreadable: tuple[str, ...] = ()
+    #: Images that produced no parseable reply, each with the reason. Distinct
+    #: from an image with no recipients in it, which is a valid answer.
+    unreadable: tuple[Unreadable, ...] = ()
     input_tokens: int = 0
     output_tokens: int = 0
     attempts: int = 0
@@ -153,66 +174,82 @@ def extract_from_images(
 ) -> ExtractionResult:
     """B1. One call per image, results concatenated.
 
-    `config` defaults to the one captured at A1 -- identity comes from run
-    start, never a fresh lookup, for the same reason every other invocation
-    record does.
+    **The config is per image, not per batch.** A1 retrieves
+    `screenshot-extraction` once for each screenshot, under a context keyed on
+    that image's content hash, so a targeting rule or a percentage rollout can
+    serve different instructions or a different vision model to different
+    images within one run. This loop honours that: each image is rendered,
+    invoked, tracked and recorded against the config that image was served.
 
-    The invocation is recorded, which matters more here than anywhere else.
-    Design 6.4 mitigation 2 wants the variation key, version and instruction
-    hash on every invocation, and B1 is the stage whose whole justification is
-    comparing variations against an answer key: without the record, the ledger
-    cannot say which prompt produced which extraction, and the comparison has
-    nothing to join on.
+    `config` overrides that for a caller invoking B1 directly. Identity still
+    comes from run start either way -- nothing here looks anything up.
+
+    The invocation is recorded per image, which matters more here than
+    anywhere else. Design 6.4 mitigation 2 wants the variation key, version
+    and instruction hash on every invocation, and B1 is the stage whose whole
+    justification is comparing variations against an answer key. One record
+    per batch could not express a run where two variations were served, so the
+    comparison would have nothing to join on in exactly the case the rollout
+    was run to measure.
     """
-    config = config or run.agent_configs.get(CONFIG_KEY)
-    if config is None or not config.available:
-        reason = (
-            "no config was retrieved at run start"
-            if config is None
-            else f"{config.source}/{config.reason}"
-        )
-        raise ExtractionError(f"{CONFIG_KEY}: {reason}")
-
-    context = run.context_for_stage(STAGE_EXTRACTION)
-    invocation = Invocation.from_config(config, render_instructions(config, context))
-    # One tracker for the batch: B1 is a single logical invocation of the
-    # extraction config, however many images it reads.
-    metrics = metrics_for(config)
-
-    metrics = metrics_for(config)
     recipients: list[Recipient] = []
     unresolved: list[Unresolved] = []
-    unreadable: list[str] = []
+    unreadable: list[Unreadable] = []
     tokens_in = tokens_out = attempts = 0
 
     for path in images:
+        image = ImageIdentity.of(path)
+        served = config or run.config_for_image(image)
+        if served is None or not served.available:
+            reason = (
+                "no config was retrieved at run start"
+                if served is None
+                else f"{served.source}/{served.reason}"
+            )
+            raise ExtractionError(f"{CONFIG_KEY}: {reason}")
+
+        context = run.contexts.for_image(STAGE_EXTRACTION, image)
+        invocation = Invocation.from_config(
+            served, render_instructions(served, context)
+        )
+        # One tracker per image, because one config per image: a tracker is
+        # minted by the config that was served, and mixing two variations'
+        # events into one tracker would attribute them to whichever came
+        # first.
+        metrics = metrics_for(served)
+
         parsed, used_in, used_out, tries = _read_one(model, invocation, path)
         tokens_in += used_in
         tokens_out += used_out
         attempts += tries
-        if parsed is None:
-            unreadable.append(path.name)
-            continue
-        found, missing = _records_from(parsed, path)
-        recipients.extend(found)
-        unresolved.extend(missing)
 
-    metrics.track_tokens(tokens_in, tokens_out)
-    metrics.track_error() if unreadable else metrics.track_success()
+        metrics.track_tokens(used_in, used_out)
+        # A string is the reason it could not be parsed -- the same either-or
+        # `_parse` returns. Recorded rather than reduced to a flag: without it
+        # an instruction variation that stopped asking for JSON is
+        # indistinguishable from a model that answered in prose.
+        if isinstance(parsed, str):
+            unreadable.append(Unreadable(name=path.name, reason=parsed))
+            metrics.track_error()
+            outcome = f"unreadable: {parsed}"
+        else:
+            found, missing = _records_from(parsed, path)
+            recipients.extend(found)
+            unresolved.extend(missing)
+            metrics.track_success()
+            outcome = f"extracted:{len(found)}" + (
+                f" unresolved:{len(missing)}" if missing else ""
+            )
 
-    record_agent_invocation(
-        ledger_root,
-        run,
-        CONFIG_KEY,
-        outcome=(
-            f"extracted:{len(recipients)}"
-            + (f" unresolved:{len(unresolved)}" if unresolved else "")
-            + (f" unreadable:{len(unreadable)}" if unreadable else "")
-        ),
-        # One image is one call, so attempts across the batch is the honest
-        # iteration count -- a retried image costs two.
-        iterations=attempts,
-    )
+        record_agent_invocation(
+            ledger_root,
+            run,
+            CONFIG_KEY,
+            config=served,
+            image_key=image.key,
+            outcome=outcome,
+            iterations=tries,
+        )
 
     return ExtractionResult(
         recipients=tuple(recipients),
@@ -226,9 +263,16 @@ def extract_from_images(
 
 def _read_one(
     model: Any, invocation: Invocation, path: Path
-) -> tuple[dict[str, Any] | None, int, int, int]:
-    """One image, with a bounded retry on an unparseable reply."""
+) -> tuple[dict[str, Any] | str, int, int, int]:
+    """One image, with a bounded retry on an unparseable reply.
+
+    Returns the parsed object, or the reason it could not be parsed -- the
+    same either-or `_parse` uses, so the diagnosis survives the retry loop
+    instead of collapsing to `None`. The reason from the *last* attempt is the
+    one returned: it describes the reply the run actually gave up on.
+    """
     tokens_in = tokens_out = 0
+    reason = "the model was never called"
     content: list[dict[str, Any]] = [
         image_block(path),
         {"type": "text", "text": "Extract every recipient from this screenshot."},
@@ -246,6 +290,7 @@ def _read_one(
         parsed = _parse(completion.text)
         if not isinstance(parsed, str):
             return parsed, tokens_in, tokens_out, attempt
+        reason = parsed
 
         messages = [
             {"role": "user", "content": content},
@@ -253,12 +298,12 @@ def _read_one(
             {
                 "role": "user",
                 "content": (
-                    f"That could not be parsed: {parsed}. Reply with the JSON "
+                    f"That could not be parsed: {reason}. Reply with the JSON "
                     "object described in your instructions and nothing else."
                 ),
             },
         ]
-    return None, tokens_in, tokens_out, MAX_ATTEMPTS
+    return reason, tokens_in, tokens_out, MAX_ATTEMPTS
 
 
 def _parse(text: str) -> dict[str, Any] | str:

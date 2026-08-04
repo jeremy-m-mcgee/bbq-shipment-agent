@@ -11,6 +11,8 @@ made necessary: the CLI and the browser have to arrive at the same options
 object, and only one of them has a Namespace.
 """
 
+from pathlib import Path
+
 import pytest
 
 from bbq_shipment_agent.cli import _options, build_parser
@@ -164,3 +166,79 @@ class TestRefusals:
     def test_a_run_with_no_subcommand_is_refused(self, parser):
         with pytest.raises(SystemExit):
             parser.parse_args(["run"])
+
+
+class TestExtractRecordsWhatItRead:
+    """`run extract` stops before planning, so it is the one front-end path
+    that has to write the screenshot map itself. It did not, and the hashes on
+    its invocation records named files nothing in the ledger could resolve."""
+
+    def _run(self, tmp_path, argv_extra=()):
+        import json
+        import textwrap
+
+        from bbq_shipment_agent.cli import main
+
+        config = tmp_path / "capabilities.yaml"
+        config.write_text(
+            textwrap.dedent(
+                """
+                profiles:
+                  baseline:
+                    planner: "off"
+                    memory: "off"
+                    validation: "off"
+                    verification: "off"
+                    authority: "propose_only"
+                default_profile: "baseline"
+                authority_ceiling: "propose_only"
+                kill_switch: false
+                """
+            ),
+            encoding="utf-8",
+        )
+        ledger = tmp_path / "ledger"
+        snapshot = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
+        code = main([
+            "run", "extract", "--offline",
+            "--screenshots", str(Path(__file__).parent / "fixtures" / "screenshots"),
+            "--screenshot-count", "2", "--screenshot-seed", "5",
+            "--extractions", str(Path(__file__).parent / "fixtures" / "b1-extractions.json"),
+            "--recipients", str(Path(__file__).parent / "fixtures" / "roster-sf-dc.yaml"),
+            "--ledger", str(ledger), "--config", str(config),
+            "--snapshot", str(snapshot), *argv_extra,
+        ])
+        reasons = {}
+        for line in (ledger / "runs.jsonl").read_text().splitlines():
+            if line.strip():
+                reasons.update(json.loads(line).get("evaluation_reasons") or {})
+        return code, reasons, ledger
+
+    def test_the_hash_to_filename_map_reaches_the_run_row(self, tmp_path):
+        _, reasons, _ = self._run(tmp_path)
+        mapping = reasons["screenshot_keys"]
+        assert set(mapping) == {"03-instagram-dm.png", "05-email.png"}
+        assert all(len(key) == 16 for key in mapping.values())
+
+    def test_every_invocation_image_key_resolves_to_a_filename(self, tmp_path):
+        # The property the map exists for: LaunchDarkly is given the hash and
+        # never the filename, so this join is the only account of which file a
+        # served variation actually read.
+        import json
+
+        _, reasons, ledger = self._run(tmp_path)
+        known = set(reasons["screenshot_keys"].values())
+        rows = [
+            json.loads(line)
+            for line in (ledger / "agent_invocations.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        keys = [r["image_key"] for r in rows if r.get("image_key")]
+        assert keys and set(keys) <= known
+
+    def test_a1_capability_reasons_survive_the_append(self, tmp_path):
+        # `evaluation_reasons` is one JSON field, so an append rewrites it
+        # whole. A writer starting from a bare dict would drop A1's record.
+        _, reasons, _ = self._run(tmp_path)
+        assert "capabilities" in reasons
+        assert reasons["screenshot_seed"] == 5

@@ -123,22 +123,31 @@ def assert_tool_contract(configs: dict[str, AgentConfig]) -> None:
     unavailable config is skipped: it has no instructions, so it cannot be
     referencing a tool, and failing a run because a config nobody will invoke
     declares something is the wrong trade when 6.10 makes unavailable normal.
+
+    Keyed on each config's own `agent_key` rather than on the dict key, so
+    that a mapping holding more than one config per agent -- B1 is retrieved
+    once per image, and a rollout can serve two variations in one run -- is
+    checked variation by variation. Every served variation is a chance for an
+    instruction to name a tool Python does not offer, and checking only one of
+    them would leave the others to fail mid-run, which is the whole thing this
+    assertion exists to prevent. The dict key still names the entry in the
+    error, because that is what the caller can locate.
     """
     problems: list[str] = []
-    for agent_key, config in sorted(configs.items()):
+    for entry_key, config in sorted(configs.items()):
         if not config.available:
             continue
-        offered = TOOL_NAMES.get(agent_key)
+        offered = TOOL_NAMES.get(config.agent_key)
         if offered is None:
             problems.append(
-                f"{agent_key}: retrieved from LaunchDarkly but Python has no "
+                f"{entry_key}: retrieved from LaunchDarkly but Python has no "
                 f"tool contract for it. Known: {', '.join(LD_CONFIGURED_KEYS)}."
             )
             continue
         missing = sorted(set(config.declared_tools) - offered)
         if missing:
             problems.append(
-                f"{agent_key}: the AI Config declares {missing} but Python "
+                f"{entry_key}: the AI Config declares {missing} but Python "
                 f"offers {sorted(offered) or 'nothing'}. Either register the "
                 f"tool in Python or remove it from the config — an instruction "
                 f"referencing a tool that does not exist fails when the model "

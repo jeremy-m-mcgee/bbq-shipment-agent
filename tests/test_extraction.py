@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+from bbq_shipment_agent.context import ImageIdentity
 from bbq_shipment_agent.agents.model import Completion, ModelUnavailable
 from bbq_shipment_agent.recipients import ExtractionError, extract_from_images
 from bbq_shipment_agent.recipients.extraction import CONFIG_KEY
@@ -225,6 +226,63 @@ class TestDuplicatesReachB4:
         assert report.suppressed
 
 
+class TestPerImageRetrieval:
+    """Design 6.2 makes B1 the one stage whose variation can be scored against
+    an answer key, so its config is retrieved per image rather than per run.
+    That is only worth anything if the ledger can say which image got which."""
+
+    @pytest.fixture
+    def run_with_images(self, tmp_path):
+        (tmp_path / "capabilities.yaml").write_text(
+            textwrap.dedent(CONFIG), encoding="utf-8"
+        )
+        return initialize_run(
+            ledger_root=tmp_path / "ledger",
+            config_path=tmp_path / "capabilities.yaml",
+            agent_source=SnapshotAgentConfigs(SNAPSHOT),
+            snapshot_path=tmp_path / "snap.json",
+            images=tuple(ImageIdentity.of(p) for p in IMAGES),
+        )
+
+    def invocations(self, ledger_root):
+        path = Path(ledger_root) / "agent_invocations.jsonl"
+        return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def test_a_config_is_held_for_every_image(self, run_with_images):
+        assert set(run_with_images.image_configs) == {
+            ImageIdentity.of(p).key for p in IMAGES
+        }
+
+    def test_one_invocation_is_recorded_per_image(self, run_with_images, tmp_path):
+        recording = json.loads(REPLIES.read_text())
+        model = RecordedVision(recording, tuple(p.name for p in IMAGES))
+        extract_from_images(
+            run_with_images, IMAGES, model=model, ledger_root=tmp_path / "ledger"
+        )
+        rows = [
+            r
+            for r in self.invocations(tmp_path / "ledger")
+            if r["agent_key"] == CONFIG_KEY
+        ]
+        # One per image, not one per batch: a batch record could not express a
+        # run where a rollout served two variations.
+        assert len(rows) == len(IMAGES)
+        assert {r["image_key"] for r in rows} == {ImageIdentity.of(p).key for p in IMAGES}
+
+    def test_the_image_key_joins_to_the_run_row(self, run_with_images, tmp_path):
+        # LD is given a hash and never a filename, so this is the only thing
+        # that can say which file a served variation actually read.
+        from bbq_shipment_agent.wiring import extraction_reasons
+
+        mapping = extraction_reasons(IMAGES, None)["screenshot_keys"]
+        assert set(mapping.values()) == set(run_with_images.image_configs)
+        assert set(mapping) == {p.name for p in IMAGES}
+
+    def test_a_roster_run_holds_no_image_configs(self, run):
+        # No screenshots, so B1 never runs and there is nothing to retrieve.
+        assert run.image_configs == {}
+
+
 class TestRefusals:
     def test_a_missing_config_is_an_error_not_an_empty_result(self, run, tmp_path):
         run.agent_configs.pop(CONFIG_KEY)
@@ -243,6 +301,41 @@ class TestRefusals:
                 return Completion(text="I could not read that screenshot, sorry.")
 
         result = extract_from_images(run, IMAGES[:1], model=Prose(), ledger_root=tmp_path / "ledger")
-        assert result.unreadable == (IMAGES[0].name,)
+        assert [u.name for u in result.unreadable] == [IMAGES[0].name]
         assert Prose.calls == 2
         assert result.recipients == ()
+
+    def test_the_reason_a_reply_would_not_parse_is_kept(self, run, tmp_path):
+        # `_parse` diagnoses the failure and the retry nudge consumed it; the
+        # ledger recorded a bare "unreadable". Design 2 wants a surprising run
+        # diagnosable from the committed JSONL, and B1 is the stage whose
+        # variations are meant to be compared -- "prose instead of JSON" is a
+        # console edit, "invalid JSON" is a model choice, and they read the
+        # same without the reason.
+        class Prose:
+            def converse(self, invocation, messages, tools=()):
+                return Completion(text="I could not read that screenshot, sorry.")
+
+        ledger = tmp_path / "ledger"
+        result = extract_from_images(run, IMAGES[:1], model=Prose(), ledger_root=ledger)
+        assert result.unreadable[0].reason == "no JSON object in the reply"
+
+        rows = [
+            json.loads(line)
+            for line in (ledger / "agent_invocations.jsonl").read_text().splitlines()
+            if line
+        ]
+        outcomes = [r["outcome"] for r in rows if r["agent_key"] == CONFIG_KEY]
+        assert outcomes == ["unreadable: no JSON object in the reply"]
+
+    def test_a_reply_that_is_json_but_the_wrong_shape_says_so(self, run, tmp_path):
+        # The failure an instruction edit actually produces: valid JSON, no
+        # `recipients` list. Distinguishable from prose only by the reason.
+        class WrongShape:
+            def converse(self, invocation, messages, tools=()):
+                return Completion(text='{"people": []}')
+
+        result = extract_from_images(
+            run, IMAGES[:1], model=WrongShape(), ledger_root=tmp_path / "ledger"
+        )
+        assert result.unreadable[0].reason == "the JSON object has no `recipients` list"

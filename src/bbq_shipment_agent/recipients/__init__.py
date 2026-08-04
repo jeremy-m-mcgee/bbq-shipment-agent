@@ -15,6 +15,7 @@ from .dedupe import SuppressionReport, dedupe_recipients
 from .extraction import (
     ExtractionError,
     ExtractionResult,
+    Unreadable,
     Unresolved,
     extract_from_images,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "Region",
     "RepairResult",
     "RepairUnavailable",
+    "Unreadable",
     "Unresolved",
     "Roster",
     "RosterError",

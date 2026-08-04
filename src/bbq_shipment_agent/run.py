@@ -23,10 +23,13 @@ from typing import Any, Protocol
 
 from .agent_configs import (
     DEFAULT_SNAPSHOT_PATH,
+    EXTRACTION_KEY,
     AgentConfig,
     AgentConfigSource,
     OfflineAgentConfigs,
+    archived_variations,
     fetch_agent_configs,
+    fetch_extraction_configs,
     write_snapshot,
 )
 from .capabilities import (
@@ -37,7 +40,13 @@ from .capabilities import (
     resolve,
 )
 from .agents.tools import assert_tool_contract
-from .context import STAGE_RUN_INIT, build_context, reason_code, to_ld_context
+from .context import (
+    STAGE_RUN_INIT,
+    ContextBuilder,
+    ImageIdentity,
+    reason_code,
+    to_ld_context,
+)
 from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc_now
 
 #: LD flag key -> the capability it proposes. Design 6.1 and 6.8.
@@ -158,12 +167,21 @@ class Run:
     resolved: ResolvedCapabilities
     payload: FlagPayload
     started_at: str
+    #: The one context builder for this run, carried rather than rebuilt.
+    #: A1 constructs it before the provider is contacted, so the context the
+    #: capability flags were evaluated against is the same object every later
+    #: stage retrieves under -- see the module docstring in `context`.
+    contexts: ContextBuilder
     campaign: str | None = None
     packet_count: int | None = None
     #: Agent key -> the config retrieved at run start. Captured once so every
     #: invocation records the text the agent actually ran on, rather than
     #: whatever LD happens to serve when the record is written.
     agent_configs: dict[str, AgentConfig] = field(default_factory=dict)
+    #: Image content hash -> B1's config for *that* image. Empty on a roster
+    #: run, where B1 does not run at all. The one place a stage's config is
+    #: held per unit rather than per run -- see `fetch_extraction_configs`.
+    image_configs: dict[str, AgentConfig] = field(default_factory=dict)
 
     @property
     def capabilities(self):
@@ -173,22 +191,20 @@ class Run:
     def cap_fingerprint(self) -> str:
         return self.resolved.fingerprint
 
-    def context_for_stage(
-        self,
-        stage: str,
-        *,
-        recipient_key: str | None = None,
-        shipment_attributes: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """The multi-context for evaluating a flag at a later stage."""
-        return build_context(
-            run_id=self.run_id,
-            stage=stage,
-            profile=self.resolved.profile,
-            campaign=self.campaign,
-            packet_count=self.packet_count,
-            recipient_key=recipient_key,
-            shipment_attributes=shipment_attributes,
+    def context_for_stage(self, stage: str) -> dict[str, Any]:
+        """The multi-context for evaluating something at a later stage."""
+        return self.contexts.for_stage(stage)
+
+    def config_for_image(self, image: ImageIdentity) -> AgentConfig | None:
+        """B1's config for one screenshot, as retrieved at run start.
+
+        Falls back to the run-scoped config when this image was not among the
+        ones A1 resolved -- which happens when B1 is called directly rather
+        than through the front-ends. Identity still comes from A1 either way;
+        this never looks anything up.
+        """
+        return self.image_configs.get(image.key) or self.agent_configs.get(
+            EXTRACTION_KEY
         )
 
     def evaluation_reasons(self) -> dict[str, Any]:
@@ -234,6 +250,7 @@ def initialize_run(
     campaign: str | None = None,
     packet_count: int | None = None,
     run_id: str | None = None,
+    images: tuple[ImageIdentity, ...] = (),
 ) -> Run:
     """A1. Returns the run record's in-memory counterpart.
 
@@ -256,15 +273,19 @@ def initialize_run(
     run_id = run_id or f"run-{uuid.uuid4().hex[:12]}"
     requested_profile = profile or config.default_profile
 
-    context = build_context(
+    # Built before the provider is contacted, so A1's own evaluation and every
+    # later stage's retrieval go through one object rather than two dicts that
+    # agree by coincidence. `requested_profile` is what `resolve` will report
+    # back as `resolved.profile` -- both are `profile or default_profile` --
+    # so carrying it forward is not a guess about the outcome.
+    contexts = ContextBuilder(
         run_id=run_id,
-        stage=STAGE_RUN_INIT,
         profile=requested_profile,
         campaign=campaign,
         packet_count=packet_count,
     )
 
-    payload = (provider or OfflineProvider()).fetch(context)
+    payload = (provider or OfflineProvider()).fetch(contexts.for_stage(STAGE_RUN_INIT))
     resolved = resolve(
         config,
         profile=requested_profile,
@@ -277,6 +298,7 @@ def initialize_run(
         resolved=resolved,
         payload=payload,
         started_at=utc_now(),
+        contexts=contexts,
         campaign=campaign,
         packet_count=packet_count,
     )
@@ -284,16 +306,24 @@ def initialize_run(
     # Pulled after the run exists so each agent is evaluated under this run's
     # identity and its own `stage` kind. Evaluating all four under one context
     # would make the per-agent targeting of 6.6 silently ineffective.
-    run.agent_configs = fetch_agent_configs(
-        agent_source or OfflineAgentConfigs(), run.context_for_stage
-    )
+    source = agent_source or OfflineAgentConfigs()
+    run.agent_configs = fetch_agent_configs(source, run.context_for_stage)
+
+    # B1 again, once per screenshot. The run-scoped fetch above stays: it is
+    # what the snapshot commits, what the offline path reads back, and the
+    # answer for a run with no screenshots at all.
+    run.image_configs = fetch_extraction_configs(source, contexts, images)
+    archived = archived_variations(run.agent_configs, run.image_configs)
 
     # Design 6.4 mitigation 1, the highest-value one: an instruction naming a
     # tool Python does not offer becomes a startup error rather than a
     # mid-run surprise. Deliberately before the snapshot write and the ledger
     # append -- a run that cannot legally proceed should leave neither a
     # cached config nor a half-open row behind.
-    assert_tool_contract(run.agent_configs)
+    # Every served variation, not just the run-scoped one: a rollout can put a
+    # second `screenshot-extraction` instruction into this run, and it gets the
+    # same startup check as the first.
+    assert_tool_contract({**run.agent_configs, **archived})
 
     # Design 6.4 mitigation 3, and the offline cache of 6.10 in one artifact.
     # Skipped when nothing usable came back: `write_snapshot` already refuses
@@ -301,7 +331,7 @@ def initialize_run(
     # all-unavailable run has nothing to add, so writing would only create an
     # empty file on the very path that needs the cache intact.
     if any(config.available for config in run.agent_configs.values()):
-        write_snapshot(run.agent_configs, snapshot_path)
+        write_snapshot({**run.agent_configs, **archived}, snapshot_path)
 
     LedgerWriter(ledger_root).append(
         RunRecord(
@@ -318,6 +348,33 @@ def initialize_run(
     return run
 
 
+def record_run_reasons(
+    ledger_root: Path | str,
+    run: Run,
+    extra_reasons: dict[str, Any] | None = None,
+) -> RunRecord:
+    """Append what a run learned about itself to the row A1 opened.
+
+    For a run that stops before planning -- `run extract` is the only one
+    today -- this is the whole of design 2's reconstructibility requirement.
+    Which screenshots B1 read, and which content hash each one has, exist
+    nowhere else: LaunchDarkly is given the hash and never the filename, so
+    without this append the `image_key` on every invocation record points at
+    a file nothing in the committed JSONL can name.
+
+    **Merge from `run.evaluation_reasons()`, never from nothing.**
+    `evaluation_reasons` is one JSON field, so an append rewrites it whole and
+    a writer that starts from a bare dict silently drops what A1 recorded.
+    `plan._record_planning` merges the same way for the same reason; this
+    function exists so the two front-ends cannot disagree about it.
+    """
+    reasons = run.evaluation_reasons()
+    reasons.update(extra_reasons or {})
+    record = RunRecord(run_id=run.run_id, evaluation_reasons=reasons)
+    LedgerWriter(ledger_root).append(record)
+    return record
+
+
 def record_agent_invocation(
     ledger_root: Path | str,
     run: Run,
@@ -326,6 +383,8 @@ def record_agent_invocation(
     outcome: str,
     iterations: int = 1,
     shipment_key: str | None = None,
+    image_key: str | None = None,
+    config: AgentConfig | None = None,
 ) -> AgentInvocationRecord:
     """Append the ledger record for one agent invocation.
 
@@ -337,8 +396,14 @@ def record_agent_invocation(
 
     Invocations have no merge key: two calls to the same agent on the same
     shipment are two facts, not a correction of one another.
+
+    `config` is passed when the caller holds one the run-scoped map does not:
+    B1's config is retrieved per image, so the run-scoped entry would name the
+    wrong variation on any run where a rollout served more than one. Passing
+    it is still identity from A1 -- it is the config that image was served at
+    run start, not a lookup.
     """
-    config = run.agent_configs.get(agent_key)
+    config = config or run.agent_configs.get(agent_key)
     if config is None:
         raise KeyError(
             f"{agent_key}: no config was retrieved at run start. "
@@ -349,6 +414,7 @@ def record_agent_invocation(
         run_id=run.run_id,
         agent_key=agent_key,
         shipment_key=shipment_key,
+        image_key=image_key,
         instruction_variation_key=config.variation_key,
         instruction_version=config.version,
         instruction_hash=config.instruction_hash,
