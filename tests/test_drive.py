@@ -166,7 +166,7 @@ class TestWhatVaries:
     def test_all_reads_everything_every_time(self):
         app = FakeApp()
         run(app, runs=2, every=0, vary="all")
-        assert app.sent(0) == {"mode": ["all"]}
+        assert app.sent(0) == {"mode": ["all"], "depth": ["plan"]}
 
     def test_roster_asks_for_no_screenshots_at_all(self):
         app = FakeApp()
@@ -206,6 +206,41 @@ class TestWhatVaries:
     def test_an_unknown_varying_rule_is_refused(self):
         with pytest.raises(DriveError, match="not a way to vary"):
             plan_request(DriveOptions(vary="sideways"), IMAGES, 0, random.Random(1))
+
+
+class TestDepth:
+    """How far each run goes, which is the other thing worth varying.
+
+    An extract-only run is one vision call per image and no carrier quote, so
+    a session driving a B1 rollout costs a fraction of the same session at
+    full depth -- and B1 is the only stage a rollout here can bucket on.
+    """
+
+    def test_the_default_is_the_full_plan(self):
+        app = FakeApp()
+        run(app, runs=1, every=0)
+        assert app.sent(0)["depth"] == ["plan"]
+
+    def test_extract_only_is_asked_for_explicitly(self):
+        app = FakeApp()
+        run(app, runs=2, every=0, depth="extract")
+        assert [app.sent(i)["depth"] for i in range(2)] == [["extract"]] * 2
+
+    def test_mixed_alternates_rather_than_flipping_a_coin(self):
+        # A coin flip can hand you five plans in a row, which is the session
+        # you were trying not to run.
+        app = FakeApp()
+        run(app, runs=4, every=0, depth="mixed")
+        got = [app.sent(i)["depth"][0] for i in range(4)]
+        assert got == ["plan", "extract", "plan", "extract"]
+
+    def test_extracting_from_no_screenshots_names_the_combination(self):
+        with pytest.raises(DriveError, match="nothing to do"):
+            run(FakeApp(), runs=1, every=0, vary="roster", depth="extract")
+
+    def test_an_unknown_depth_is_refused(self):
+        with pytest.raises(DriveError, match="not a depth"):
+            run(FakeApp(), runs=1, every=0, depth="everything")
 
 
 class TestPacing:

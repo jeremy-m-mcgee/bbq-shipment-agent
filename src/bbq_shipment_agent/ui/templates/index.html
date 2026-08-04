@@ -114,6 +114,20 @@
           <option value="full">full</option>
         </select>
       </label>
+      <label class="field">depth <span class="dim">(where the run stops)</span>
+        <select name="depth" id="depth">
+          <option value="plan">full plan &mdash; A1 through D1</option>
+          <option value="extract" {% if not screenshots %}disabled{% endif %}>
+            screenshots only &mdash; A1 and B1, then stop
+          </option>
+        </select>
+      </label>
+      <p class="dim" style="font-size:12px;margin:0 0 14px">
+        Extraction is the stage worth iterating on alone: it is the only one with
+        an answer key, and its config is served per image. Stopping after B1 skips
+        every Shippo quote, so it costs one vision call per screenshot and
+        needs no other key.
+      </p>
       <label class="field">campaign <span class="dim">(run context attribute)</span>
         <input type="text" name="campaign" value="{{ options.campaign or '' }}"
                placeholder="aug-cook">
@@ -227,6 +241,16 @@ if (shots) {
     refresh();
   };
   refresh();
+}
+
+// The button names what it is about to do. "Generate manifest" on a run that
+// stops after B1 would promise something the depth has already ruled out.
+const depth = document.getElementById('depth');
+if (depth && go) {
+  const label = () =>
+    go.textContent = depth.value === 'extract' ? 'Read screenshots' : 'Generate manifest';
+  depth.addEventListener('change', label);
+  label();
 }
 </script>
 {% endblock %}

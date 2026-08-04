@@ -146,6 +146,11 @@ class DriveOptions:
     runs: int = 0
     #: sample | explicit | all | roster
     vary: str = "sample"
+    #: plan | extract | mixed. `extract` stops each run after B1, which is one
+    #: vision call per image and no carrier quote at all -- the depth to drive
+    #: a rollout at, since B1 is what a rollout here can bucket on. `mixed`
+    #: alternates, for a session that exercises both.
+    depth: str = "plan"
     #: Fixed sample size. None picks a new one per run, which is the point.
     count: int | None = None
     #: Cycled, one per run. Empty leaves the launch default alone.
@@ -208,6 +213,19 @@ def plan_request(
         )
 
     fields.insert(0, ("mode", mode))
+
+    depth = _depth_for(options, index)
+    if depth == "extract" and ("no_screenshots", "1") in fields:
+        # There is nothing for B1 to read on the roster path, and the app says
+        # so with a 400. Saying it here names the combination instead of the
+        # request that carried it.
+        raise DriveError(
+            "--depth extract has nothing to do on a run with no screenshots. "
+            "Drop --vary roster, or drive at --depth plan."
+        )
+    fields.append(("depth", depth))
+    summary = f"{summary}  ->{depth}"
+
     if options.profiles:
         profile = options.profiles[index % len(options.profiles)]
         fields.append(("profile", profile))
@@ -219,6 +237,22 @@ def plan_request(
     if options.replay:
         fields.append(("replay", "1"))
     return Request(fields, summary)
+
+
+def _depth_for(options: DriveOptions, index: int) -> str:
+    """One run's depth. `mixed` alternates rather than randomises.
+
+    Alternating so a short session is guaranteed to contain both -- a coin
+    flip can hand you five plans in a row, which is the session you were
+    trying not to run.
+    """
+    if options.depth == "mixed":
+        return "extract" if index % 2 else "plan"
+    if options.depth not in ("plan", "extract"):
+        raise DriveError(
+            f"{options.depth!r} is not a depth. Use plan, extract or mixed."
+        )
+    return options.depth
 
 
 @dataclass
@@ -295,10 +329,20 @@ def drive(
 
     say(
         f"  driving {options.base_url}   {len(catalogue)} screenshot(s) offered   "
-        f"one run per {options.every:g}s, varying by {options.vary}"
+        f"one run per {options.every:g}s, varying by {options.vary}, "
+        f"depth {options.depth}"
     )
     if not options.replay:
-        say("  these are live runs: vision calls, Shippo quotes and a D1 call each.")
+        # Named per depth, because the two cost wildly different things and
+        # "live" on its own reads as the expensive one.
+        say(
+            "  these are live runs: a vision call per screenshot"
+            + (
+                "."
+                if options.depth == "extract"
+                else ", plus Shippo quotes and a D1 call each."
+            )
+        )
 
     try:
         _loop(options, transport, report, rng, catalogue, say, sleep, clock)

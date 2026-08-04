@@ -130,7 +130,12 @@ screenshot run therefore gets as far as C2 and stops, because `RecordedQuoter`
 refuses to invent a rate it never recorded — which is the behaviour you want.
 Fully offline works today for the **roster** path (`--recipients
 tests/fixtures/roster-sf-dc.yaml`, then tick "all" with no screenshots).
-Screenshots plus recorded quotes needs those lanes recorded first.
+A *full plan* from screenshots plus recorded quotes needs those lanes recorded
+first.
+
+The exception is **depth**. Set the form to `screenshots only` and a replayed
+screenshot run is completely offline, because it stops before the quoter that
+has one lane. `--extractions` is the only recording it needs.
 
 ### Driving it: many runs, over time
 
@@ -159,6 +164,21 @@ differ only in wall-clock time exercise the server and measure nothing.
 | no images at all, roster only | `--vary roster` |
 | the capability profile, cycled one per run | `--profiles baseline,planner_trial` |
 | a numbered campaign on the run context | `--campaign aug-load` |
+| where the run stops | `--depth plan\|extract\|mixed` |
+
+**`--depth extract` is the one to drive a B1 rollout at.** It stops each run
+after extraction: one vision call per screenshot, no Shippo quote and no D1.
+That is the whole cost, it needs no key but `ANTHROPIC_API_KEY`, and B1 is the
+only stage a rollout here can bucket on anyway — so a hundred extract-only runs
+say more about a prompt than a handful of full plans, for less money. `mixed`
+alternates the two.
+
+```bash
+uv run bbq-shipment-agent drive --every 30 --depth extract --vary sample
+```
+
+Two other ways to reach the same depth: `run extract` on the CLI, and the
+**depth** control on the form.
 
 `--every` is a **floor on starts, not a promise**. The app runs one at a time
 and refuses the second, so the driver waits for the run in flight and fires

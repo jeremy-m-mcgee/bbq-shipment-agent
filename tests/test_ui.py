@@ -22,12 +22,15 @@ from fastapi.testclient import TestClient
 from bbq_shipment_agent.ui import RunService, create_app
 from bbq_shipment_agent.ui.app import _options_for
 from bbq_shipment_agent.ui.view import screenshot_catalogue
-from bbq_shipment_agent.wiring import RunOptions
+from bbq_shipment_agent.wiring import RunDepth, RunOptions
 
 FIXTURES = Path(__file__).parent / "fixtures"
 QUOTES = FIXTURES / "shippo-quotes-sf-dc.json"
 VALIDATIONS = FIXTURES / "shippo-addresses.json"
 COMPLETIONS = FIXTURES / "d1-completions.json"
+EXTRACTIONS = FIXTURES / "b1-extractions.json"
+FIXTURE_SHOTS = FIXTURES / "screenshots"
+SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
 
 CONFIG = """
     profiles:
@@ -283,6 +286,113 @@ class TestTheFormBecomesOptions:
             profile="", campaign="", offline=False, replay=True, no_screenshots=False,
         )
         assert options.ledger == Path("real-ledger")
+
+
+class TestDepth:
+    """Where the run stops, as a form field."""
+
+    def test_the_default_is_the_full_plan(self, tmp_path):
+        options = _options_for(
+            RunOptions(), directory=tmp_path, mode="all", names=[], count="", seed="",
+            profile="", campaign="", offline=False, replay=True, no_screenshots=False,
+        )
+        assert options.depth is RunDepth.PLAN
+
+    def test_extract_only_reaches_the_options(self, tmp_path):
+        options = _options_for(
+            RunOptions(), directory=tmp_path, mode="all", names=[], count="", seed="",
+            profile="", campaign="", offline=False, replay=True, no_screenshots=False,
+            depth="extract",
+        )
+        assert options.depth is RunDepth.EXTRACT
+
+    def test_an_unknown_depth_is_refused_rather_than_defaulted(self, tmp_path):
+        with pytest.raises(ValueError, match="not a depth"):
+            _options_for(
+                RunOptions(), directory=tmp_path, mode="all", names=[], count="",
+                seed="", profile="", campaign="", offline=False, replay=True,
+                no_screenshots=False, depth="everything",
+            )
+
+    def test_extracting_from_no_screenshots_is_refused(self, tmp_path):
+        # The roster file is already structured. An extract-only run over it
+        # would open a run record and stop, having read nothing.
+        with pytest.raises(ValueError, match="needs screenshots"):
+            _options_for(
+                RunOptions(), directory=tmp_path, mode="all", names=[], count="",
+                seed="", profile="", campaign="", offline=False, replay=True,
+                no_screenshots=True, depth="extract",
+            )
+
+
+class TestAnExtractOnlyRun:
+    """A1 and B1 through HTTP, and nothing downstream.
+
+    This is the first *fully* offline screenshot run the app has. Design 10
+    records why a replayed screenshot plan cannot be: `shippo-quotes-sf-dc.json`
+    holds one lane and the fixture screenshots hold twenty-odd destinations, so
+    C2 stops. Stopping after B1 never reaches C2, so the recordings that do
+    exist are the only ones it needs.
+    """
+
+    @pytest.fixture
+    def client(self, options, workspace):
+        # B1 needs an AI Config, and offline it comes from the snapshot. The
+        # committed one is copied into the workspace rather than pointed at,
+        # so nothing a run does can touch a file the repo tracks.
+        (workspace / "snapshot.json").write_bytes(SNAPSHOT.read_bytes())
+        chosen = replace(
+            options, screenshots=FIXTURE_SHOTS, extractions=EXTRACTIONS, quotes=None
+        )
+        return TestClient(create_app(chosen, screenshot_dir=FIXTURE_SHOTS))
+
+    @pytest.fixture
+    def finished(self, client):
+        response = client.post(
+            "/runs",
+            data={
+                "mode": "explicit",
+                "screenshot": ["01-imessage-thread.png"],
+                "replay": "1",
+                "depth": "extract",
+            },
+        )
+        assert response.status_code == 200
+        job_id = response.url.path.rsplit("/", 1)[-1]
+        state = finish(client, job_id)
+        return job_id, state, client.get(f"/runs/{job_id}")
+
+    def test_the_run_finishes(self, finished):
+        _, state, _ = finished
+        assert state["state"] == "finished", state["error"]
+
+    def test_the_outcome_is_extracted_not_no_manifest(self, finished):
+        # There was never going to be a manifest. Reporting the absence of one
+        # would read as a disappointing run rather than a normal one.
+        _, state, _ = finished
+        assert state["outcome"] == "extracted"
+
+    def test_the_page_shows_who_was_read(self, finished):
+        _, _, page = finished
+        assert "Ana Ruiz" in page.text
+        assert "recipient(s) read" in page.text
+
+    def test_the_page_says_which_variation_read_which_image(self, finished):
+        # The only question an extraction run exists to answer, per design 6.6.
+        _, _, page = finished
+        assert "01-imessage-thread.png" in page.text
+        assert "image key" in page.text
+
+    def test_nothing_downstream_of_b1_ran(self, finished):
+        _, _, page = finished
+        assert "Manifest" not in page.text
+        assert "No manifest" not in page.text
+
+    def test_the_run_still_reaches_the_ledger(self, finished, options):
+        # A1 really did open a run, and the ledger is append-only.
+        job_id, _, _ = finished
+        runs = (options.ledger / "runs.jsonl").read_text(encoding="utf-8")
+        assert "screenshot_keys" in runs
 
 
 class TestAWholeRun:

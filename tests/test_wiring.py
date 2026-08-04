@@ -11,12 +11,18 @@ sampling cases are unchanged; the explicit ones are new, because before the UI
 there was no way to name a file.
 """
 
+from pathlib import Path
+
 import pytest
 
+from bbq_shipment_agent import wiring
 from bbq_shipment_agent.recipients import ExtractionError
 from bbq_shipment_agent.wiring import (
+    RunContext,
+    RunDepth,
     RunOptions,
     ScreenshotSelection,
+    extract_with,
     extraction_reasons,
     open_run,
     resolve_screenshots,
@@ -220,6 +226,33 @@ class TestWhatReachesTheRunRow:
         selection = ScreenshotSelection(explicit=("02-shot.png",))
         chosen = resolve_screenshots(options(images, explicit=("02-shot.png",)))
         assert "screenshot_seed" not in extraction_reasons(chosen, selection)
+
+
+class TestDepth:
+    """`run extract`'s stopping point, now that both front-ends reach it.
+
+    The seam itself is not new -- B1 runs inside `build_roster` and nothing
+    after it does. What is new is that it lives in one place, because a
+    browser copy of it would have been a copy that forgot `record_run_reasons`
+    and left every B1 invocation hash naming a screenshot the ledger cannot
+    resolve.
+    """
+
+    def test_a_run_plans_unless_told_otherwise(self):
+        assert RunOptions().depth is RunDepth.PLAN
+
+    def test_extracting_without_screenshots_is_refused(self, tmp_path):
+        # Not a silent no-op: the caller asked B1 to read something and there
+        # is nothing to read.
+        context = RunContext(run=None, connection="offline", snapshot="none")
+        with pytest.raises(ExtractionError, match="needs screenshots"):
+            extract_with(context, RunOptions(depth=RunDepth.EXTRACT))
+
+    def test_run_with_is_the_only_thing_that_reads_the_depth(self):
+        source = Path(wiring.__file__).read_text(encoding="utf-8")
+        # One dispatch point. A second `if depth is` somewhere else is how the
+        # two front-ends start disagreeing about where a run stops.
+        assert source.count("RunDepth.EXTRACT") == 1
 
 
 class TestReplayIsAllOrNothing:

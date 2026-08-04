@@ -43,6 +43,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import FileResponse
 
 from ..wiring import (
+    RunDepth,
     RunOptions,
     ScreenshotSelection,
     available_screenshots,
@@ -129,6 +130,7 @@ def create_app(
         offline: str = Form(""),
         replay: str = Form(""),
         no_screenshots: str = Form(""),
+        depth: str = Form("plan"),
     ) -> Any:
         try:
             chosen = _options_for(
@@ -143,6 +145,7 @@ def create_app(
                 offline=bool(offline),
                 replay=bool(replay),
                 no_screenshots=bool(no_screenshots),
+                depth=depth,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -251,6 +254,7 @@ def _options_for(
     offline: bool,
     replay: bool,
     no_screenshots: bool,
+    depth: str = "plan",
 ) -> RunOptions:
     """The form, as options. Every branch here is a user-visible choice.
 
@@ -260,6 +264,19 @@ def _options_for(
     """
     selection: ScreenshotSelection | None = None
     screenshots: Path | None = None if no_screenshots else directory
+
+    try:
+        wanted_depth = RunDepth(depth)
+    except ValueError as exc:
+        raise ValueError(f"{depth!r} is not a depth. Use plan or extract.") from exc
+    if wanted_depth is RunDepth.EXTRACT and screenshots is None:
+        # The roster file is already structured, so there is nothing for B1 to
+        # do and an extract-only run over it would open a run record and stop
+        # having read nothing.
+        raise ValueError(
+            "an extract-only run needs screenshots. The roster path has "
+            "nothing to extract."
+        )
 
     if screenshots is not None:
         if mode == "explicit":
@@ -287,6 +304,7 @@ def _options_for(
         profile=profile.strip() or None,
         campaign=campaign.strip() or None,
         offline=offline,
+        depth=wanted_depth,
     )
     if not replay:
         # The recordings were supplied at launch; this run was asked to go

@@ -19,6 +19,7 @@ here, and so is whether a real recipient list produces a sensible manifest.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 from .agent_configs import DEFAULT_SNAPSHOT_PATH
@@ -51,15 +52,15 @@ from .recipients import (
     RosterError,
     to_shipments,
 )
-from .run import record_run_reasons
 from .wiring import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DB_PATH,
     DEFAULT_LEDGER_ROOT,
     PrintProgress,
+    RunDepth,
     RunOptions,
     ScreenshotSelection,
-    build_roster,
+    extract_with,
     missing_credentials,
     open_run,
     plan_with,
@@ -278,7 +279,7 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
     The run record is still written, because A1 really did open a run and the
     ledger is append-only. Pass a throwaway `--ledger` when iterating.
     """
-    options = _options(args)
+    options = replace(_options(args), depth=RunDepth.EXTRACT)
     if options.screenshots is None:
         print("run extract needs --screenshots; there is nothing for B1 to read.")
         return 2
@@ -286,13 +287,10 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
     context = open_run(options, PrintProgress())
     try:
         _print_run(context.run, context.connection, context.snapshot, args.ledger)
-        # B1 runs inside `build_roster` and nothing after it does, which is
-        # what makes this a seam rather than a special case.
-        roster = build_roster(options, context.run, context.images, PrintProgress())
-        # `plan_with` records this on the way through planning; this command
-        # stops before planning, so it has to do it itself or the hash on
-        # every invocation record names a file the ledger cannot resolve.
-        record_run_reasons(options.ledger, context.run, context.extra_reasons)
+        # The stopping point itself lives in `wiring`, because the browser
+        # reaches for the same one. What is left here is how a terminal shows
+        # it.
+        roster = extract_with(context, options, PrintProgress()).roster
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
         if context.client is not None:
@@ -629,6 +627,7 @@ def _cmd_drive(args: argparse.Namespace) -> int:
         runs=args.runs,
         vary=args.vary,
         count=args.count,
+        depth=args.depth,
         profiles=tuple(p.strip() for p in args.profiles.split(",") if p.strip()),
         campaign=args.campaign,
         seed=args.seed,
@@ -732,6 +731,12 @@ def build_parser() -> argparse.ArgumentParser:
     driver.add_argument(
         "--count", type=int, default=None,
         help="fix the number of screenshots per run instead of varying it",
+    )
+    driver.add_argument(
+        "--depth", default="plan", choices=("plan", "extract", "mixed"),
+        help="where each run stops (default: plan). `extract` stops after B1 -- "
+             "one vision call per image, no Shippo quote and no D1 -- which is "
+             "the cheap way to drive a B1 rollout. `mixed` alternates.",
     )
     driver.add_argument(
         "--profiles", default="",

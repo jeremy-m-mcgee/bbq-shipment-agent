@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import random
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -74,6 +75,7 @@ from .run import (
     OfflineProvider,
     initialize_run,
     launchdarkly_client,
+    record_run_reasons,
 )
 
 DEFAULT_LEDGER_ROOT = Path("ledger")
@@ -112,6 +114,25 @@ class PrintProgress:
 
     def emit(self, stage: str, message: str, **fields: Any) -> None:
         print(f"  {stage:<13}{message}" if stage else f"               {message}")
+
+
+class RunDepth(StrEnum):
+    """How far down the pipeline a run goes.
+
+    Two values, because there is exactly one honest seam and `run extract`
+    already found it: B1 runs inside `build_roster` and nothing after it does,
+    so stopping there is a place the pipeline naturally ends rather than a
+    stage counter to keep in step with design 4.
+
+    It is a real distinction rather than a convenience. `extract` costs one
+    vision call per image and touches no carrier API; `plan` quotes every
+    configuration of every shipment, which is minutes of waiting that says
+    nothing about a prompt. A front-end iterating on B1 wants the first and
+    gets charged for the second.
+    """
+
+    PLAN = "plan"
+    EXTRACT = "extract"
 
 
 @dataclass(frozen=True)
@@ -170,6 +191,10 @@ class RunOptions:
     #: B1's input directory. None means the roster file supplies the people.
     screenshots: Path | None = None
     selection: ScreenshotSelection | None = None
+    #: Where the run stops. The CLI says it with a subcommand and the form
+    #: says it with a field; both arrive here, so neither front-end has its
+    #: own idea of what "extract only" means.
+    depth: RunDepth = RunDepth.PLAN
     #: Replay files. Each one is a live path not taken.
     quotes: Path | None = None
     validations: Path | None = None
@@ -610,6 +635,44 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
         images=images,
         extra_reasons=extraction_reasons(images, options.selection) if images else {},
     )
+
+
+def extract_with(
+    context: RunContext, options: RunOptions, progress: Progress | None = None
+) -> RunContext:
+    """B1 against an already-opened run, and then stop.
+
+    This is `run extract`'s body, moved here when the UI wanted the same
+    depth. Two front-ends reaching the same seam by writing it out twice is
+    how the CLI and the browser drift, and the `record_run_reasons` call below
+    is the exact detail that would have been missed: `plan_with` records the
+    reasons on its way through planning, so a run that stops before planning
+    has to record them itself or every B1 invocation hash names a screenshot
+    the ledger cannot resolve back to a filename.
+    """
+    progress = progress or NullProgress()
+    if options.screenshots is None:
+        raise ExtractionError(
+            "an extract-only run needs screenshots; there is nothing for B1 "
+            "to read, and the roster file needs no extracting."
+        )
+    context.roster = build_roster(options, context.run, context.images, progress)
+    record_run_reasons(options.ledger, context.run, context.extra_reasons)
+    progress.emit(
+        "B1",
+        f"{context.roster.packet_count} recipient(s) — stopping, extract only",
+        packet_count=context.roster.packet_count,
+    )
+    return context
+
+
+def run_with(
+    context: RunContext, options: RunOptions, progress: Progress | None = None
+) -> RunContext:
+    """Whichever depth was asked for. The only thing that reads `depth`."""
+    if options.depth is RunDepth.EXTRACT:
+        return extract_with(context, options, progress)
+    return plan_with(context, options, progress)
 
 
 def plan_with(
