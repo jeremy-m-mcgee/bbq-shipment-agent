@@ -524,6 +524,45 @@ class TestAgentInvocationRecording:
             "SELECT count(*) FROM agent_invocations"
         ).fetchone() == (2,)
 
+    def test_the_tool_trace_lands_in_the_ledger(self, ledger, config_path, tmp_path):
+        # Call order and repeats are kept: "validated twice" is the fact worth
+        # having, and a set would throw it away.
+        run = self._run(ledger, config_path, tmp_path)
+        record_agent_invocation(
+            ledger,
+            run,
+            "manifest-verification",
+            outcome="pass",
+            tools_offered=["validate_address", "read_image_region"],
+            tools_called=["read_image_region", "validate_address", "validate_address"],
+        )
+        connection = rebuild(ledger)
+        assert connection.execute(
+            "SELECT tools_offered, tools_called FROM agent_invocations"
+        ).fetchone() == (
+            ["validate_address", "read_image_region"],
+            ["read_image_region", "validate_address", "validate_address"],
+        )
+
+    def test_offered_nothing_and_no_tool_loop_are_different_lines(
+        self, ledger, config_path, tmp_path
+    ):
+        # The ledger's usual distinction: an absent key says this append knows
+        # nothing about the field, an empty list is a measurement. A stage
+        # with no tool loop must not read as one that was offered nothing.
+        run = self._run(ledger, config_path, tmp_path)
+        offered_nothing = record_agent_invocation(
+            ledger, run, "manifest-verification", outcome="pass",
+            tools_offered=[], tools_called=[],
+        )
+        no_loop = record_agent_invocation(
+            ledger, run, "manifest-verification", outcome="pass"
+        )
+        assert offered_nothing.tools_offered == []
+        assert no_loop.tools_offered is None
+        assert "tools_offered" in offered_nothing.to_dict()
+        assert "tools_offered" not in no_loop.to_dict()
+
     def test_an_unretrieved_agent_is_refused(self, ledger, config_path, tmp_path):
         run = self._run(ledger, config_path, tmp_path)
         with pytest.raises(KeyError, match="no config was retrieved"):

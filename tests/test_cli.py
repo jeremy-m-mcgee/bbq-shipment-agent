@@ -33,6 +33,7 @@ class TestItBuilds:
         [
             ["ledger", "verify"],
             ["ledger", "rebuild"],
+            ["ledger", "tools"],
             ["run", "init"],
             ["run", "plan"],
             ["run", "review"],
@@ -156,6 +157,78 @@ class TestOptionsAdapter:
         options = _options(parser.parse_args(["run", "init", "--packet-count", "22"]))
         assert options.packet_count == 22
         assert options.screenshots is None
+
+
+class TestTheToolReadout:
+    """`ledger tools` answers "which tools did this run use" from the JSONL.
+
+    It reads a cache built in memory rather than `ledger.duckdb`, so it cannot
+    report something a stale committed cache is holding and the source of
+    truth is not.
+    """
+
+    @pytest.fixture
+    def ledger(self, tmp_path):
+        from bbq_shipment_agent.ledger import AgentInvocationRecord, LedgerWriter
+
+        writer = LedgerWriter(tmp_path / "ledger")
+        writer.append(
+            AgentInvocationRecord(
+                run_id="r1", agent_key="screenshot-extraction", outcome="extracted:7"
+            )
+        )
+        writer.append(
+            AgentInvocationRecord(
+                run_id="r1",
+                agent_key="address-repair",
+                outcome="repaired:2/3",
+                tools_offered=["read_image_region", "validate_address"],
+                tools_called=["read_image_region", "validate_address", "validate_address"],
+            )
+        )
+        writer.append(
+            AgentInvocationRecord(
+                run_id="r2",
+                agent_key="review-narrator",
+                outcome="clean",
+                tools_offered=["read_manifest"],
+                tools_called=[],
+            )
+        )
+        return tmp_path / "ledger"
+
+    def _run(self, ledger, capsys, run=""):
+        import argparse
+
+        from bbq_shipment_agent.cli import _cmd_tools
+
+        code = _cmd_tools(argparse.Namespace(ledger=ledger, run=run))
+        return code, capsys.readouterr().out
+
+    def test_it_counts_repeat_calls_rather_than_naming_a_tool_once(
+        self, ledger, capsys
+    ):
+        _, out = self._run(ledger, capsys)
+        assert "validate_address x2" in out
+        assert "read_image_region x1" in out
+
+    def test_offered_but_never_called_is_visible(self, ledger, capsys):
+        # The finding the pair exists for: three tools handed over and none
+        # used is a fact about the instructions, not a quiet nothing.
+        _, out = self._run(ledger, capsys, run="r2")
+        assert "offered read_manifest" in out
+        assert "called nothing" in out
+
+    def test_a_stage_with_no_tool_loop_says_so(self, ledger, capsys):
+        _, out = self._run(ledger, capsys, run="r1")
+        assert "no tool loop" in out
+
+    def test_an_unknown_run_is_an_error_not_an_empty_report(self, ledger, capsys):
+        # Silence would read as "that run called no tools", which is a
+        # different answer from "there is no such run".
+        code, out = self._run(ledger, capsys, run="nope")
+        assert code == 1
+        assert "no agent invocations for run nope" in out
 
 
 class TestRefusals:

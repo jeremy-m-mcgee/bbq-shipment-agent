@@ -285,6 +285,37 @@ class TestTheLedger:
         assert mine[0].iterations == result.iterations
         assert "screenshot-extraction" in {r.agent_key for r in records}
 
+    def test_the_ledger_line_carries_the_tool_trace(self, result, tmp_path):
+        # The same trace `RepairResult` returns, on the durable record: the
+        # result object is gone when the process exits and the question
+        # "which tools did this run use" is asked months later.
+        records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
+        mine = [r for r in records if r.agent_key == CONFIG_KEY][0]
+        assert mine.tools_called == list(result.tools_called)
+        assert set(mine.tools_offered) == {"validate_address", "read_image_region"}
+
+    def test_a_run_with_no_images_records_the_tool_it_lacked(
+        self, run, validator, needing_repair, tmp_path
+    ):
+        # Offered is per run, not the registry: without screenshots there is
+        # no `read_image_region`, and a line claiming otherwise would make an
+        # unread image look like a choice the model made.
+        repair_addresses(
+            run, needing_repair, validator=validator, model=Scripted([]),
+            ledger_root=tmp_path / "ledger",
+        )
+        records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
+        mine = [r for r in records if r.agent_key == CONFIG_KEY][0]
+        assert mine.tools_offered == ["validate_address"]
+        assert mine.tools_called == []
+
+    def test_b1_records_no_tool_columns_at_all(self, result, tmp_path):
+        # B1 has no tool loop (design 6.3), so it says nothing about tools
+        # rather than saying it was offered none.
+        records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
+        b1 = [r for r in records if r.agent_key == "screenshot-extraction"]
+        assert b1 and all(r.tools_offered is None and r.tools_called is None for r in b1)
+
 
 class TestRefusals:
     def test_an_unavailable_config_does_not_silently_pass_the_set(

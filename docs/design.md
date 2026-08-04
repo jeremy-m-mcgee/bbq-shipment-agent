@@ -546,8 +546,35 @@ Per agent invocation:
 ```
 run_id, shipment_key, image_key, agent_key,
 instruction_variation_key, instruction_version, instruction_hash,
-model, iterations, outcome, timestamp
+model, iterations, outcome, tools_offered, tools_called, timestamp
 ```
+
+`tools_offered` and `tools_called` are 6.1's two halves as a fact rather than
+a claim: LD decides what an agent is told, Python decides what an agent can
+do, and until now neither half was written down per invocation. `bbq-shipment-agent
+ledger tools` folds them by run.
+
+Both, because either alone is ambiguous. An empty `tools_called` beside a
+populated `tools_offered` says the model was handed tools and answered without
+them, which is a finding about the instruction text. Empty beside empty says
+it had none to call, which for `address-repair` is a real run configuration —
+`_address_repair_tools` returns nothing without a validator and drops
+`read_image_region` on a run with no screenshots, so what an agent was actually
+offered is a property of the run and not of `TOOL_NAMES`. Those are different
+problems and one column cannot separate them.
+
+`tools_called` keeps order and repeats. It is the trace of one invocation, and
+"validated four addresses" is the fact worth having; `unnest` folds it when the
+question is only which tools ran. Both are absent rather than empty on B1 and
+D1, which have no tool loop at all — the ledger's usual distinction, where an
+absent key says this append knows nothing about the field and an empty list is
+a measurement.
+
+Note what this does *not* record: which tools the AI Config declared. That is
+6.4 mitigation 1's input, it is empty on all four configs today, and it is
+checked at A1 rather than at invocation. A ledger line describing an agent that
+called two tools its config declared none of is the honest picture of that gap,
+not a contradiction of it.
 
 `image_key` is B1's and null everywhere else. B1's config is retrieved per
 screenshot (6.6), so a run where a rollout served two variations has to say

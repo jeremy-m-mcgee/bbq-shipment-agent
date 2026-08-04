@@ -74,7 +74,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
 - `recipients.yaml` — the run input. Gitignored (home addresses); `recipients.example.yaml` is the template.
 - `.cache/` — live Shippo answers, gitignored. A cache of an API, not a run artifact.
-- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild`, `uv run bbq-shipment-agent run init|plan|review`, `uv run bbq-shipment-agent ui`
+- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild|tools`, `uv run bbq-shipment-agent run init|plan|review`, `uv run bbq-shipment-agent ui`
 
 ## Front-ends
 - Two: the CLI and `ui`. Neither sequences a stage. Both build a `RunOptions` and call `wiring.open_run` then `wiring.plan_with`, so an offline fallback or a cache path cannot drift between them.
@@ -107,6 +107,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - An unknown model parameter from LD is dropped, not forwarded. A console typo must not become a TypeError mid-run.
 - `verification-enabled` off is a normal run, not a degraded one. Skipping writes no invocation record; an invocation that *ran* is always recorded, including when its reply could not be parsed.
 - LD metric success is about the invocation, not the manifest. An agent reporting six blockers succeeded.
+- An invocation with a tool loop records `tools_offered` and `tools_called`; one without records neither. Offered comes from the loop that ran, never from `TOOL_NAMES` — B3 is offered less on a run with no screenshots, and a line claiming otherwise turns a tool that was absent into one the model declined. `ledger tools` reads them back.
 
 ## Agent configs
 - Hash and snapshot the *un-rendered* template. Rendered text carries `ldctx` (recipient data) into committed files, and its hash differs every run, so it discriminates nothing.

@@ -104,6 +104,71 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _cmd_tools(args: argparse.Namespace) -> int:
+    """Which tools each agent was offered, and which it actually called.
+
+    Reads the derived cache in memory rather than the committed one on disk,
+    so this answers from the JSONL and cannot report something a stale
+    `ledger.duckdb` is holding and the source of truth is not.
+
+    Offered is printed even when nothing was called, because that is the
+    reading the pair exists to support: an agent that was handed three tools
+    and used none is a finding, and an agent that was handed none because the
+    run had no validator is a configuration.
+    """
+    connection = rebuild(args.ledger)
+    try:
+        rows = connection.execute(
+            "SELECT run_id, agent_key, tools_offered, tools_called "
+            "FROM agent_invocations ORDER BY seq"
+        ).fetchall()
+    finally:
+        connection.close()
+
+    if args.run:
+        rows = [row for row in rows if row[0].startswith(args.run)]
+        if not rows:
+            print(f"no agent invocations for run {args.run}")
+            return 1
+
+    if not rows:
+        print("no agent invocations recorded")
+        return 0
+
+    for run_id in dict.fromkeys(row[0] for row in rows):
+        run_rows = [row for row in rows if row[0] == run_id]
+        print(f"\nrun {run_id}  ({len(run_rows)} invocations)")
+        for agent_key in sorted({row[1] for row in run_rows}):
+            agent_rows = [row for row in run_rows if row[1] == agent_key]
+            offered: list[str] = []
+            calls: dict[str, int] = {}
+            for _, _, row_offered, row_called in agent_rows:
+                for name in row_offered or ():
+                    if name not in offered:
+                        offered.append(name)
+                for name in row_called or ():
+                    calls[name] = calls.get(name, 0) + 1
+
+            # An invocation that recorded neither column has no tool loop at
+            # all -- B1 and D1 -- which is a different statement from one that
+            # was offered nothing, and the line should not blur them.
+            tracked = [row for row in agent_rows if row[2] is not None]
+            if not tracked:
+                summary = "no tool loop"
+            elif not offered:
+                summary = "offered nothing"
+            else:
+                summary = "offered " + ", ".join(offered)
+            print(f"  {agent_key:<24} {len(agent_rows):>3} inv   {summary}")
+            continuation = " " * len(f"  {'':<24} {'':>3} inv   ")
+            if calls:
+                used = "  ".join(f"{name} x{n}" for name, n in sorted(calls.items()))
+                print(f"{continuation}called {used}")
+            elif offered:
+                print(f"{continuation}called nothing")
+    return 0
+
+
 def _options(args: argparse.Namespace) -> RunOptions:
     """A parsed command line as the options every front-end shares.
 
@@ -549,6 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name, handler, help_text in (
         ("rebuild", _cmd_rebuild, "rebuild the derived DuckDB cache from JSONL"),
         ("verify", _cmd_verify, "parse the JSONL ledger and report any damage"),
+        ("tools", _cmd_tools, "which tools each agent was offered and called"),
     ):
         sub = ledger_sub.add_parser(name, help=help_text)
         sub.add_argument(
@@ -563,6 +629,12 @@ def build_parser() -> argparse.ArgumentParser:
                 type=Path,
                 default=DEFAULT_DB_PATH,
                 help=f"derived cache path (default: {DEFAULT_DB_PATH})",
+            )
+        if name == "tools":
+            sub.add_argument(
+                "--run",
+                default="",
+                help="only this run id (a leading prefix is enough)",
             )
         sub.set_defaults(handler=handler)
 
