@@ -709,6 +709,34 @@ def build_parser() -> argparse.ArgumentParser:
     driver = subparsers.add_parser(
         "drive",
         help="fire runs at a running UI on an interval, for live testing",
+        # The module docstring says all of this and `--help` cannot see it.
+        # Anyone reaching for a load driver is deciding what to vary and what
+        # it will cost, and both answers belong at the top of the help rather
+        # than in the source.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Start runs on a UI that is already serving.\n\n"
+            "This is a client of that server, not another way to plan: it posts\n"
+            "the same form a browser posts, so a driven run and a clicked one are\n"
+            "the same run. What a run reads, writes and replays was fixed when the\n"
+            "server was launched -- there is deliberately no --ledger here.\n\n"
+            "The app runs one at a time and refuses the second, so --every is a\n"
+            "floor on the gap between starts and never a promise of one. The driver\n"
+            "waits for the run in flight and says how many starts were refused.\n\n"
+            "Runs are live by default: at --depth plan that is a vision call per\n"
+            "screenshot, Shippo quotes and a D1 call, every time."
+        ),
+        epilog=(
+            "examples:\n"
+            "  # twenty full plans, a different random subset of images each time\n"
+            "  bbq-shipment-agent drive --runs 20 --every 30 --vary sample\n\n"
+            "  # the cheap session: B1 only, three images each, no Shippo, no D1\n"
+            "  bbq-shipment-agent drive --depth extract --count 3 --every 15\n\n"
+            "  # two profiles, alternating depth, repeatable from the seed\n"
+            "  bbq-shipment-agent drive --profiles baseline,full --depth mixed --seed 7\n\n"
+            "  # free: replay whatever recordings the server was launched with\n"
+            "  bbq-shipment-agent drive --replay --runs 5 --every 5\n"
+        ),
     )
     driver.add_argument(
         "--url", default=DEFAULT_URL, help=f"the running app (default: {DEFAULT_URL})"
@@ -730,13 +758,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     driver.add_argument(
         "--count", type=int, default=None,
-        help="fix the number of screenshots per run instead of varying it",
+        help="how many screenshots per run, fixed instead of varying. Which "
+             "images still changes every run; only the size is held. Clamped to "
+             "the number on offer, and ignored by --vary all and --vary roster.",
     )
     driver.add_argument(
         "--depth", default="plan", choices=("plan", "extract", "mixed"),
         help="where each run stops (default: plan). `extract` stops after B1 -- "
              "one vision call per image, no Shippo quote and no D1 -- which is "
-             "the cheap way to drive a B1 rollout. `mixed` alternates.",
+             "the cheap way to drive a B1 rollout, and needs screenshots, so it "
+             "cannot be combined with --vary roster. `mixed` alternates.",
     )
     driver.add_argument(
         "--profiles", default="",
