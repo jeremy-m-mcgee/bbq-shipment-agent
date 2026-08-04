@@ -158,6 +158,12 @@ class TestWhatVaries:
         run(app, runs=3, every=0, count=2)
         assert [app.sent(i)["count"] for i in range(3)] == [["2"]] * 3
 
+    def test_a_count_of_zero_is_refused_rather_than_read_as_unset(self):
+        # It used to fall through to a random size, so a sweep over 0 1 2 3
+        # would have had its first run quietly do something else.
+        with pytest.raises(DriveError, match="reads nothing"):
+            run(FakeApp(), runs=1, every=0, count=0)
+
     def test_a_count_larger_than_the_catalogue_is_clamped(self):
         app = FakeApp()
         run(app, runs=1, every=0, count=99, vary="explicit")

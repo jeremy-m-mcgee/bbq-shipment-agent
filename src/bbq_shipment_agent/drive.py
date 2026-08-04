@@ -191,8 +191,7 @@ def plan_request(
         fields.append(("no_screenshots", "1"))
         summary = "roster only" if options.vary == "roster" else "roster only (no images)"
     elif options.vary == "sample":
-        wanted = options.count or rng.randint(1, len(catalogue))
-        wanted = min(wanted, len(catalogue))
+        wanted = _size_for(options, rng, len(catalogue))
         # A seed the driver chose and prints, rather than one the server
         # generates, so the sample is reconstructible from this log alone.
         seed = rng.randrange(1_000_000)
@@ -200,8 +199,7 @@ def plan_request(
         fields += [("count", str(wanted)), ("seed", str(seed))]
         summary = f"sample {wanted} of {len(catalogue)} (seed {seed})"
     elif options.vary == "explicit":
-        wanted = options.count or rng.randint(1, len(catalogue))
-        wanted = min(wanted, len(catalogue))
+        wanted = _size_for(options, rng, len(catalogue))
         picked = sorted(rng.sample(list(catalogue), wanted))
         mode = "explicit"
         fields += [("screenshot", name) for name in picked]
@@ -237,6 +235,28 @@ def plan_request(
     if options.replay:
         fields.append(("replay", "1"))
     return Request(fields, summary)
+
+
+def _size_for(options: DriveOptions, rng: random.Random, available: int) -> int:
+    """How many screenshots this run reads.
+
+    `None` means vary it, which is the default and the interesting case. A
+    given count is clamped to what is on offer -- asking for nine of seven is
+    a sloppy command line rather than a run worth refusing.
+
+    Zero is refused rather than clamped, because it used to be read as "not
+    specified" and quietly became a random size. A sweep over `0 1 2 3` would
+    have had its first run silently do something else entirely, and the flag
+    that means "no images" already exists.
+    """
+    if options.count is None:
+        return rng.randint(1, available)
+    if options.count < 1:
+        raise DriveError(
+            f"--count {options.count} reads nothing. For a run with no images, "
+            "use --vary roster."
+        )
+    return min(options.count, available)
 
 
 def _depth_for(options: DriveOptions, index: int) -> str:
