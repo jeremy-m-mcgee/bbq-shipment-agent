@@ -47,6 +47,7 @@ uv run bbq-shipment-agent run init      # A1 only: resolve capabilities, snapsho
 uv run bbq-shipment-agent run plan      # A1 -> B -> C -> D1, prints a verified manifest
 uv run bbq-shipment-agent run review    # the above, then the D2 conversation
 uv run bbq-shipment-agent ui            # the same thing in a browser, with a screenshot picker
+uv run bbq-shipment-agent drive         # fire runs at a running `ui`, one every 30s
 uv run bbq-shipment-agent ledger verify # parse every JSONL line, no database
 uv run bbq-shipment-agent ledger rebuild
 ```
@@ -130,6 +131,45 @@ refuses to invent a rate it never recorded — which is the behaviour you want.
 Fully offline works today for the **roster** path (`--recipients
 tests/fixtures/roster-sf-dc.yaml`, then tick "all" with no screenshots).
 Screenshots plus recorded quotes needs those lanes recorded first.
+
+### Driving it: many runs, over time
+
+`drive` is a client of a UI that is already serving. It posts the same form a
+browser posts, so a driven run and a clicked one are the same run — nothing
+about the pipeline is reachable from the driver.
+
+```bash
+# terminal 1
+UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui --screenshots tests/fixtures/screenshots --ledger /tmp/drive-ledger
+
+# terminal 2
+uv run bbq-shipment-agent drive --every 30 --runs 20 --vary sample --campaign aug-load
+```
+
+That starts a run every 30 seconds, each reading a different random subset of
+the screenshots. The subset is the point: design 6.6 makes the **image** the
+only unit a LaunchDarkly rollout can bucket on in this system, so runs that
+differ only in wall-clock time exercise the server and measure nothing.
+
+| what varies | flag |
+|---|---|
+| a random sample, with the seed printed | `--vary sample` *(default)* |
+| a random named subset | `--vary explicit` |
+| the whole directory, every time | `--vary all` |
+| no images at all, roster only | `--vary roster` |
+| the capability profile, cycled one per run | `--profiles baseline,planner_trial` |
+| a numbered campaign on the run context | `--campaign aug-load` |
+
+`--every` is a **floor on starts, not a promise**. The app runs one at a time
+and refuses the second, so the driver waits for the run in flight and fires
+when the interval has elapsed — which for a live screenshot run is usually
+later than the interval. The tally at the end says how many were refused.
+`--seed` makes a whole session repeatable, and `--replay` uses whatever
+recordings the server was launched with, which is the free way to test the
+driver rather than the pipeline.
+
+Each of these runs costs real money by default: a vision call per screenshot,
+Shippo quotes, and a D1 call. Twenty of them is twenty times that.
 
 ### Reviewing a plan, with recipients from screenshots
 

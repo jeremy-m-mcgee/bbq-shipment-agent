@@ -38,6 +38,7 @@ class TestItBuilds:
             ["run", "plan"],
             ["run", "review"],
             ["ui"],
+            ["drive"],
         ],
     )
     def test_every_subcommand_parses_and_has_a_handler(self, parser, argv):

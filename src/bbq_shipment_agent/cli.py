@@ -29,6 +29,14 @@ from .capabilities import (
     KillSwitchEngaged,
 )
 from .context import ContextError
+from .drive import (
+    DEFAULT_INTERVAL,
+    DEFAULT_URL,
+    DriveError,
+    DriveOptions,
+    HttpTransport,
+    drive,
+)
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
 from .planning import (
     DEFAULT_LANES_PATH,
@@ -604,6 +612,43 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_drive(args: argparse.Namespace) -> int:
+    """Fire runs at a UI that is already serving, one every `--every` seconds.
+
+    Deliberately a client rather than a fifth way to plan: it posts the form a
+    browser posts, so the app decides what it means and a driven run and a
+    clicked one are the same run. Nothing about the pipeline is reachable from
+    here, which is why this command takes no ledger path, no profile file and
+    no replay fixtures -- those were fixed when the server was launched, and a
+    driver that could move them would be moving them for the operator's
+    browser session too.
+    """
+    options = DriveOptions(
+        base_url=args.url,
+        every=args.every,
+        runs=args.runs,
+        vary=args.vary,
+        count=args.count,
+        profiles=tuple(p.strip() for p in args.profiles.split(",") if p.strip()),
+        campaign=args.campaign,
+        seed=args.seed,
+        replay=args.replay,
+        offline=args.offline,
+        poll=args.poll,
+        wait=not args.no_wait,
+    )
+    transport = HttpTransport(args.url, timeout=args.timeout)
+    print()
+    try:
+        report = drive(options, transport)
+    except KeyboardInterrupt:
+        # The common way to end an open-ended session. Not a crash, and the
+        # tally so far is the thing the operator came for.
+        print("\n  stopped")
+        return 0
+    return 0 if report.counted("failed") == 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bbq-shipment-agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -658,6 +703,70 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ui.add_argument("--port", type=int, default=8765)
     ui.set_defaults(handler=_cmd_ui)
+
+    # A client of that server rather than a sibling of it, which is why it
+    # shares none of the run arguments below: what a run reads, writes and
+    # replays was settled when the UI was launched.
+    driver = subparsers.add_parser(
+        "drive",
+        help="fire runs at a running UI on an interval, for live testing",
+    )
+    driver.add_argument(
+        "--url", default=DEFAULT_URL, help=f"the running app (default: {DEFAULT_URL})"
+    )
+    driver.add_argument(
+        "--every", type=float, default=DEFAULT_INTERVAL,
+        help=f"seconds between run *starts* (default: {DEFAULT_INTERVAL:g}). A floor, "
+             "not a promise: the app runs one at a time and the driver waits.",
+    )
+    driver.add_argument(
+        "--runs", type=int, default=0,
+        help="how many to start (default: 0, meaning until ctrl-c)",
+    )
+    driver.add_argument(
+        "--vary", default="sample", choices=("sample", "explicit", "all", "roster"),
+        help="what differs between runs (default: sample). `sample` takes a random "
+             "count with a printed seed, `explicit` names a random subset, `all` "
+             "reads the whole directory every time, `roster` reads no images.",
+    )
+    driver.add_argument(
+        "--count", type=int, default=None,
+        help="fix the number of screenshots per run instead of varying it",
+    )
+    driver.add_argument(
+        "--profiles", default="",
+        help="comma-separated capability profiles, cycled one per run",
+    )
+    driver.add_argument(
+        "--campaign", default=None,
+        help="prefix for a per-run campaign attribute on the run context",
+    )
+    driver.add_argument(
+        "--seed", type=int, default=None,
+        help="seed the driver's own choices, so a session can be repeated",
+    )
+    driver.add_argument(
+        "--replay", action="store_true",
+        help="use the recordings the server was launched with, if any. The cheap "
+             "way to exercise the driver itself.",
+    )
+    driver.add_argument(
+        "--offline", action="store_true", help="run each one without LaunchDarkly"
+    )
+    driver.add_argument(
+        "--poll", type=float, default=1.0,
+        help="seconds between checks on the run in flight (default: 1)",
+    )
+    driver.add_argument(
+        "--no-wait", action="store_true",
+        help="do not wait for a run to finish. Mostly a way to watch the app "
+             "refuse a second one.",
+    )
+    driver.add_argument(
+        "--timeout", type=float, default=30.0,
+        help="seconds to wait on one HTTP request (default: 30)",
+    )
+    driver.set_defaults(handler=_cmd_drive)
 
     # Everything A1 needs, which all four commands run.
     for sub in (init, extract, plan, review, ui):
@@ -776,6 +885,7 @@ def main(argv: list[str] | None = None) -> int:
         AddressValidationUnavailable,
         CapabilityConfigError,
         ContextError,
+        DriveError,
         ExtractionError,
         KillSwitchEngaged,
         LaneBookError,
