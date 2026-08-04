@@ -19,6 +19,7 @@ here, and so is whether a real recipient list produces a sensible manifest.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 from .agent_configs import DEFAULT_SNAPSHOT_PATH
@@ -29,6 +30,14 @@ from .capabilities import (
     KillSwitchEngaged,
 )
 from .context import ContextError
+from .drive import (
+    DEFAULT_INTERVAL,
+    DEFAULT_URL,
+    DriveError,
+    DriveOptions,
+    HttpTransport,
+    drive,
+)
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
 from .planning import (
     DEFAULT_LANES_PATH,
@@ -43,15 +52,15 @@ from .recipients import (
     RosterError,
     to_shipments,
 )
-from .run import record_run_reasons
 from .wiring import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DB_PATH,
     DEFAULT_LEDGER_ROOT,
     PrintProgress,
+    RunDepth,
     RunOptions,
     ScreenshotSelection,
-    build_roster,
+    extract_with,
     missing_credentials,
     open_run,
     plan_with,
@@ -270,7 +279,7 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
     The run record is still written, because A1 really did open a run and the
     ledger is append-only. Pass a throwaway `--ledger` when iterating.
     """
-    options = _options(args)
+    options = replace(_options(args), depth=RunDepth.EXTRACT)
     if options.screenshots is None:
         print("run extract needs --screenshots; there is nothing for B1 to read.")
         return 2
@@ -278,13 +287,10 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
     context = open_run(options, PrintProgress())
     try:
         _print_run(context.run, context.connection, context.snapshot, args.ledger)
-        # B1 runs inside `build_roster` and nothing after it does, which is
-        # what makes this a seam rather than a special case.
-        roster = build_roster(options, context.run, context.images, PrintProgress())
-        # `plan_with` records this on the way through planning; this command
-        # stops before planning, so it has to do it itself or the hash on
-        # every invocation record names a file the ledger cannot resolve.
-        record_run_reasons(options.ledger, context.run, context.extra_reasons)
+        # The stopping point itself lives in `wiring`, because the browser
+        # reaches for the same one. What is left here is how a terminal shows
+        # it.
+        roster = extract_with(context, options, PrintProgress()).roster
     finally:
         # The SDK runs a background thread. Leaving it open hangs the CLI.
         if context.client is not None:
@@ -604,6 +610,44 @@ def _cmd_ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_drive(args: argparse.Namespace) -> int:
+    """Fire runs at a UI that is already serving, one every `--every` seconds.
+
+    Deliberately a client rather than a fifth way to plan: it posts the form a
+    browser posts, so the app decides what it means and a driven run and a
+    clicked one are the same run. Nothing about the pipeline is reachable from
+    here, which is why this command takes no ledger path, no profile file and
+    no replay fixtures -- those were fixed when the server was launched, and a
+    driver that could move them would be moving them for the operator's
+    browser session too.
+    """
+    options = DriveOptions(
+        base_url=args.url,
+        every=args.every,
+        runs=args.runs,
+        vary=args.vary,
+        count=args.count,
+        depth=args.depth,
+        profiles=tuple(p.strip() for p in args.profiles.split(",") if p.strip()),
+        campaign=args.campaign,
+        seed=args.seed,
+        replay=args.replay,
+        offline=args.offline,
+        poll=args.poll,
+        wait=not args.no_wait,
+    )
+    transport = HttpTransport(args.url, timeout=args.timeout)
+    print()
+    try:
+        report = drive(options, transport)
+    except KeyboardInterrupt:
+        # The common way to end an open-ended session. Not a crash, and the
+        # tally so far is the thing the operator came for.
+        print("\n  stopped")
+        return 0
+    return 0 if report.counted("failed") == 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bbq-shipment-agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -658,6 +702,107 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ui.add_argument("--port", type=int, default=8765)
     ui.set_defaults(handler=_cmd_ui)
+
+    # A client of that server rather than a sibling of it, which is why it
+    # shares none of the run arguments below: what a run reads, writes and
+    # replays was settled when the UI was launched.
+    driver = subparsers.add_parser(
+        "drive",
+        help="fire runs at a running UI on an interval, for live testing",
+        # The module docstring says all of this and `--help` cannot see it.
+        # Anyone reaching for a load driver is deciding what to vary and what
+        # it will cost, and both answers belong at the top of the help rather
+        # than in the source.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Start runs on a UI that is already serving.\n\n"
+            "This is a client of that server, not another way to plan: it posts\n"
+            "the same form a browser posts, so a driven run and a clicked one are\n"
+            "the same run. What a run reads, writes and replays was fixed when the\n"
+            "server was launched -- there is deliberately no --ledger here.\n\n"
+            "The app runs one at a time and refuses the second, so --every is a\n"
+            "floor on the gap between starts and never a promise of one. The driver\n"
+            "waits for the run in flight and says how many starts were refused.\n\n"
+            "Runs are live by default: at --depth plan that is a vision call per\n"
+            "screenshot, Shippo quotes and a D1 call, every time."
+        ),
+        epilog=(
+            "examples:\n"
+            "  # twenty full plans, a different random subset of images each time\n"
+            "  bbq-shipment-agent drive --runs 20 --every 30 --vary sample\n\n"
+            "  # the cheap session: B1 only, three images each, no Shippo, no D1\n"
+            "  bbq-shipment-agent drive --depth extract --count 3 --every 15\n\n"
+            "  # two profiles, alternating depth, repeatable from the seed\n"
+            "  bbq-shipment-agent drive --profiles baseline,full --depth mixed --seed 7\n\n"
+            "  # free: replay whatever recordings the server was launched with\n"
+            "  bbq-shipment-agent drive --replay --runs 5 --every 5\n"
+        ),
+    )
+    driver.add_argument(
+        "--url", default=DEFAULT_URL, help=f"the running app (default: {DEFAULT_URL})"
+    )
+    driver.add_argument(
+        "--every", type=float, default=DEFAULT_INTERVAL,
+        help=f"seconds between run *starts* (default: {DEFAULT_INTERVAL:g}). A floor, "
+             "not a promise: the app runs one at a time and the driver waits.",
+    )
+    driver.add_argument(
+        "--runs", type=int, default=0,
+        help="how many to start (default: 0, meaning until ctrl-c)",
+    )
+    driver.add_argument(
+        "--vary", default="sample", choices=("sample", "explicit", "all", "roster"),
+        help="what differs between runs (default: sample). `sample` takes a random "
+             "count with a printed seed, `explicit` names a random subset, `all` "
+             "reads the whole directory every time, `roster` reads no images.",
+    )
+    driver.add_argument(
+        "--count", type=int, default=None,
+        help="how many screenshots per run, fixed instead of varying. Which "
+             "images still changes every run; only the size is held. Clamped to "
+             "the number on offer, and ignored by --vary all and --vary roster.",
+    )
+    driver.add_argument(
+        "--depth", default="plan", choices=("plan", "extract", "mixed"),
+        help="where each run stops (default: plan). `extract` stops after B1 -- "
+             "one vision call per image, no Shippo quote and no D1 -- which is "
+             "the cheap way to drive a B1 rollout, and needs screenshots, so it "
+             "cannot be combined with --vary roster. `mixed` alternates.",
+    )
+    driver.add_argument(
+        "--profiles", default="",
+        help="comma-separated capability profiles, cycled one per run",
+    )
+    driver.add_argument(
+        "--campaign", default=None,
+        help="prefix for a per-run campaign attribute on the run context",
+    )
+    driver.add_argument(
+        "--seed", type=int, default=None,
+        help="seed the driver's own choices, so a session can be repeated",
+    )
+    driver.add_argument(
+        "--replay", action="store_true",
+        help="use the recordings the server was launched with, if any. The cheap "
+             "way to exercise the driver itself.",
+    )
+    driver.add_argument(
+        "--offline", action="store_true", help="run each one without LaunchDarkly"
+    )
+    driver.add_argument(
+        "--poll", type=float, default=1.0,
+        help="seconds between checks on the run in flight (default: 1)",
+    )
+    driver.add_argument(
+        "--no-wait", action="store_true",
+        help="do not wait for a run to finish. Mostly a way to watch the app "
+             "refuse a second one.",
+    )
+    driver.add_argument(
+        "--timeout", type=float, default=30.0,
+        help="seconds to wait on one HTTP request (default: 30)",
+    )
+    driver.set_defaults(handler=_cmd_drive)
 
     # Everything A1 needs, which all four commands run.
     for sub in (init, extract, plan, review, ui):
@@ -776,6 +921,7 @@ def main(argv: list[str] | None = None) -> int:
         AddressValidationUnavailable,
         CapabilityConfigError,
         ContextError,
+        DriveError,
         ExtractionError,
         KillSwitchEngaged,
         LaneBookError,

@@ -68,13 +68,14 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
 - `src/bbq_shipment_agent/wiring.py` — `RunOptions`, `Progress`, and the *only* place a live client is constructed. Both front-ends go through it.
 - `src/bbq_shipment_agent/ui/` — the local web app: app.py (routes), service.py (worker thread + events), view.py (results as plain data), templates/
+- `src/bbq_shipment_agent/drive.py` — `bbq-shipment-agent drive`: an HTTP client that posts runs at a serving `ui` on an interval, varying the screenshot subset. Live testing, not a pipeline path.
 - `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
 - `config/lanes.yaml` — ambient per destination band + month. Stated assumptions, never measured; an unmapped state takes the *hottest* band on purpose.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
 - `recipients.yaml` — the run input. Gitignored (home addresses); `recipients.example.yaml` is the template.
 - `.cache/` — live Shippo answers, gitignored. A cache of an API, not a run artifact.
-- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild|tools`, `uv run bbq-shipment-agent run init|plan|review`, `uv run bbq-shipment-agent ui`
+- `uv run pytest`, `uv run bbq-shipment-agent ledger verify|rebuild|tools`, `uv run bbq-shipment-agent run init|plan|review`, `uv run bbq-shipment-agent ui`, `uv run bbq-shipment-agent drive`
 
 ## Front-ends
 - Two: the CLI and `ui`. Neither sequences a stage. Both build a `RunOptions` and call `wiring.open_run` then `wiring.plan_with`, so an offline fallback or a cache path cannot drift between them.
@@ -85,6 +86,11 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - One run at a time, refused rather than queued: two would append to the same ledger and quote the same lanes twice.
 - Which images B1 read go on the run row (`evaluation_reasons["screenshots"]`). A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing.
 - Replay is all or nothing. `RunOptions.replaying` is what the page calls "no live calls", and B1/B3 need `--extractions`/`--repairs` for it to be true on a screenshot run.
+- Depth is `RunOptions.depth`, and `wiring.run_with` is the *only* thing that reads it — a test pins that. The CLI says it with the `run extract` subcommand and the form with a field; both arrive at `extract_with`, so neither front-end owns its own idea of where a run stops. A browser copy of that path is a copy that forgets `record_run_reasons` and orphans every B1 hash.
+- `RunDepth.EXTRACT` stops after B1 — inside `build_roster`, the one place the pipeline naturally ends. It never reaches C2, which is what makes a replayed screenshot run fully offline: the lane limit in design 10 is a fact about the quoter, and extract never calls it.
+- `drive --depth extract` is the cheap session: one vision call per image, no quote, no D1. B1 is the only stage a rollout can bucket on, so depth and screenshot subset are the two axes worth varying.
+- `drive` is a *client* of the UI, not a third front-end: it posts the form and the app decides what it means. It builds no `RunOptions` and touches no stage, which is what keeps "two front-ends" true. `HttpTransport` is the only socket it opens and everything else takes a transport injected, so its tests drive a whole session against a fake.
+- What `drive` varies is the screenshot subset, because design 6.6 makes the image the only unit a rollout can bucket on. Runs differing only in start time measure nothing. `--every` is a floor on starts: the server refuses a concurrent run, so the driver waits and reports what it was refused.
 
 ## Capability rules
 - A provider proposes; the repo decides. Order is fixed: profile → flag overrides → ceiling clamp → prerequisites.

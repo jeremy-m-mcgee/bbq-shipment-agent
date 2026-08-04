@@ -168,6 +168,42 @@
 
 <p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
   <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes</span></p>
+{% elif view.outcome == 'extracted' %}
+<h2>Extraction &mdash; B1 only, nothing downstream ran</h2>
+<div class="panel">
+  <p style="margin-top:0" class="dim">
+    No addresses were validated and no lane was quoted. This run cost one
+    vision call per image and nothing else.
+  </p>
+  <table>
+    <tr><th>screenshot</th><th>image key</th><th>variation</th><th>model</th></tr>
+    {% for image in view.images %}
+    <tr><td class="mono">{{ image.name }}</td>
+      <td class="mono dim" style="font-size:12px">{{ image.key }}</td>
+      <td>{{ image.variation or '—' }}</td>
+      <td class="dim">{{ image.model or '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="dim" style="font-size:13px">
+    B1's config is retrieved once per image, keyed on the file's content hash,
+    so a rollout can serve two variations inside one run. This table is where
+    that shows up.
+  </p>
+</div>
+
+<h2>{{ view.recipients|length }} recipient(s) read</h2>
+<div class="panel">
+  <table>
+    <tr><th>name</th><th>address</th><th class="num">confidence</th><th>from</th></tr>
+    {% for r in view.recipients %}
+    <tr><td>{{ r.name }}</td>
+      <td class="mono" style="font-size:13px">{{ r.address }}</td>
+      <td class="num {% if r.confidence is not none and r.confidence < 0.8 %}warn{% endif %}">
+        {% if r.confidence is not none %}{{ '%.2f'|format(r.confidence) }}{% else %}&mdash;{% endif %}</td>
+      <td class="dim">{{ r.source }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
 {% elif job.state == 'finished' %}
 <h2>No manifest</h2>
 <div class="panel">

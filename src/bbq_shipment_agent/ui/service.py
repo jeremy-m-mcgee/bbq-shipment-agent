@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from ..wiring import Progress, RunOptions, open_run, plan_with
+from ..wiring import Progress, RunDepth, RunOptions, open_run, run_with
 
 
 @dataclass(frozen=True)
@@ -168,7 +168,7 @@ def _execute(job: RunJob) -> None:
     roster, a kill switch, an unreachable validator -- and they read better as
     a message on the page than as a 500.
     """
-    from .view import plan_view, run_header
+    from .view import extract_view, plan_view, run_header
 
     progress = JobProgress(job)
     context = None
@@ -182,8 +182,15 @@ def _execute(job: RunJob) -> None:
             f"run {context.run.run_id} opened ({context.connection})",
             run_id=context.run.run_id,
         )
-        plan_with(context, job.options, progress)
-        job.view = plan_view(context, job.options)
+        # `run_with` picks the depth, so the browser and the CLI stop in the
+        # same place. Only the rendering differs, because an extract-only run
+        # has no manifest to show and that is not a failure.
+        run_with(context, job.options, progress)
+        job.view = (
+            extract_view(context, job.options)
+            if job.options.depth is RunDepth.EXTRACT
+            else plan_view(context, job.options)
+        )
         job.state = "finished"
         job.emit(
             "state",
@@ -208,6 +215,13 @@ def _execute(job: RunJob) -> None:
 
 def _outcome_message(context: Any) -> str:
     result = context.result
+    if result is None and context.roster is not None:
+        # An extract-only run. No manifest was ever going to exist, so saying
+        # "no manifest" here would report a normal run as a disappointing one.
+        return (
+            f"extracted — {context.roster.packet_count} recipient(s) from "
+            f"{len(context.images)} screenshot(s)"
+        )
     if result is None or result.manifest is None:
         return "no manifest — no carrier subset covers the run"
     blockers = ()

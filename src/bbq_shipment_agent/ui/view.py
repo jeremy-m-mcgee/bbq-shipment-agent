@@ -119,6 +119,70 @@ def plan_view(context: Any, options: RunOptions) -> dict[str, Any]:
     return view
 
 
+def extract_view(context: Any, options: RunOptions) -> dict[str, Any]:
+    """What an extract-only run has to show: which variation read which image.
+
+    The same key set `plan_view` produces, with the planning halves empty, so
+    the template's existing guards skip them rather than each one growing a
+    second condition. `outcome` is `extracted` and not `no-manifest`: there was
+    never going to be a manifest, and the page must not report a normal run as
+    a disappointing one.
+
+    What it adds is the join the CLI prints. B1's config is retrieved per image
+    under a context keyed on the file's content hash (design 6.6), so "which
+    variation read this screenshot" is the only question an extraction run
+    exists to answer, and the answer is per row rather than per run.
+    """
+    roster = context.roster
+    keys = context.extra_reasons.get("screenshot_keys", {})
+    return {
+        "outcome": "extracted",
+        "reason": "extract only — the run stopped after B1",
+        "screenshots": [p.name for p in context.images],
+        "images": [
+            {
+                "name": image.name,
+                "key": keys.get(image.name, "?"),
+                "variation": _image_config(context, keys.get(image.name, ""), "variation_key"),
+                "model": _image_config(context, keys.get(image.name, ""), "model"),
+            }
+            for image in context.images
+        ],
+        "roster": {
+            "source": str(roster.source) if roster.source else "",
+            "packet_count": roster.packet_count,
+            "ship_dates": [d.isoformat() for d in roster.ship_dates],
+        },
+        "recipients": [
+            {
+                "name": r.name,
+                "address": f"{r.address.street1}, {r.address.city} "
+                f"{r.address.state} {r.address.zip}",
+                "confidence": r.confidence,
+                "source": r.provenance.source_image if r.provenance else "",
+            }
+            for r in roster.recipients
+        ],
+        # Everything downstream of B1, which did not run. Present and empty so
+        # the page renders one shape whatever the depth was.
+        "validation": None,
+        "repair": None,
+        "escalated": [],
+        "suppressed": [],
+        "consolidated": {},
+        "remediations": [],
+        "verification": None,
+        "partial": {"infeasible": [], "plans": []},
+        "manifest": None,
+        "manifest_text": "",
+    }
+
+
+def _image_config(context: Any, key: str, field: str) -> str:
+    config = context.run.image_configs.get(key)
+    return (getattr(config, field, None) or "") if config else ""
+
+
 def _manifest(manifest: Any) -> dict[str, Any]:
     names = {row.recipient_key: row.name for row in manifest.rows}
     return {
