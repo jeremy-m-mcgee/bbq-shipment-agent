@@ -209,6 +209,11 @@ class Narrator:
         Invocations have no merge key -- design 7 calls them events rather
         than entities -- so a ten-turn review is ten facts, which is exactly
         what design 8's "operator edit count" metric needs to be countable.
+
+        The tool trace is per turn for the same reason. A review where the
+        operator asked one question that moved the carrier set and nine that
+        did not is a different review from one where every turn re-solved,
+        and only a per-turn line can say which happened.
         """
         record_agent_invocation(
             self.ledger_root,
@@ -216,4 +221,6 @@ class Narrator:
             CONFIG_KEY,
             outcome=outcome,
             iterations=turn.iterations,
+            tools_offered=[tool.name for tool in self._tools],
+            tools_called=turn.tools_called,
         )

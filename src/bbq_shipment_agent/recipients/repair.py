@@ -174,6 +174,8 @@ def repair_addresses(
         CONFIG_KEY,
         outcome=f"repaired:{len(repaired)}/{len(needing_repair)}",
         iterations=iterations,
+        tools_offered=[tool.name for tool in tools],
+        tools_called=called,
     )
 
     return RepairResult(

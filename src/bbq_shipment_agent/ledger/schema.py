@@ -290,6 +290,29 @@ class AgentInvocationRecord(LedgerRecord):
     model: str | None = _opt("VARCHAR")
     iterations: int | None = _opt("INTEGER")
     outcome: str | None = _opt("VARCHAR")
+    #: What Python offered this invocation, and what the model actually
+    #: called -- design 6.1's two halves ("LD decides what an agent is told,
+    #: Python decides what an agent can do") as a fact per invocation rather
+    #: than a claim in a docstring.
+    #:
+    #: Both are needed, and the pair is what makes either legible. An empty
+    #: `tools_called` beside a populated `tools_offered` says the model was
+    #: given tools and answered without them; empty beside empty says it had
+    #: none to call, which for `address-repair` is a real run configuration
+    #: (`_address_repair_tools` returns nothing without a validator, and drops
+    #: `read_image_region` on a run with no screenshots). One column cannot
+    #: tell those apart, and they are different problems.
+    #:
+    #: `tools_called` keeps call order and repeats: it is the trace of one
+    #: invocation, and "validated four addresses" is the interesting fact, not
+    #: "validated". Fold it with `unnest` when the question is which tools ran.
+    #:
+    #: Absent -- not empty -- on B1 and D1, which have no tool loop at all.
+    #: The distinction is the ledger's usual one: an absent key says this
+    #: append knows nothing about the field, and an empty list is a
+    #: measurement.
+    tools_offered: list[str] | None = _opt("VARCHAR[]")
+    tools_called: list[str] | None = _opt("VARCHAR[]")
 
 
 #: Every stream the ledger knows how to write and rebuild.

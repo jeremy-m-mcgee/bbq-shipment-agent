@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -384,6 +385,8 @@ def record_agent_invocation(
     iterations: int = 1,
     shipment_key: str | None = None,
     image_key: str | None = None,
+    tools_offered: Sequence[str] | None = None,
+    tools_called: Sequence[str] | None = None,
     config: AgentConfig | None = None,
 ) -> AgentInvocationRecord:
     """Append the ledger record for one agent invocation.
@@ -402,6 +405,12 @@ def record_agent_invocation(
     wrong variation on any run where a rollout served more than one. Passing
     it is still identity from A1 -- it is the config that image was served at
     run start, not a lookup.
+
+    `tools_offered` and `tools_called` come from the loop that ran, not from
+    `TOOL_NAMES`: the registry is what Python *can* offer, and what an agent
+    was actually handed depends on the run (no validator, no screenshots, no
+    tools). A caller with no tool loop passes neither and the columns stay
+    absent, which is not the same fact as an empty list -- see the schema.
     """
     config = config or run.agent_configs.get(agent_key)
     if config is None:
@@ -421,6 +430,8 @@ def record_agent_invocation(
         model=config.model,
         iterations=iterations,
         outcome=outcome,
+        tools_offered=None if tools_offered is None else list(tools_offered),
+        tools_called=None if tools_called is None else list(tools_called),
     )
     LedgerWriter(ledger_root).append(record)
     return record

@@ -188,3 +188,25 @@ class TestTheLedger:
         records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
         assert len(records) == 3
         assert {r.agent_key for r in records} == {"review-narrator"}
+
+    def test_each_turn_records_the_tools_that_turn_used(self, session, tmp_path):
+        # Per turn, not per review: a review where one question re-solved and
+        # nine did not is a different review from one where every turn did,
+        # and only a per-turn line can tell them apart.
+        voice = narrator(session, tmp_path, ScriptedModel(
+            Completion(
+                text="",
+                tool_calls=(ToolCall(id="t1", name="read_manifest", arguments={}),),
+                raw_content=[{"type": "tool_use", "id": "t1"}],
+            ),
+            Completion(text="it costs a lot"),
+            Completion(text="no tools needed for this one"),
+        ))
+        voice.say("what does it cost?")
+        voice.say("thanks")
+        records = list(iter_records(tmp_path / "ledger", AgentInvocationRecord))
+        assert [r.tools_called for r in records] == [["read_manifest"], []]
+        assert all(
+            set(r.tools_offered) == {"read_manifest", "propose_edit", "confirm_edit"}
+            for r in records
+        )
