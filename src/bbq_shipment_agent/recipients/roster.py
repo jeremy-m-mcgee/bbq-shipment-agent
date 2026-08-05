@@ -18,8 +18,9 @@ Three failure modes are worth an error rather than a default:
 
 * **An unquoted ZIP.** YAML 1.1 reads `78701` as an integer and `02134` as
   *octal*, which silently becomes 1116. A ZIP that parsed as a number is
-  refused with the fix in the message. Same class of trap as `off`/`on` in
-  `capabilities.yaml`.
+  refused with the fix in the message. Same class of YAML 1.1 trap as bare
+  `off`/`on` coercing to booleans, which is why capability values are coerced
+  through a StrEnum before they reach the ledger.
 * **A duplicate recipient key.** B4 would consolidate two entries sharing a
   key, silently. A repeated key in a hand-written file is a typo, and finding
   out here beats finding out from a manifest that is one packet short.

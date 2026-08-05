@@ -87,12 +87,22 @@
         <td class="mono">{{ cap.value }}</td>
         <td class="dim">{{ cap.reason }}</td>
       </tr>
+      {% else %}
+      <tr>
+        <td class="dim" colspan="3">evaluated live per stage &mdash; values
+          land once planning runs</td>
+      </tr>
       {% endfor %}
     </table>
     <p class="dim" style="font-size:12px;margin:12px 0 0">
+      {% if header.fingerprint %}
       fingerprint <code>{{ header.fingerprint }}</code> &mdash; every row that
-      depends on these carries it. Flags: {{ header.flags.source }};
-      proposed {{ header.flags.overrides or '(nothing)' }}.
+      depends on these carries it.
+      {% endif %}
+      {% if header.kill_switch %}
+      Kill switch: {{ 'ENGAGED' if header.kill_switch.value else 'off' }}
+      ({{ header.kill_switch.source }}:{{ header.kill_switch.reason }}).
+      {% endif %}
     </p>
   </div>
   <div class="panel">

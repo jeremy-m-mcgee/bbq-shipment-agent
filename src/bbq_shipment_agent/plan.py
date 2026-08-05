@@ -41,9 +41,10 @@ calls it does make are stated below because they are not in any stage:
   carry does not stop the others being planned.
 * **Planning results are appended to the run record, without `completed_at`.**
   Design 7 makes a ledger line a partial update, so the counts and the
-  proposed total cost land on the run row opened at A1. `completed_at` is
-  deliberately absent: planning is not a terminal state, dispatch is, and
-  `count_shadow_runs` counts only completed runs.
+  proposed total cost land on the run row opened at A1, alongside the
+  capability snapshot and fingerprint, which are now known because the stages
+  that evaluate them have run. `completed_at` is deliberately absent: planning
+  is not a terminal state, and a run is only marked complete at approval.
 """
 
 from __future__ import annotations
@@ -160,7 +161,9 @@ class PlanResult:
 
     @property
     def applied_repairs(self) -> bool:
-        return self.run.capabilities.planner is PlannerMode.ON
+        # Cached: planner was evaluated during `plan_run`, so this reads the
+        # value the run operated under rather than triggering a fresh one.
+        return self.run.planner() is PlannerMode.ON
 
 
 def plan_run(
@@ -186,10 +189,18 @@ def plan_run(
     going near a provider.
 
     The validator is only constructed by the caller when it will be used --
-    `validation-mode` decides that, and it is read off the run's resolved
-    capabilities rather than passed in, so the flag cannot be bypassed here.
+    `validation-mode` decides that, and it is evaluated off the run rather than
+    passed in, so the flag cannot be bypassed here.
     """
-    mode = run.capabilities.validation
+    # Capabilities are evaluated live here, each under its own stage context.
+    # All three up front so the fingerprint the manifest and the run row carry
+    # names the full set the run operated under: `verify_manifest` reads the
+    # cached `verification` value later, but `assemble_manifest` needs the
+    # fingerprint before D1 runs. The wired front-end evaluates the same three
+    # to build its clients, so these are cache hits there, not repeat calls.
+    mode = run.validation()
+    planner = run.planner()
+    run.verification()
     validation = validate_recipients(
         roster.recipients,
         validator if validator is not None else _NoValidator(),
@@ -206,7 +217,6 @@ def plan_run(
     escalated = validation.escalated
     repair: RepairResult | None = None
     repair_unavailable: str | None = None
-    planner = run.capabilities.planner
     if repairer is not None and validation.for_repair and planner is not PlannerMode.OFF:
         try:
             repair = repair_addresses(
@@ -351,6 +361,12 @@ def _record_planning(
     `carrier_pair` and `total_cost` describe the *proposed* plan -- nothing has
     been approved. Nothing is ever purchased -- dispatch was removed, design 9.
 
+    The capability snapshot and fingerprint land here rather than at A1: since
+    the LaunchDarkly refactor each capability is evaluated live when its stage
+    runs, so A1 does not know them yet. By the time planning records, all three
+    have been evaluated (see the top of `plan_run`), so the snapshot is
+    complete and the fingerprint names the full set.
+
     `extra_reasons` is how the caller records something only it knows. Today
     that is which screenshots B1 read: a seeded sample is reconstructible from
     the seed, but a set chosen by hand in a UI is not reconstructible from
@@ -379,9 +395,16 @@ def _record_planning(
             f"{m.source}: {m.text}" for m in solve.messages[:20]
         ]
 
+    snapshot = run.cap_snapshot()
     LedgerWriter(ledger_root).append(
         RunRecord(
             run_id=run.run_id,
+            cap_fingerprint=run.cap_fingerprint,
+            cap_snapshot=snapshot,
+            # The evaluated capability values, stored rather than hashed so
+            # "what did LD serve on the run that behaved oddly" is answerable
+            # from the row. Enum-validated, never the raw payload (CLAUDE.md).
+            flag_payload=snapshot["capabilities"] if snapshot else None,
             packet_count=roster.packet_count,
             carrier_pair=list(manifest.carriers) if manifest else None,
             total_cost=manifest.total_cost if manifest else None,

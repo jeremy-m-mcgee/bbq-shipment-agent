@@ -489,9 +489,9 @@ class ReviewSession:
                 suppressed_count=len(self._excluded),
                 packet_count=len(self.manifest.rows) if self.manifest else 0,
                 evaluation_reasons=reasons,
-                # The run reached a terminal state. `count_shadow_runs` counts
-                # only completed runs, and a review that ended is the only
-                # thing that completes one now that dispatch is gone.
+                # The run reached a terminal state. `completed_at` is what marks
+                # a run finished, and a review that ended is the only thing that
+                # completes one now that dispatch is gone.
                 completed_at=utc_now(),
             )
         )

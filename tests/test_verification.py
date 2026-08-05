@@ -1,10 +1,10 @@
 """D1, against a real recorded reply from the configured model."""
 
 import json
-import textwrap
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import AgentConfig, SnapshotAgentConfigs
 from bbq_shipment_agent.agents import (
@@ -28,17 +28,6 @@ VALIDATIONS = FIXTURES / "shippo-addresses.json"
 COMPLETIONS = FIXTURES / "d1-completions.json"
 ROSTER = FIXTURES / "roster-sf-dc.yaml"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "standard"
-        verification: "{verification}"
-    default_profile: "baseline"
-    kill_switch: false
-"""
-
 
 class StubModel:
     """Returns whatever it was given, and remembers what it was asked."""
@@ -68,12 +57,9 @@ class StubAgentConfigs:
 
 
 def make_run(tmp_path, *, verification="on", agent_source=None):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG).format(verification=verification), encoding="utf-8"
-    )
     return initialize_run(
         ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
+        gate=CapabilityGate(verification=verification),
         agent_source=agent_source or SnapshotAgentConfigs(SNAPSHOT),
         snapshot_path=tmp_path / "snap.json",
     )

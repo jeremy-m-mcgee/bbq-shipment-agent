@@ -5,19 +5,15 @@ so these tests drive real edits through a real solve against recorded quotes
 rather than asserting on a classifier in isolation.
 """
 
-import textwrap
 from datetime import date
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.ledger import RunRecord, ShipmentRecord, iter_records, rebuild
 from bbq_shipment_agent.planning import RecordedQuoter
-from bbq_shipment_agent.recipients import (
-    RecordedAddressValidator,
-    load_roster,
-    to_shipments,
-)
+from bbq_shipment_agent.recipients import load_roster, to_shipments
 from bbq_shipment_agent.review import (
     Edit,
     EditKind,
@@ -36,15 +32,26 @@ SATURDAY = date(2026, 8, 15)
 MONDAY = date(2026, 8, 17)
 TUESDAY = date(2026, 8, 18)
 
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "standard"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
+def _open_run(tmp_path, **kwargs):
+    """A run whose capabilities have been evaluated, standing in for the
+    post-planning state a `ReviewSession` is created from.
+
+    In production `run review` plans first, which evaluates the three
+    capabilities live; the review then reads the fingerprint that produced.
+    These tests build the session directly, so they evaluate the same set here
+    or the shipment rows would point at a null fingerprint.
+    """
+    run = initialize_run(
+        ledger_root=tmp_path / "ledger",
+        gate=CapabilityGate(),
+        snapshot_path=tmp_path / "snap.json",
+        **kwargs,
+    )
+    run.planner()
+    run.validation()
+    run.verification()
+    return run
+
 
 ROSTER = """
 origin:
@@ -75,17 +82,9 @@ recipients:
 
 @pytest.fixture
 def session(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
     roster = load_roster(tmp_path / "recipients.yaml")
-    run = initialize_run(
-        ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
-        snapshot_path=tmp_path / "snap.json",
-        packet_count=roster.packet_count,
-    )
+    run = _open_run(tmp_path, packet_count=roster.packet_count)
     return ReviewSession(
         run,
         to_shipments(roster.recipients),
@@ -202,9 +201,6 @@ class TestRefusal:
 
         from bbq_shipment_agent.planning import Lane
 
-        (tmp_path / "capabilities.yaml").write_text(
-            textwrap.dedent(CONFIG), encoding="utf-8"
-        )
         (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
         roster = load_roster(tmp_path / "recipients.yaml")
         # A lane hot enough that nothing clears 4.4C on any date.
@@ -212,11 +208,7 @@ class TestRefusal:
             replace(s, lane=Lane(key="blistering", ambient_c=95.0))
             for s in to_shipments(roster.recipients)
         )
-        run = initialize_run(
-            ledger_root=tmp_path / "ledger",
-            config_path=tmp_path / "capabilities.yaml",
-            snapshot_path=tmp_path / "snap.json",
-        )
+        run = _open_run(tmp_path)
         session = ReviewSession(
             run,
             blistering,

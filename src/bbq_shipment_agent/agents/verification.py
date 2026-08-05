@@ -252,10 +252,11 @@ def verify_manifest(
     is a fact, and a ledger that only records the successful ones cannot answer
     what design 8 asks of `verification-enabled`.
     """
-    if run.capabilities.verification is not VerificationMode.ON:
+    verification = run.verification()
+    if verification is not VerificationMode.ON:
         return Verification(
             outcome="skipped",
-            reason=f"verification-enabled is {run.capabilities.verification.value}",
+            reason=f"verification-enabled is {verification.value}",
         )
 
     config = run.agent_configs.get(CONFIG_KEY)

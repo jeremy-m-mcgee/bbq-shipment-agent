@@ -15,10 +15,10 @@ here with a fake tracker attached to the config it was served.
 from dataclasses import replace
 from pathlib import Path
 import json
-import textwrap
 import time
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import AgentConfig, SnapshotAgentConfigs
 from bbq_shipment_agent.agents.metrics import (
@@ -38,17 +38,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 QUOTES = FIXTURES / "shippo-quotes-sf-dc.json"
 ROSTER = FIXTURES / "roster-sf-dc.yaml"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "off"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
-
 
 class FakeTracker:
     """Records what the SDK tracker would have been asked to send.
@@ -194,13 +183,10 @@ class ScriptedModel:
 
 @pytest.fixture
 def session(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     roster = load_roster(ROSTER)
     run = initialize_run(
         ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
+        gate=CapabilityGate(),
         agent_source=SnapshotAgentConfigs(SNAPSHOT),
         snapshot_path=tmp_path / "snap.json",
     )

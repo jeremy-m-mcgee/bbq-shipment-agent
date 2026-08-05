@@ -192,10 +192,15 @@ class RunRecord(LedgerRecord):
     merge_key: ClassVar[tuple[str, ...]] = ("run_id",)
 
     profile: str | None = _opt("VARCHAR")
-    # Section 2 requires the resolved capability set on every run, and section
-    # 6.9's planner prerequisite needs to count prior shadow runs -- neither is
-    # answerable from `profile` alone, since profile definitions change over
-    # time while the ledger does not.
+    # Section 2 requires the resolved capability set on every run. Since the
+    # LaunchDarkly refactor the values are evaluated live, one per stage, and
+    # folded into this snapshot -- so unlike `profile`, which is now only a
+    # targeting label, this records what the run actually operated under. It is
+    # written by planning rather than at A1, because A1 no longer resolves
+    # capabilities: each is evaluated when its stage runs (design 7).
+    #
+    # The authoritative per-stage record is the `capability_evaluations`
+    # stream. This snapshot is the folded view the fingerprint names.
     cap_fingerprint: str | None = _opt("VARCHAR")
     cap_snapshot: dict[str, Any] | None = _opt("JSON")
     packet_count: int | None = _opt("INTEGER")
@@ -248,12 +253,13 @@ class ShipmentRecord(LedgerRecord):
     # otherwise each carry an identical `cap_snapshot` blob into a committed
     # append-only file, which is what the fingerprint exists to avoid.
     #
-    # This assumes a shipment's capabilities are the run's. True today: A1
-    # resolves once and nothing re-evaluates per shipment. If design 6.6's
-    # `shipment` context kind is ever used to vary a flag per recipient, a
-    # fingerprint here could name a set no run row describes, and the fix is a
-    # `capability_sets` stream keyed by fingerprint -- deliberately not built
-    # for a case that does not exist yet.
+    # This assumes a shipment's capabilities are the run's. True today: each
+    # capability is evaluated once per run and cached, so per-stage live
+    # evaluation still yields one value per capability per run and one
+    # fingerprint. If a flag were ever varied per recipient (a `shipment`
+    # context kind), a fingerprint here could name a set no run row describes;
+    # the fix is to key shipment rows on a per-unit capability evaluation
+    # instead -- deliberately not built for a case that does not exist yet.
     cap_fingerprint: str | None = _opt("VARCHAR")
 
 
@@ -315,11 +321,46 @@ class AgentInvocationRecord(LedgerRecord):
     tools_called: list[str] | None = _opt("VARCHAR[]")
 
 
+@dataclass(kw_only=True)
+class CapabilityEvaluationRecord(LedgerRecord):
+    """One live evaluation of one capability flag. Never folded.
+
+    Since the LaunchDarkly refactor, capability flags are evaluated live, one
+    per stage, under that stage's context (design 6). This stream is the
+    authoritative per-stage record of what LaunchDarkly served and whether the
+    repo could use it -- the fact `cap_snapshot` folds into one view and
+    `cap_fingerprint` names.
+
+    An event, not an entity: it has no merge key, because two evaluations of
+    the same flag in one run (a re-solve in review, say) are two facts, not a
+    correction of one another. In the ordinary run each flag is evaluated once.
+
+    `value` is an enum member's value, never the raw LD payload -- the same
+    secrets rule the snapshot follows. `reason` carries either the coercion
+    rejection (`FLAG_VALUE_INVALID:...`) or the gate's reason qualified by
+    source (`launchdarkly:RULE_MATCH:...`, `offline:NO_SDK_KEY`).
+    """
+
+    stream: ClassVar[str] = "capability_evaluations"
+    merge_key: ClassVar[tuple[str, ...]] = ()
+
+    #: The `stage` context kind the flag was evaluated under.
+    stage: str = _req("VARCHAR")
+    #: The LaunchDarkly flag key, e.g. "planner-mode".
+    flag: str = _req("VARCHAR")
+    #: The coerced enum value, e.g. "shadow". Never free text.
+    value: str | None = _opt("VARCHAR")
+    #: "launchdarkly" | "offline".
+    source: str | None = _opt("VARCHAR")
+    reason: str | None = _opt("VARCHAR")
+
+
 #: Every stream the ledger knows how to write and rebuild.
 RECORD_TYPES: tuple[type[LedgerRecord], ...] = (
     RunRecord,
     ShipmentRecord,
     AgentInvocationRecord,
+    CapabilityEvaluationRecord,
 )
 
 STREAMS: dict[str, type[LedgerRecord]] = {r.stream: r for r in RECORD_TYPES}

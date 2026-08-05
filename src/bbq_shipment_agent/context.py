@@ -1,17 +1,24 @@
 """LaunchDarkly evaluation context. Design section 6.6.
 
 One flag evaluated against a multi-context, rather than parallel config trees
-per stage. What the `stage` kind actually varies in the built system is AI
-Config retrieval: each configured stage is evaluated under its own kind, so
-`address-repair` and `review-narrator` can be served different instruction
-text and different models by targeting rule.
+per stage. The `stage` kind varies two things now: AI Config retrieval, and --
+since the LaunchDarkly refactor -- capability flag evaluation. Each configured
+stage is evaluated under its own kind, so `address-repair` and
+`review-narrator` can be served different instruction text and different
+models, *and* `planner-mode`, `validation-mode` and `verification-enabled` can
+be served differently per stage by targeting rule.
 
-Capability flags are *not* evaluated that way. A1 resolves them all once under
-`stage: run_init` and every stage reads the resolved set, which is what lets
-one run have one fingerprint. Design 6.6 says so explicitly; this docstring
-used to claim the opposite, with an example about a capability being on for
-one stage and off for another, and a targeting rule written against that
-claim would never have fired.
+Capability flags used to be resolved once under `stage: run_init` and read
+from a repo-side profile. They are now evaluated live, each under the stage
+that reads it (`planner` under `address_repair`, `validation` under
+`address_validation`, `verification` under `manifest_verification`), so a rule
+written against one of those stages actually fires. The kill switch is the one
+capability-adjacent flag still evaluated under `run_init`. See `capabilities`.
+
+Each capability is evaluated once per run and cached, so the run still folds
+one value per capability into one fingerprint -- the per-stage context is what
+a targeting rule sees, not a licence to serve the same flag two ways in one
+run.
 
 ## One builder, and why it is not merely tidy
 
@@ -53,6 +60,7 @@ from ldclient import Context
 #: one would never fire, and its presence here implied otherwise.
 STAGE_RUN_INIT = "run_init"
 STAGE_EXTRACTION = "extraction"
+STAGE_ADDRESS_VALIDATION = "address_validation"
 STAGE_ADDRESS_REPAIR = "address_repair"
 STAGE_INFEASIBILITY_REMEDIATION = "infeasibility_remediation"
 STAGE_MANIFEST_VERIFICATION = "manifest_verification"

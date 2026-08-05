@@ -50,7 +50,8 @@ from .agents import (
 )
 from .context import ImageIdentity
 from .capabilities import (
-    DEFAULT_CONFIG_PATH,
+    LaunchDarklyGate,
+    OfflineGate,
     PlannerMode,
     ValidationMode,
     VerificationMode,
@@ -72,8 +73,6 @@ from .recipients import (
     load_roster,
 )
 from .run import (
-    LaunchDarklyProvider,
-    OfflineProvider,
     initialize_run,
     launchdarkly_client,
     record_run_reasons,
@@ -176,14 +175,13 @@ class RunOptions:
     """
 
     ledger: Path = DEFAULT_LEDGER_ROOT
-    config: Path = DEFAULT_CONFIG_PATH
     snapshot: Path = DEFAULT_SNAPSHOT_PATH
     lanes: Path = DEFAULT_LANES_PATH
     cache: Path = DEFAULT_CACHE_DIR
     recipients: Path = DEFAULT_ROSTER_PATH
     #: The committed user/department pool. A path rather than the pool itself
-    #: for the same reason `config` and `lanes` are: a front-end holds options,
-    #: not loaded configuration, and the file is read once the run opens.
+    #: for the same reason `lanes` is: a front-end holds options, not loaded
+    #: configuration, and the file is read once the run opens.
     operators: Path = DEFAULT_OPERATORS_PATH
     profile: str | None = None
     #: Which key from `operators` this run presents itself as. A key and never
@@ -258,10 +256,10 @@ def missing_credentials(options: RunOptions) -> dict[str, tuple[str, ...]]:
     """Live paths this run may take that have no key to take them with.
 
     A warning rather than a verdict, and the distinction is worth keeping.
-    Capabilities are not resolved until A1, so `verification-enabled` may be
-    off and D1 may never ask; `validation-mode` may be off and B2 likewise.
-    What this can say without guessing is narrower and still useful: a stage
-    with no recording will reach for a key, and the key is not there.
+    Capabilities are evaluated live when each stage runs, so `verification-
+    enabled` may be off and D1 may never ask; `validation-mode` may be off and
+    B2 likewise. What this can say without guessing is narrower and still
+    useful: a stage with no recording will reach for a key, and it is not there.
 
     Empty counts as unset. `.env` is seeded from `.env.example`, so an
     unconfigured key is present-but-empty rather than absent -- and the most
@@ -281,10 +279,12 @@ def missing_credentials(options: RunOptions) -> dict[str, tuple[str, ...]]:
 
 
 def flag_sources(options: RunOptions, client: Any) -> tuple[str, Any, Any]:
-    """The provider and agent-config source for a run, live or offline.
+    """The flag gate and agent-config source for a run, live or offline.
 
     Shared by every entry point so they cannot drift into disagreeing about
-    what an offline run means.
+    what an offline run means. The gate is the live capability seam: online it
+    evaluates each flag against LaunchDarkly under its stage context, offline it
+    serves the per-capability defaults.
     """
     if client is None:
         reason = offline_reason(options.offline)
@@ -293,14 +293,14 @@ def flag_sources(options: RunOptions, client: Any) -> tuple[str, Any, Any]:
         # unreachable run degrade rather than fail.
         return (
             f"offline ({reason})",
-            OfflineProvider(reason=reason),
+            OfflineGate(reason=reason),
             ChainedAgentConfigs(
                 SnapshotAgentConfigs(options.snapshot), OfflineAgentConfigs(reason)
             ),
         )
     return (
         "launchdarkly",
-        LaunchDarklyProvider(client),
+        LaunchDarklyGate(client),
         ChainedAgentConfigs(
             LaunchDarklyAgentConfigs(client), SnapshotAgentConfigs(options.snapshot)
         ),
@@ -638,12 +638,11 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
         timeout_seconds=options.timeout
     )
     try:
-        connection, provider, agent_source = flag_sources(options, client)
+        connection, gate, agent_source = flag_sources(options, client)
         before = options.snapshot.read_bytes() if options.snapshot.exists() else None
         run = initialize_run(
             ledger_root=options.ledger,
-            config_path=options.config,
-            provider=provider,
+            gate=gate,
             agent_source=agent_source,
             snapshot_path=options.snapshot,
             profile=options.profile,
@@ -728,8 +727,8 @@ def plan_with(
     context.roster = roster
     context.extraction = extraction
 
-    mode = run.capabilities.validation
-    verification = run.capabilities.verification
+    mode = run.validation()
+    verification = run.verification()
     progress.emit(
         "roster",
         f"{roster.source}  ({roster.packet_count} recipients)",
@@ -747,7 +746,7 @@ def plan_with(
         quoter=quoter(options),
         validator=validator(options, mode),
         lane_book=lane_book(options),
-        repairer=repair_model(options, run.capabilities.planner),
+        repairer=repair_model(options, run.planner()),
         screenshots=options.screenshots,
         verifier=verifier(options, verification),
         extra_reasons=context.extra_reasons,

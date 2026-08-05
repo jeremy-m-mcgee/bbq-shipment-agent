@@ -43,7 +43,7 @@ The candidate configuration space per shipment is small enough to enumerate exha
 
 The distinction is kept because it is the right one to apply to any acting stage added later. What is *not* kept is the machinery: `authority-level` and its ceiling were removed once dispatch was (section 9), because the system has no action to authorize and a permission nothing consults is decorative — the same test 6.6 applied when it deleted the `shipment` context kind. `memory-mode` went at the same time and for the same reason: it was resolved, clamped, fingerprinted and recorded, and no stage ever read it. A flag is worth its config surface only when some stage's behaviour turns on it.
 
-**Every run is reconstructible.** The resolved capability set, the capability overrides the flag layer proposed, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
+**Every run is reconstructible.** The capability set a run operated under, each capability's live evaluation (on the `capability_evaluations` stream, with the value LaunchDarkly served and why), and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else — which matters more now that the capability values come from LaunchDarkly live rather than from a committed config file.
 
 **The system spends no money.** It produces a work package and stops. Label purchase was designed, specified, and then removed (section 9) rather than built, so there is no irreversible action anywhere in the pipeline — the strongest version of "human in the send loop" is a system with no send.
 
@@ -112,9 +112,9 @@ Yellow nodes are model-driven loops. Everything else is deterministic.
 ### Phase A: Run setup
 
 **A1. Initialize run.**
-Generate a run ID. Read the kill switch from repo config and abort if set. Evaluate the flag payload against the run context, apply the declared prerequisites (6.9), and record the resolved capability set plus the proposed overrides on the run record.
+Generate a run ID. Evaluate the kill switch against LaunchDarkly under `stage: run_init` and abort if it is on. Open the run record with its identity and targeting label. A1 does *not* resolve the capability flags any more: each is evaluated live under its own stage context when the stage that reads it runs (6.6), and the folded snapshot and fingerprint are appended to the run row at planning time.
 
-Output: run record with capability fingerprint.
+Output: run record opened; capability snapshot and fingerprint follow at planning.
 
 ### Phase B: Recipient resolution
 
@@ -294,16 +294,17 @@ LaunchDarkly is a delivery layer for values. It does not execute anything. The d
 | Agent instruction text | LD |
 | Which instruction variation is served | LD |
 | Model, temperature, token ceiling | LD |
-| `planner-mode`, `validation-mode`, `verification-enabled` | LD |
+| `planner-mode`, `validation-mode`, `verification-enabled` | LD (evaluated live, per stage) |
+| `pipeline-kill-switch` | LD (evaluated live at A1) |
 | Tool definitions and execution | Python |
 | Which tools each agent is offered | Python |
 | Stage sequencing, retries, error handling | Python |
 | Thermal gate and the 4.4C threshold | Python constant |
 | Configuration enumeration and pair solve | Python |
 | Ledger writes, Shippo calls | Python |
-| `pipeline-kill-switch` | Repo config |
+| How a served flag value is coerced, defaulted, cached, recorded | Python |
 
-**Medium split, scoped to agents.** LD holds the instruction set for each of the four agents, along with model parameters. Python holds everything else: tool definitions, tool execution, stage sequencing, and every deterministic decision. Instruction text is the only thing that moves out of the repo.
+**Medium split, scoped to agents.** LD holds the instruction set for each of the four agents, along with model parameters. It also holds the capability flag *values* and the kill switch: LaunchDarkly is a delivery layer for values, and a capability flag is exactly a value that could differ between two runs of identical code with both correct, and whose outcome you want to attribute — which is 6.1's own dividing test. What LD never holds is control flow. Python still owns the entire spine, tool definitions, tool execution, and — importantly — how a value LD serves is coerced through an enum, defaulted when unreachable, cached, and recorded. The kill switch moved to LD too (it used to be repo config); the "visible commit" argument that kept it there lost its force once dispatch was cut, since a run that spends no money has nothing irreversible for a stale toggle to trigger. It fails open when LD is unreachable, so an outage does not brick an offline run.
 
 This is a deliberate step past the thinner alternative, where LD serves only a variant key and instruction text stays in Python beside the tools it references. The thin version guarantees that an instruction and the tool signatures it depends on always ship together. Giving that up buys console-side iteration on instructions, clean variation versioning, and per-variant metric attribution without a code change, which matters most for the two agents whose instructions will churn the most while the system is being tuned.
 
@@ -370,7 +371,7 @@ The section closed by saying what it must not become — decorative — and offe
 
 What replaced them is a smaller claim that is actually enforced: every capability in `CAPABILITY_TYPES` is read by a stage, and a test pins the set. `planner` gates B3, `validation` gates B2, `verification` gates D1.
 
-The kill switch stays in repo config for the reason authority used to be there: stopping the pipeline should be a visible commit, not a console toggle.
+The kill switch used to stay in repo config for the reason authority used to be there: stopping the pipeline should be a visible commit, not a console toggle. It has since moved to LaunchDarkly as `pipeline-kill-switch`, evaluated live at A1. The "visible commit" argument was load-bearing while dispatch existed and the pipeline could spend money; once dispatch was cut (section 9) the strongest guarantee became structural — no stage makes an irreversible external call — and a console toggle that only stops *planning* no longer needs the ceremony of a commit. It fails open when LD is unreachable, because the failure a repo toggle guarded against (a stale "off" letting a run act) cannot happen in a pipeline that acts on nothing.
 
 ### 6.6 Context model
 
@@ -388,11 +389,11 @@ context = run.contexts.for_stage("address_repair")
 mode = flags.variation("planner-mode", context, default="off")
 ```
 
-**What the `stage` kind actually varies, in the built system, is AI Config retrieval.** Each configured stage is evaluated under its own kind, so `address-repair` and `review-narrator` can be served different instruction text and different models by targeting rule. That part works and is exercised.
+**What the `stage` kind varies is AI Config retrieval and — since the LaunchDarkly refactor — capability flag evaluation.** Each configured stage is evaluated under its own kind, so `address-repair` and `review-narrator` can be served different instruction text and different models by targeting rule; and `planner-mode`, `validation-mode` and `verification-enabled` are each evaluated under the stage that reads them (`address_repair`, `address_validation`, `manifest_verification`), so a rule written against one of those stages fires.
 
-Capability flags are not evaluated that way. A1 resolves them all once, under `stage: run_init`, and every stage reads the resolved set. A targeting rule written against `stage: address_repair` for `planner-mode` would therefore never fire — this section previously implied it would, with an example about a capability being on for one stage and off for another.
+Capability flags used to be resolved all at once under `stage: run_init`, from a repo-side profile, and every stage read that set. This section recorded that as a deliberate limitation: a rule written against `stage: address_repair` for `planner-mode` would never fire. The refactor removed the limitation. LaunchDarkly is now the sole source of the values, each is evaluated live under its own stage context, and there is no profile or `resolve` step in between.
 
-That is a deliberate limitation rather than an oversight, and section 7 depends on it: one run has one resolved capability set and one fingerprint, and every shipment row points at it. Per-stage capability resolution would mean several sets per run and a fingerprint that names none of them.
+Section 7 still holds, and this is the subtle part: each capability is evaluated **once per run and cached**, so per-stage evaluation still yields one value per capability per run and one fingerprint. The `stage` context is what a targeting rule sees; it is not a licence to serve the same flag two ways within one run. The kill switch is the one capability-adjacent flag still evaluated under `run_init`, because it is A1's decision and no stage reads it.
 
 **A `shipment` kind was defined here and has been removed.** It was in the example above, keyed by recipient with `variant`, `zone` and `prior_failures` attributes, and described as the way a record that has failed before could be pre-flagged without a code change. Nothing ever evaluated against it: no caller in `src/` passed a recipient key, so every context the system built had two kinds in it and this one was a claim the code did not make. Section 6.5 offered the test — a reader should be able to tell whether anything consults it — and this kind failed it. So, later, did `authority-level` and `memory-mode`, which 6.5 now records as removals rather than as a permission being kept. Per-unit targeting is not abandoned by removing it. It moves to an `image` kind at B1 — the one stage where a variation can be scored against an answer key rather than admired.
 
@@ -420,38 +421,19 @@ Recorded on the run row as `evaluation_reasons["operator"]`, beside the screensh
 
 `drive` is where the randomising lives: it draws one key per run from its seeded generator, which makes the operator the second axis a live session can vary after the screenshot subset. It learns the population by *parsing the form* rather than reading the config file — the driver is a client of the UI (section 10), so a pool it read for itself could offer a key the running app would refuse.
 
-**One builder constructs every context.** `ContextBuilder` holds the run's targeting identity, is built at the top of A1 before the capability provider is contacted, and is carried on the run; `context.py` is the only module that calls `Context.from_dict`, and a test pins that. This is not tidiness. A percentage rollout is only coherent if every evaluation of that flag within a run presents the same attributes, and an experiment is only attributable if the evaluation event and the metric event carry the same context. Both held before, by coincidence: each call site rebuilt the dict from the run's fields and A1 hand-built its own, because it runs before the run exists. Attributes are declared per kind in one list and anything undeclared is refused rather than forwarded — the same shape as `resolve` rejecting unknown capability keys, and for the reason the ledger has a secrets rule, since a context is sent to LaunchDarkly's servers.
+**One builder constructs every context.** `ContextBuilder` holds the run's targeting identity, is built at the top of A1 before the kill switch is evaluated, and is carried on the run so every later per-stage capability evaluation reuses it; `context.py` is the only module that calls `Context.from_dict`, and a test pins that. This is not tidiness. A percentage rollout is only coherent if every evaluation of that flag within a run presents the same attributes, and an experiment is only attributable if the evaluation event and the metric event carry the same context. That matters more now that capability flags are evaluated live per stage rather than once at A1: each stage's evaluation and the run's must present the same run and user attributes, which one carried builder guarantees. Attributes are declared per kind in one list and anything undeclared is refused rather than forwarded — the same shape as the capability coercion rejecting a value that is not an enum member, and for the reason the ledger has a secrets rule, since a context is sent to LaunchDarkly's servers.
 
-### 6.7 Profiles
+### 6.7 Profiles — moved into LaunchDarkly
 
-Six independent flags is 64 combinations, which will not be tested. Use named profiles with per-flag override.
+This section defined named profiles in `config/capabilities.yaml` — `baseline`, `planner_trial`, `full` — as a repo-side bundle of per-flag values, so that six flags' worth of combinations did not each need testing. That file is gone. LaunchDarkly is the sole source of truth now, so a named profile is a **targeting rule** keyed on the `profile` attribute the run still carries: a run that presents itself as `planner_trial` is served the shadow-planner variation by a rule, not by a bundle the repo resolves.
 
-```yaml
-# config/capabilities.yaml
-profiles:
-  baseline:
-    planner: off              # python sequences the stages
-    validation: standard      # b2 applies validator corrections
-    verification: off
+What survives the move:
 
-  planner_trial:
-    planner: shadow           # runs, output logged not used
-    validation: standard
-    verification: on
+- `planner` is still not a boolean. `shadow` runs the planner path and logs its output without acting on it, which is how a capability earns promotion.
+- The three capabilities are `planner`, `validation`, `verification`. `memory` and `authority` were removed for gating nothing (6.5).
+- The combinatorics argument still holds — it is just LaunchDarkly's targeting to manage rather than a committed YAML file's. The `profile` attribute is recorded on the run row so the population a rule split is a fact in the ledger.
 
-  full:
-    planner: on
-    validation: strict        # correctable addresses go to a human
-    verification: on
-
-default_profile: baseline
-
-kill_switch: false
-```
-
-`planner` is not a boolean. `shadow` runs the planner path in parallel and logs its output without acting on it, which is how a capability earns promotion.
-
-Three capabilities rather than the five this example used to show. `memory` and `authority` were removed for gating nothing (6.5), and the arithmetic that motivated this section survives the cut: three flags is still eight combinations, and profiles are still how you avoid testing all of them.
+What is lost, deliberately: the profiles are no longer a committed artifact whose change shows up in `git log`. That trade is the whole point of the refactor — capability behaviour is now a console edit, and the ledger's `cap_snapshot` plus the `capability_evaluations` stream are what make each run's actual behaviour reconstructible instead.
 
 ### 6.8 Flag taxonomy
 
@@ -462,17 +444,13 @@ Three capabilities rather than the five this example used to show. `memory` and 
 | `validation-mode` | operational | permanent |
 | `pipeline-kill-switch` | operational | permanent |
 
-There is no longer a permission row. `authority-level` was the only one, and 6.5 records why it went; `memory-mode` was a release flag for a release that never happened. The rule they were governed by still holds for anything that replaces them: a flag that changes what the system may do in the world does not live in LaunchDarkly, is not overridable from the CLI, and changing it is a visible commit. `pipeline-kill-switch` is the one flag that still meets that description, and it is in repo config accordingly.
+There is no longer a permission row. `authority-level` was the only one, and 6.5 records why it went; `memory-mode` was a release flag for a release that never happened. Every flag now lives in LaunchDarkly and is evaluated live — including `pipeline-kill-switch`, which used to be repo config. The rule that kept it there — a flag changing what the system may do in the world is a visible commit, not a console toggle — no longer binds any current flag, because none of them changes what the system does *in the world*: the pipeline acts on nothing. A future acting stage would bring back a flag that does, and that flag would carry the old rule with it (6.5).
 
-### 6.9 Prerequisites
+### 6.9 Prerequisites — removed
 
-Express capability dependencies declaratively rather than as hand-written clamping logic:
+This section expressed one capability dependency declaratively: `planner-mode: on` required `shadow` to have been evaluated across a minimum number of completed runs, counted out of the committed ledger. The whole mechanism — the `Prerequisite` type, the `resolve`-time demotion, and `count_shadow_runs` — is gone with the repo-side resolution layer.
 
-- `planner-mode: on` requires `planner-mode: shadow` to have been evaluated across a minimum number of runs
-
-This logic is easy to get subtly wrong and hard to test, which is why it should be data.
-
-One rule rather than two: `authority-level` above `propose_only` requires `verification-enabled` on was the other, and it went with authority itself (6.5). The mechanism is unchanged and still worth having for one rule — the surviving prerequisite is the harder of the two anyway, since it counts completed shadow runs out of the committed ledger rather than comparing two values in hand. A `when` or `requires` key naming a capability the repo does not have now fails loudly at resolve time instead of silently never applying, which is what keeps a leftover rule from looking enforced.
+The dependency is not enforced any more. Promoting the planner from `shadow` to `on` is now a LaunchDarkly change, and whether enough shadow runs have accumulated is a judgement the operator makes by querying the ledger (`json_extract_string(cap_snapshot, '$.capabilities.planner') = 'shadow'` over completed runs) rather than a gate the repo applies. If a hard gate is wanted again, it belongs wherever the promotion is made — a LaunchDarkly approval workflow, or a re-added repo check — and would read the same committed ledger the old `count_shadow_runs` did.
 
 ### 6.10 Offline behavior
 
@@ -482,12 +460,14 @@ The medium split raises the stakes here, because the cached payload now contains
 
 Treat unreachable as a normal path:
 
-1. Bootstrap from a cached payload on disk, written by the run-start snapshot in 6.4
+1. Bootstrap agent instructions from a cached payload on disk, written by the run-start snapshot in 6.4
 2. Refresh opportunistically, never blocking
-3. Record the proposed capability overrides on the run record
-4. Fall back to `baseline` profile if no cache exists
+3. Evaluate the capability flags through the `OfflineGate`, which serves the code default for each, and record each evaluation on the `capability_evaluations` stream
+4. Fall back to the per-capability defaults for behaviour, and the snapshot cache for instructions
 
-Step 4 degrades cleanly by construction. `baseline` has `planner: off`, `memory: off`, and `verification: off`, so a run with no instructions available falls back to the deterministic spine and a manually reviewed manifest. The system gets less helpful and does not get less correct.
+Step 4 degrades cleanly by construction. The offline defaults are `planner: off`, `validation: standard`, `verification: off` — the values that used to be the `baseline` profile — so a run with no LD connection falls back to the deterministic spine and a manually reviewed manifest. The kill switch defaults off, so an unreachable LD does not brick the run. The system gets less helpful and does not get less correct.
+
+The gate is where "unreachable is normal" lives: `OfflineGate` is not an error path, it is the second implementation of the same seam, injected when there is no SDK key or the client does not come up. No test opens a socket because live LD is injected, never reached for.
 
 ---
 
@@ -536,10 +516,26 @@ started_at, completed_at
 
 `cap_fingerprint` and `cap_snapshot` were not in the original field list, which
 conflicted with section 2's requirement that a run's capabilities are
-recoverable from the ledger. They are also load-bearing for the planner
-prerequisite in 6.9: counting how many runs actually operated in shadow cannot
-be answered from `profile` alone, because profile definitions are edited over
-time while the ledger is append-only.
+recoverable from the ledger. Since the LaunchDarkly refactor they carry more
+weight, not less: capability *values* now come from LD and are evaluated live,
+so `profile` is only a targeting label and the snapshot is the only committed
+record of what a run actually operated under.
+
+**They land at planning time, not A1.** A1 no longer resolves capabilities —
+each is evaluated live when its stage runs (6.6) — so A1 opens the run row with
+`started_at` and `profile`, and `_record_planning` appends `cap_fingerprint`,
+`cap_snapshot` and `flag_payload` once the stages have evaluated the set. This
+is the same partial-update rule as `completed_at` arriving at approval. A run
+that stops before planning (`run extract`) reaches no capability-gated stage
+and so carries no snapshot, which is honest: it had none.
+
+The authoritative per-stage record is a new stream, `capability_evaluations`
+(`run_id, stage, flag, value, source, reason, timestamp`), an event log with no
+merge key. Each live evaluation appends one line, carrying the coerced value and
+whether LD or the offline gate served it. `cap_snapshot` is the folded view of
+those lines; `cap_fingerprint` names it. This is the `capability_sets` stream
+the paragraph below anticipated, built the moment per-stage evaluation made it
+real.
 
 The snapshot lives on the run row only. A shipment row carries
 `cap_fingerprint` and reads the values off the run it points at. At ~22
@@ -557,18 +553,20 @@ with a new one. Nothing needs migrating and nothing should be: the ledger is
 append-only, every affected run row still carries the `cap_snapshot` its
 fingerprint named, and rewriting history to make the hashes line up would
 destroy the record it exists to keep. A query spanning the change should group
-by `cap_snapshot` fields rather than by fingerprint — which is what
-`count_shadow_runs` already does, reading
-`$.capabilities.planner` rather than joining on a hash.
+by `cap_snapshot` fields rather than by fingerprint — reading
+`$.capabilities.planner` over completed runs (the query that replaced
+`count_shadow_runs` when the prerequisite machinery was removed, 6.9) rather
+than joining on a hash.
 
-This assumes a shipment's capabilities are the run's, which holds because A1
-resolves once and nothing re-evaluates per shipment. The assumption is what
-keeps capability flags run-scoped even though AI Config retrieval is not: if
-any context kind below the run were ever used to vary a *capability* per unit,
-a fingerprint on a shipment row could name a set no run row describes. The fix
-at that point is a `capability_sets` stream keyed by fingerprint and written
-once per distinct set, deliberately not built for a case that does not yet
-exist.
+This assumes a shipment's capabilities are the run's, which holds because each
+capability is evaluated **once per run and cached** — per-stage evaluation is
+about which *context* the value is targeted under, not about producing several
+values per run. So one run still folds to one set and one fingerprint. If a
+flag were ever varied per unit below the run (a `shipment` context kind), a
+fingerprint on a shipment row could name a set no run row describes; the
+`capability_evaluations` stream already records each evaluation individually,
+so the fix would be to key a shipment row on its evaluation rather than on the
+run fingerprint — deliberately not built for a case that does not yet exist.
 
 6.6's `shipment` kind was the case this paragraph was written against, and it
 has been removed for never having been evaluated. The `image` kind that
@@ -852,7 +850,7 @@ That second gap is unchanged and is now more visible: B3's replay escalates wher
 Sequenced so that each step de-risks the next.
 
 1. **Ledger and run record.** Schema, JSONL writer, DuckDB rebuild. Everything else writes here. *Done.*
-2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, proposed overrides, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, the repo-side clamp, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy. *Done*, including the invocation itself, which waited on step 3 for a manifest to check.
+2. **One flag and one agent config end to end.** `planner-mode` in shadow, plus `manifest-verification` as the first agent config, evaluated against the multi-context. Evaluation reason, capability value, and instruction hash all land in the ledger. This exercises SDK initialization, the offline fallback, context construction, capability evaluation through the flag gate, agent config retrieval, the run-start snapshot, and the ledger schema in one pass. `manifest-verification` is the right first agent precisely because it touches no tools, so this step tests the LD path without also testing tool contract handling. If this path is clean, every other flag and agent is a copy. *Done*, including the invocation itself, which waited on step 3 for a manifest to check. (The repo-side resolution layer this step originally exercised — profiles, `resolve`, the clamp — has since been removed; see 6.7 and 6.9.)
 3. **Deterministic spine, no models.** B2, C1, C2, C3, C5, C6 with a hand-written recipient list as input. This should produce a complete manifest with zero model calls. *Done.* `run plan` is the entry point; the recipient list is `recipients.yaml`, gitignored because it holds home addresses, with `recipients.example.yaml` as the committed template.
 4. **Thermal model.** Slot into C3 behind the interface the spine already expects. *Done*, in the sense the step meant: `LumpedCapacitanceModel` is C3's default and `TestThermalGate` pins the properties that must survive recalibration. Calibration itself is not coming — section 5 — so what is left is the lane ambient in section 10, which is an assumption rather than a fit.
 5. **Extraction.** B1, screenshots to records. *Done.* `recipients/extraction.py`, one model call per image, scored against `tests/fixtures/screenshots/ground_truth.json` — all 22 people found on the first pass, every address exact.
