@@ -1,7 +1,8 @@
 # B1 extraction fixtures
 
-Eight screenshots, twenty-five recipients, and `ground_truth.json` recording
-what each image actually says.
+Nine screenshots, twenty-seven recipients, two people who are in a thread and
+are not recipients, and `ground_truth.json` recording what each image actually
+says.
 
 The first seven were commissioned against a brief, now deleted — it is at
 `git show 37bdce3^:docs/screenshot-fixtures.md` if you want what it asked for,
@@ -31,6 +32,31 @@ B1 read the image correctly. `08-imessage-cousins` is the worked example — its
 `hard` case asks whether an obscured ZIP comes back transcribed or guessed, and
 a hand-written recording would have asserted the very thing under test.
 
+## Not everyone in a picture is a recipient
+
+`ground_truth.json` graded recall and nothing else: every address it listed had
+to come back, and the eight screenshots before `09-whatsapp-neighbours` were
+populated entirely by people who asked for a packet. A model that returned
+every address it could see would have scored perfectly on all of them, and the
+answer key had no way to say so — B1 extracts *requests*, and an image where
+every address is one cannot tell the difference.
+
+So an entry may also carry `non_recipients`, and 09 has the two shapes:
+
+| Who | In the key as | What a failure would look like |
+|---|---|---|
+| Wes | no address, `reason` only | Surfacing in `unresolved`, sending a human after someone who already said no |
+| Marisol | address + region, `reason` | A real, deliverable address on the manifest that nobody asked to be sent anything |
+
+Recorded rather than simply left out. An address omitted from an answer key is
+indistinguishable from one nobody noticed was in the picture, and the region is
+kept for the same reason a recipient's is: a precision failure is worth being
+able to look at.
+
+Nothing marks either string — `2000 Avenue of the Stars, Los Angeles CA 90067`
+is well-formed and really deliverable. Only the sentence around it says it is
+about a potluck, which is design 4's point that B1 is extraction and not OCR.
+
 ## `difficulty` is about reading, not about the address
 
 The one thing to know before writing a test against these. `difficulty`
@@ -56,10 +82,14 @@ a repair the machine cannot make and a person can.
 
 ## Validator answers are recorded, not fetched
 
-All twenty-two addresses were run through the live Shippo validator once and
-the responses merged into `tests/fixtures/shippo-addresses.json`, which
+Every address B1 returns was run through the live Shippo validator once and
+the response merged into `tests/fixtures/shippo-addresses.json`, which
 `RecordedAddressValidator` replays. Tests downstream of B1 therefore run
 offline against real answers rather than assumed ones.
+
+Every address B1 *returns*, not every address in the pictures — an address in
+`non_recipients` never reaches B2, so recording one would be recording an
+answer to a question the pipeline does not ask.
 
 Re-record rather than hand-edit if an address changes. An unrecorded address
 raises instead of being assumed clean, which is what stops the fixture
@@ -73,6 +103,13 @@ where someone corrected themselves the region points at the corrected
 message: Hector Ramos sent `11 S 4th St` and then `11 N 4th St`, and the
 region is on the second.
 
-Spot-checked against the images and accurate. Nothing in the pipeline
-requires them to be exact — see `docs/screenshot-fixtures.md` for why they
-are worth having anyway.
+Nothing in the pipeline requires them to be exact. They are worth having
+because they separate "the extractor pointed at the wrong place" from "the
+extractor pointed at the right place and misread it" — two failures with
+different fixes, and one number that tells them apart. That reasoning is the
+brief's, at `git show 37bdce3^:docs/screenshot-fixtures.md`; this line used to
+cite the file by path, which has not existed since the brief was deleted.
+
+The delivered seven were measured by eye and spot-checked. Everything built
+from a spec has regions the renderer recorded as it placed the glyphs, which
+is the difference `tools/make_screenshots.py` exists to make.

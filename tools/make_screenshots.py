@@ -111,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"    {person['name']:<20} {person['difficulty']:<12} "
                 f"region {r['x']},{r['y']} {r['width']}x{r['height']}"
             )
+        for person in entry.get("non_recipients", []):
+            r = person.get("region")
+            where = f"region {r['x']},{r['y']} {r['width']}x{r['height']}" if r else "no address"
+            print(f"    {person['name']:<20} {'not a recipient':<12} {where}")
 
     added, updated = merge(entries, args.dry_run)
     verb = "would update" if args.dry_run else "updated"

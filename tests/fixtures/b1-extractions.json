@@ -49,6 +49,12 @@
       "model": "claude-sonnet-5",
       "output_tokens": 439,
       "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Dana\",\n      \"street1\": \"1200 Getty Center Dr\",\n      \"city\": \"Los Angeles\",\n      \"state\": \"CA\",\n      \"zip\": \"90049\",\n      \"region\": {\"x\": 60, \"y\": 855, \"width\": 840, \"height\": 210},\n      \"confidence\": 0.97,\n      \"note\": \"leave at desk if out\"\n    },\n    {\n      \"name\": \"Ruben\",\n      \"street1\": \"600 Congress Ave\",\n      \"city\": \"Austin\",\n      \"state\": \"TX\",\n      \"zip\": \"78701\",\n      \"region\": {\"x\": 60, \"y\": 1535, \"width\": 715, \"height\": 250},\n      \"confidence\": 0.95,\n      \"note\": \"combined street from earlier message with corrected city/state/zip\"\n    },\n    {\n      \"name\": \"Simone\",\n      \"street1\": \"700 Boylston St\",\n      \"city\": \"Boston\",\n      \"state\": \"MA\",\n      \"zip\": \"021??\",\n      \"region\": {\"x\": 60, \"y\": 1905, \"width\": 790, \"height\": 155},\n      \"confidence\": 0.6,\n      \"note\": \"last digits of zip obscured by heart emoji reaction\"\n    }\n  ]\n}"
+    },
+    "09-whatsapp-neighbours.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 362,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Theo\",\n      \"street1\": \"1701 Wynkoop St\",\n      \"city\": \"Denver\",\n      \"state\": \"CO\",\n      \"zip\": \"80202\",\n      \"region\": {\"x\": 97, \"y\": 795, \"width\": 700, \"height\": 145},\n      \"confidence\": 0.98,\n      \"note\": \"\"\n    },\n    {\n      \"name\": \"Nina\",\n      \"street1\": \"700 N Art Museum Dr\",\n      \"city\": \"Milwaukee\",\n      \"state\": \"WI\",\n      \"zip\": \"53202\",\n      \"region\": {\"x\": 97, \"y\": 1905, \"width\": 700, \"height\": 100},\n      \"confidence\": 0.97,\n      \"note\": \"\"\n    }\n  ]\n}"
     }
   }
 }

@@ -422,6 +422,62 @@
           "notes": "The last two ZIP digits sit under a reaction badge. Ground truth records what the image shows -- \"021??\" -- not the resolved 02116, because B1 is instructed to transcribe damage and lower its confidence rather than guess. An extraction returning 02116 has corrected silently, which is the one failure nothing downstream can detect.\nTwo digits rather than one, which this file claimed until the image was rendered and read. `reaction_covers` anchors the badge on that many trailing characters, but the badge is a circle wider than the glyphs it centres on, so it takes the neighbour with it. The number to write here is the one the rendered image supports, not the one the spec asked for."
         }
       ]
+    },
+    {
+      "file": "09-whatsapp-neighbours.png",
+      "source_type": "whatsapp",
+      "recipients": [
+        {
+          "name": "Theo Marchetti",
+          "street1": "1701 Wynkoop St",
+          "city": "Denver",
+          "state": "CO",
+          "zip": "80202",
+          "region": {
+            "x": 96,
+            "y": 786,
+            "width": 717,
+            "height": 120
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Nina Okonjo",
+          "street1": "700 N Art Museum Dr",
+          "city": "Milwaukee",
+          "state": "WI",
+          "zip": "53202",
+          "region": {
+            "x": 96,
+            "y": 1932,
+            "width": 710,
+            "height": 120
+          },
+          "difficulty": "clean",
+          "notes": ""
+        }
+      ],
+      "non_recipients": [
+        {
+          "name": "Wes",
+          "reason": "Declined and gave no address. Must appear in neither `recipients` nor `unresolved`: the unresolved list is a human escalation queue, and a person who said no is not an unanswered question."
+        },
+        {
+          "name": "Marisol",
+          "reason": "A well-formed, deliverable address that is not a shipment request. It is recorded here with its region rather than left out of the file, because an address omitted from an answer key reads as one nobody noticed. B1 extracts requests; this is the case that says so.",
+          "street1": "2000 Avenue of the Stars",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90067",
+          "region": {
+            "x": 96,
+            "y": 1530,
+            "width": 740,
+            "height": 180
+          }
+        }
+      ]
     }
   ]
 }

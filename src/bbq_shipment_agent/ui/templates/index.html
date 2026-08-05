@@ -79,6 +79,7 @@
               {%- if shot.expected is not none -%}
                 {{ shot.expected }} recipient{{ '' if shot.expected == 1 else 's' }}
                 {%- if shot.difficulties %} &middot; {{ shot.difficulties|join(', ') }}{% endif -%}
+                {%- if shot.decoys %} &middot; {{ shot.decoys }} not a recipient{% endif -%}
               {%- else -%}
                 {{ shot.size_kb }} kB
               {%- endif -%}

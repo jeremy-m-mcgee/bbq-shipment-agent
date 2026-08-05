@@ -122,6 +122,15 @@
     "street1": "1600 Pennsylvania Ave NW",
     "zip": "20500-0005"
   },
+  "1701 wynkoop st|denver|co|80202|us": {
+    "city": "Denver",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CO",
+    "street1": "1701 Wynkoop St",
+    "zip": "80202-1041"
+  },
   "225 baker st nw|atlanta|ga|30313|us": {
     "city": "Atlanta",
     "country": "US",
@@ -279,6 +288,15 @@
     "state": "MA",
     "street1": "700 Boylston St",
     "zip": "02116-2813"
+  },
+  "700 n art museum dr|milwaukee|wi|53202|us": {
+    "city": "Milwaukee",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "WI",
+    "street1": "700 N Art Museum Dr",
+    "zip": "53202-4007"
   },
   "99999 nowhere blvd|fargo|nd|58102|us": {
     "city": "FARGO",

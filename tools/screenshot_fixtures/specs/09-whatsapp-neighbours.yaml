@@ -1,0 +1,114 @@
+# A group thread where not everyone is ordering.
+#
+# The other eight screenshots grade recall: every address in the picture is an
+# address that must come back. So a model that returned every address it could
+# see would score perfectly on all of them, and the answer key could not tell
+# the difference. This one is the precision case.
+#
+# Two ways to be in the thread and not be a recipient, kept as two people so a
+# failure names which one broke:
+#
+#   Wes declines and gives nothing. He must not surface as an unresolved
+#   person either -- `unresolved` means "wants a packet, gave no usable
+#   address", which is Jules in 07, and folding a decline into it would send a
+#   human an escalation for someone who already said no.
+#
+#   Marisol puts a real, well-formed address on screen that was never a
+#   shipment request. Nothing about the string says so; only the sentence
+#   around it does. That is the whole of the test.
+#
+# Real buildings, invented people, per the brief the delivered seven were
+# commissioned against: these addresses go through a live validator and the
+# set is only worth having if the verdict is genuine.
+
+file: 09-whatsapp-neighbours.png
+source_type: whatsapp
+theme: whatsapp
+title: Elm St neighbours
+subtitle: 5 participants
+
+thread:
+  - outgoing: true
+    timestamp: "6:41 PM"
+    runs:
+      - text: >-
+          september brisket run. send me a shipping address if you want a
+          packet
+
+  - sender: Theo
+    timestamp: "6:43 PM"
+    runs:
+      - text: "count me in. "
+      - text: "1701 Wynkoop St, Denver CO 80202"
+        address_for: theo
+      - text: " — someone's always there to sign"
+
+  - sender: Wes
+    timestamp: "6:47 PM"
+    runs:
+      - text: "none for me this time, thanks. away till October"
+
+  # No mention of packets, before or after. The address is here because the
+  # potluck is, and a greedy read is the failure this screenshot exists to
+  # catch.
+  - sender: Marisol
+    timestamp: "6:52 PM"
+    runs:
+      - text: "potluck moved, it's at "
+      - text: "2000 Avenue of the Stars, Los Angeles CA 90067"
+        address_for: potluck
+      - text: " on the 14th"
+
+  - sender: Nina
+    timestamp: "7:02 PM"
+    runs:
+      - text: "yes please!! "
+      - text: "700 N Art Museum Dr, Milwaukee WI 53202"
+        address_for: nina
+
+  - outgoing: true
+    timestamp: "7:04 PM"
+    runs:
+      - text: "got it, I'll ping when they ship"
+
+# `difficulty` grades how hard the text is to read out of the image, not
+# whether the address is deliverable -- the fixtures README records that those
+# are two different axes. Both of these are plainly legible; what is hard here
+# is knowing which addresses to leave alone.
+recipients:
+  - key: theo
+    name: Theo Marchetti
+    street1: 1701 Wynkoop St
+    city: Denver
+    state: CO
+    zip: "80202"
+    difficulty: clean
+    notes: ""
+
+  - key: nina
+    name: Nina Okonjo
+    street1: 700 N Art Museum Dr
+    city: Milwaukee
+    state: WI
+    zip: "53202"
+    difficulty: clean
+    notes: ""
+
+non_recipients:
+  - name: Wes
+    reason: >-
+      Declined and gave no address. Must appear in neither `recipients` nor
+      `unresolved`: the unresolved list is a human escalation queue, and a
+      person who said no is not an unanswered question.
+
+  - key: potluck
+    name: Marisol
+    street1: 2000 Avenue of the Stars
+    city: Los Angeles
+    state: CA
+    zip: "90067"
+    reason: >-
+      A well-formed, deliverable address that is not a shipment request. It is
+      recorded here with its region rather than left out of the file, because
+      an address omitted from an answer key reads as one nobody noticed. B1
+      extracts requests; this is the case that says so.

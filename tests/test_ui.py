@@ -204,6 +204,33 @@ class TestTheCatalogue:
         assert rows[0]["expected"] == 2
         assert rows[0]["difficulties"] == ["clean", "hard"]
         assert rows[0]["source_type"] == "imessage"
+        assert rows[0]["decoys"] == 0
+
+    def test_the_caption_counts_the_people_who_are_not_recipients(self, tmp_path):
+        # `09-whatsapp-neighbours` is two clean addresses and two people who
+        # must not come back. Captioned only as "2 recipients, clean" it looks
+        # like the easiest image in the set, and the picker exists to be aimed.
+        import json
+
+        (tmp_path / "a.png").write_bytes(b"")
+        (tmp_path / "ground_truth.json").write_text(
+            json.dumps(
+                {
+                    "screenshots": [
+                        {
+                            "file": "a.png",
+                            "recipients": [{"difficulty": "clean"}],
+                            "non_recipients": [
+                                {"name": "Wes", "reason": "declined"},
+                                {"name": "Marisol", "reason": "not a request"},
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert screenshot_catalogue(tmp_path, (tmp_path / "a.png",))[0]["decoys"] == 2
 
     def test_no_answer_key_is_not_an_error(self, tmp_path):
         # A directory of real screenshots will never have one.

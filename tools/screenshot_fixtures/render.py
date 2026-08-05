@@ -357,11 +357,51 @@ def answer_key(spec: dict[str, Any], regions: dict[str, dict[str, int]]) -> dict
         row["difficulty"] = person.get("difficulty", "clean")
         row["notes"] = person.get("notes", "")
         recipients.append(row)
-    return {
+    entry = {
         "file": spec["file"],
         "source_type": spec.get("source_type", spec.get("theme", "imessage")),
         "recipients": recipients,
     }
+    absent = _non_recipients(spec, regions)
+    if absent:
+        entry["non_recipients"] = absent
+    return entry
+
+
+def _non_recipients(
+    spec: dict[str, Any], regions: dict[str, dict[str, int]]
+) -> list[dict[str, Any]]:
+    """People in the thread the answer key asserts B1 must *not* return.
+
+    The key grades recall on its own: every address it lists has to come back.
+    It grades precision only by omission, which is not the same as stating a
+    case -- an address absent from the key is indistinguishable from one nobody
+    noticed was in the picture. So a spec can name what is on screen and does
+    not belong in the output, and `reason` says which of the two it is: someone
+    who declined and gave nothing, or an address that was never a request.
+
+    An entry with a `key` points at an `address_for` run and carries the region
+    it occupies, for the same reason a recipient's does -- a precision failure
+    is worth being able to look at. One without is a person who typed no
+    address, so there is nothing to point at.
+    """
+    rows = []
+    for person in spec.get("non_recipients", []):
+        row: dict[str, Any] = {"name": person["name"], "reason": person["reason"]}
+        key = person.get("key")
+        if key is not None:
+            if key not in regions:
+                raise ValueError(
+                    f"{spec.get('file')}: non-recipient {key!r} has no run marked "
+                    f"`address_for: {key}`, so nothing points at the address it "
+                    "claims is in the picture."
+                )
+            row.update(
+                {k: person.get(k, "") for k in ("street1", "city", "state", "zip")}
+            )
+            row["region"] = regions[key]
+        rows.append(row)
+    return rows
 
 
 __all__ = ["render", "answer_key", "Rendered", "THEMES", "WIDTH", "HEIGHT"]

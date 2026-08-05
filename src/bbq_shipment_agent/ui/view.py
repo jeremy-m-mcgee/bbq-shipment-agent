@@ -386,6 +386,12 @@ def screenshot_catalogue(directory: Any, images: tuple[Any, ...]) -> list[dict[s
                 "difficulties": sorted(
                     {r.get("difficulty", "") for r in recipients} - {""}
                 ),
+                # People in the thread who must *not* come back. Captioned
+                # because the picker exists to be aimed, and an image whose
+                # whole point is invisible in its caption cannot be: "2
+                # recipients, clean" describes the easy half of
+                # `09-whatsapp-neighbours` and hides the half under test.
+                "decoys": len(known.get("non_recipients", [])),
                 "size_kb": round(image.stat().st_size / 1024),
             }
         )

@@ -84,7 +84,7 @@ should be on screen before you press it, not in a log afterwards.
 
 Pick which screenshots B1 reads by looking at them, then generate a manifest.
 That is the one thing a terminal cannot do: `--screenshot-count 3` takes three
-of seven and prints which three, but you cannot *choose* three without seeing
+of them and prints which three, but you cannot *choose* three without seeing
 them. The picker captions each image from `ground_truth.json` where there is
 one — how many recipients it holds, and how hard they are to read — so you can
 aim a run at the awkward cases rather than sampling blind.
@@ -123,9 +123,9 @@ the same run live.
 
 One honest limit. `--extractions` and `--repairs` replay B1 and B3 for any
 subset of the fixture screenshots — the recording is matched on image content,
-so reading two of seven replays the right two. But
+so reading two of them replays the right two. But
 `shippo-quotes-sf-dc.json` holds one lane, San Francisco to Washington, and the
-22 people in those screenshots live in twenty-odd other places. A replayed
+people in those screenshots live in twenty-odd other places. A replayed
 screenshot run therefore gets as far as C2 and stops, because `RecordedQuoter`
 refuses to invent a rate it never recorded — which is the behaviour you want.
 Fully offline works today for the **roster** path (`--recipients

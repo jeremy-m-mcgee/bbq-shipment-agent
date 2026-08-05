@@ -73,6 +73,23 @@ def truth():
     return [(s["file"], r) for s in gt["screenshots"] for r in s["recipients"]]
 
 
+@pytest.fixture(scope="module")
+def non_recipients():
+    """The people the answer key says must *not* come back.
+
+    Recall is what the rest of the key grades: every address in it has to be
+    returned. Precision it grades only by omission, and an address left out of
+    a file is indistinguishable from one nobody spotted -- so the negative
+    cases are stated instead.
+    """
+    gt = json.loads((SHOTS / "ground_truth.json").read_text())
+    return [
+        (s["file"], r)
+        for s in gt["screenshots"]
+        for r in s.get("non_recipients", [])
+    ]
+
+
 @pytest.fixture
 def run(tmp_path):
     (tmp_path / "capabilities.yaml").write_text(
@@ -117,7 +134,10 @@ class TestItReadsEveryScreenshot:
         assert result.unreadable == ()
 
     def test_every_person_in_the_answer_key_is_accounted_for(self, result, truth):
-        # 22 people: 21 with an address, one who never gave one.
+        # Everyone the key lists arrives as one or the other: a recipient with
+        # an address, or someone who wanted a packet and gave none. Stated
+        # against the key rather than against a count, because the fixture set
+        # is meant to grow and a number here would fail on the next screenshot.
         assert len(result.recipients) + len(result.unresolved) == len(truth)
 
 
@@ -144,6 +164,46 @@ class TestAgainstTheAnswerKey:
         excluded = result.escalations()
         assert len(excluded) == 1
         assert "no usable address" in excluded[0].reason
+
+
+class TestItExtractsRequestsNotAddresses:
+    """Being in the picture is not being a recipient.
+
+    Every other screenshot in the set is populated entirely by people who
+    asked for a packet, so a model that returned every address it could see
+    would score perfectly on all of them and the answer key could not say so.
+    `09-whatsapp-neighbours` is the precision case: someone declines and gives
+    nothing, and someone posts a real address about something else entirely.
+
+    Nothing about either string marks it -- only the sentence around it does,
+    which is design 4's point that B1 is extraction and not OCR.
+    """
+
+    def test_the_answer_key_states_the_negative_cases(self, non_recipients):
+        # Without this, the two below pass on an empty list, which is how a
+        # precision suite stops testing anything without going red.
+        assert non_recipients
+
+    def test_an_address_that_is_not_a_request_is_not_extracted(
+        self, result, non_recipients
+    ):
+        forbidden = {address_of(r) for _, r in non_recipients if r.get("street1")}
+        assert forbidden
+        extracted = {address_of({
+            "street1": r.address.street1, "city": r.address.city,
+            "state": r.address.state, "zip": r.address.zip,
+        }) for r in result.recipients}
+        assert not (extracted & forbidden)
+
+    def test_someone_who_declined_is_not_an_escalation(self, result, non_recipients):
+        # `unresolved` is a queue of people for a human to chase. Putting
+        # someone in it who already said no costs the operator the same phone
+        # call as a real escalation, and the ledger records it as one.
+        declined = {normalize(r["name"]) for _, r in non_recipients if not r.get("street1")}
+        assert declined
+        answered = {normalize(r.name) for r in result.recipients}
+        answered |= {normalize(u.name) for u in result.unresolved}
+        assert not (answered & declined)
 
 
 class TestItReadsRatherThanCorrects:
