@@ -62,14 +62,16 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
 - `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
-- `src/bbq_shipment_agent/context.py` — `ContextBuilder`, the only place a LD context is constructed (run / stage / image kinds), `ImageIdentity`, reason codes
+- `src/bbq_shipment_agent/context.py` — `ContextBuilder`, the only place a LD context is constructed (run / stage / image / user kinds), `ImageIdentity`, reason codes
+- `src/bbq_shipment_agent/operators.py` — `OperatorPool`, the only source of a user/department pair. A key is an input; a department never is.
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
 - `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
 - `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
 - `src/bbq_shipment_agent/wiring.py` — `RunOptions`, `Progress`, and the *only* place a live client is constructed. Both front-ends go through it.
 - `src/bbq_shipment_agent/ui/` — the local web app: app.py (routes), service.py (worker thread + events), view.py (results as plain data), templates/
-- `src/bbq_shipment_agent/drive.py` — `bbq-shipment-agent drive`: an HTTP client that posts runs at a serving `ui` on an interval, varying the screenshot subset. Live testing, not a pipeline path.
+- `src/bbq_shipment_agent/drive.py` — `bbq-shipment-agent drive`: an HTTP client that posts runs at a serving `ui` on an interval, varying the screenshot subset and the operator. Live testing, not a pipeline path.
 - `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
+- `config/operators.yaml` — the user/department pool the `user` context kind is keyed on. Committed: who a run claims to be changes what LD serves it. No recipients, ever — these keys go to LD.
 - `config/lanes.yaml` — ambient per destination band + month. Stated assumptions, never measured; an unmapped state takes the *hottest* band on purpose.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
 - `ledger/*.jsonl` — the committed source of truth. `ledger.duckdb` is derived and gitignored.
@@ -98,6 +100,9 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - LD serves `planner-mode`, `validation-mode`, `verification-enabled` and nothing else — see `CAPABILITY_FLAGS`. A key naming a capability the repo does not have is recorded as `UNKNOWN_CAPABILITY_IGNORED`, not acted on and not fatal; the console may still be serving `authority-level` or `memory-mode`.
 - An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
 - B1's config is retrieved once per screenshot, under an `image` context keyed on the file's content hash — the only unit a rollout can mean anything on, since `run.key` is a fresh UUID. Screenshots are therefore resolved before A1, not in `build_roster`. B1 records one invocation per image, carrying `image_key`.
+- The `user` kind is keyed on a username with `department` as its one attribute, and it is on *every* evaluation in the run — a rule targeting it has to reach D2, not just A1. It exists because `run.key` is a fresh UUID and a username is not: it is the second key in the system a rollout can bucket on, and the only other one is the image hash. `department` is an attribute, not a kind, because nothing buckets on a department.
+- A department is looked up in `config/operators.yaml`, never supplied. The CLI, the form and the driver all name a key; an unknown one is an error. Two front-ends posting different departments for one username is how a `department is "kitchen"` rule ends up describing whatever was typed last.
+- `drive` learns the operator pool by parsing the form (`data-operator`), not by reading the config file — it is a client of the UI, and a pool it read itself could offer a key the running app would refuse.
 - LaunchDarkly is never given a filename. The `image` kind is key-only and the key is a content hash; `evaluation_reasons["screenshot_keys"]` on the run row is what resolves it locally.
 - A variation the canonical snapshot entry does not hold is archived under `agent-key#variation-key`, so every `instruction_hash` in the ledger has bytes committed in the repo. The offline reader looks up bare agent keys and cannot serve one back.
 - `ContextBuilder` is the only thing that constructs an evaluation context, and `context.py` the only module calling `Context.from_dict`. A second construction site is how the run and stage contexts drift apart, which is what a percentage rollout cannot survive. Context attributes are declared per kind in `_ATTRIBUTES`; an undeclared one is refused, not forwarded, because a context is sent to LD's servers.

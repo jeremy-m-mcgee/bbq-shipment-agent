@@ -1,0 +1,43 @@
+# Who a run claims to be, for LaunchDarkly targeting. Design section 6.6.
+#
+# THIS FILE IS THE ONLY SOURCE OF USER/DEPARTMENT PAIRS. Nothing else in the
+# system invents one: the CLI, the form and the driver all name a key from
+# this list, and the department comes back from here. A department typed into
+# a form would be a claim nobody checked, and a targeting rule written against
+# `department is ops` would then be describing whatever the last caller felt
+# like posting.
+#
+# It is committed on purpose, for the same reason `capabilities.yaml` is: who
+# a run presents itself as changes what LaunchDarkly serves it, so the
+# population a rollout splits is a fact about the repo and a change to it
+# shows up in `git log`.
+#
+# No secrets and no third-party identities. These keys are sent to
+# LaunchDarkly's servers on every evaluation, exactly like `profile` — which
+# is why a recipient is never one of them. The `image` kind next door is
+# key-only and content-hashed for the harder version of the same rule.
+
+# Which key a run takes when nobody names one. Null means no `user` context
+# kind at all, which is a legitimate answer: absent and "present but unset"
+# should not be two states. Set it to a key below to give every unattributed
+# run an identity.
+default_operator: null
+
+operators:
+  # The real one. `jeremy` runs the pipeline; everything below exists so a
+  # rollout has a population to split, and `drive` picks among them.
+  - key: jeremy
+    department: ops
+
+  - key: dana
+    department: ops
+  - key: priya
+    department: kitchen
+  - key: marcus
+    department: kitchen
+  - key: robin
+    department: logistics
+  - key: sam
+    department: logistics
+  - key: alex
+    department: finance

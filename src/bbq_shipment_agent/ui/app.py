@@ -49,6 +49,7 @@ from ..wiring import (
     available_screenshots,
     missing_credentials,
 )
+from ..operators import OperatorError, OperatorPool
 from .service import RunInProgress, RunService
 from .view import screenshot_catalogue
 
@@ -74,6 +75,12 @@ def create_app(
 
     directory = Path(screenshot_dir) if screenshot_dir else options.screenshots
     resolved_dir = Path(directory).resolve() if directory else None
+    # Loaded once at launch, like the screenshot directory: the population is
+    # a committed file, and a page that re-read it per request would offer a
+    # key the run in flight was not started with. Rendering it is also what
+    # lets `drive` learn the population without being told the file, which is
+    # what keeps the driver a client rather than a third front-end.
+    pool = OperatorPool.load(options.operators)
 
     def _images() -> tuple[Path, ...]:
         if resolved_dir is None or not resolved_dir.is_dir():
@@ -101,6 +108,7 @@ def create_app(
                 else [],
                 "directory": str(directory) if directory else "",
                 "options": options,
+                "operators": pool.operators,
                 "has_recordings": _has_recordings(options),
                 # Shown next to the button rather than left for the worker
                 # thread to discover. A key that is in `.env` but never loaded
@@ -126,12 +134,21 @@ def create_app(
         count: str = Form(""),
         seed: str = Form(""),
         profile: str = Form(""),
+        operator: str = Form(""),
         campaign: str = Form(""),
         offline: str = Form(""),
         replay: str = Form(""),
         no_screenshots: str = Form(""),
         depth: str = Form("plan"),
     ) -> Any:
+        try:
+            # Checked here rather than left for the worker thread: an
+            # unknown key is a 400 on the form that sent it, not a run that
+            # opens and dies. The department is never posted -- `pool.get`
+            # is the only thing that says which one a key belongs to.
+            pool.get(operator.strip() or None)
+        except OperatorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             chosen = _options_for(
                 options,
@@ -141,6 +158,7 @@ def create_app(
                 count=count,
                 seed=seed,
                 profile=profile,
+                operator=operator,
                 campaign=campaign,
                 offline=bool(offline),
                 replay=bool(replay),
@@ -251,6 +269,7 @@ def _options_for(
     seed: str,
     profile: str,
     campaign: str,
+    operator: str = "",
     offline: bool,
     replay: bool,
     no_screenshots: bool,
@@ -302,6 +321,7 @@ def _options_for(
         screenshots=screenshots,
         selection=selection,
         profile=profile.strip() or None,
+        operator=operator.strip() or None,
         campaign=campaign.strip() or None,
         offline=offline,
         depth=wanted_depth,

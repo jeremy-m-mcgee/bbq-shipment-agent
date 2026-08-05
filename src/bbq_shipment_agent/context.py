@@ -83,10 +83,30 @@ STAGE_REVIEW_NARRATOR = "review_narrator"
 #: on purpose. It is a count and never a name, so it leaks nothing a run row
 #: does not already hold. See `ContextBuilder.image_count` for why it is
 #: settled before A1 rather than at B1.
+#:
+#: `user` is keyed on a username and carries the department as its one
+#: attribute. It is here rather than as two more `run` attributes because of
+#: what a key is for: `run.key` is a fresh UUID, so a percentage rollout
+#: bucketed on the run kind re-rolls every run and never splits a population.
+#: A username is stable across runs and present on every evaluation in one, so
+#: a rule or a rollout written against it behaves the way whoever wrote it
+#: expects. That is the same argument that earned the `image` kind its place,
+#: applied to the other stable identifier this system has.
+#:
+#: Department is an attribute rather than a fourth kind because nothing
+#: buckets on a department as a unit. A rule can read the attribute, and LD
+#: can bucket by it inside the `user` kind if that day comes; a `department`
+#: kind nothing evaluated against would be the decorative kind this design
+#: keeps deleting.
+#:
+#: Both values come from `config/operators.yaml` and nowhere else. The
+#: department is never an input, so a form and a rule cannot disagree about
+#: which one somebody is in.
 _ATTRIBUTES: dict[str, frozenset[str]] = {
     "run": frozenset({"profile", "campaign", "packet_count", "image_count"}),
     "stage": frozenset(),
     "image": frozenset(),
+    "user": frozenset({"department"}),
 }
 
 
@@ -179,6 +199,15 @@ class ContextBuilder:
     #: that predates images. `initialize_run` always passes a number, so a
     #: roster run says 0 -- "no screenshots" is a measurement, not a silence.
     image_count: int | None = None
+    #: Who this run claims to be, as a `user` context kind. Both fields come
+    #: from `config/operators.yaml` via `OperatorPool.get`, which is what
+    #: makes the department a lookup rather than a claim -- see `operators`.
+    #:
+    #: `None` means no `user` kind at all rather than one keyed "unknown".
+    #: An unattributed run and a run by somebody nobody listed are the same
+    #: thing, and giving them a key would make them look like a population.
+    operator: str | None = None
+    department: str | None = None
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -188,12 +217,21 @@ class ContextBuilder:
                 "profile is required; a run that cannot say which profile it "
                 "resolved is not one a targeting rule can describe."
             )
+        if self.department and not self.operator:
+            # A kind cannot exist without a key, so a department with nobody
+            # to hang it on would be silently dropped -- and a rule written
+            # against it would silently never fire.
+            raise ContextError(
+                "a department needs an operator to belong to; the user "
+                "context is keyed on the username. Both come from "
+                "config/operators.yaml together."
+            )
 
     def for_stage(self, stage: str) -> dict[str, Any]:
         """The multi-context for evaluating something at one stage."""
         if not stage:
             raise ContextError("stage is required; it is how flags target per stage.")
-        return {
+        context = {
             "kind": "multi",
             "run": _individual(
                 "run",
@@ -207,6 +245,15 @@ class ContextBuilder:
             ),
             "stage": _individual("stage", stage, {}),
         }
+        if self.operator:
+            # On every stage's context rather than only A1's, because this is
+            # the kind AI Config retrieval can usefully target: a variation
+            # served to one operator has to reach `review_narrator` as well as
+            # `run_init` or the rule fires once and then stops.
+            context["user"] = _individual(
+                "user", self.operator, {"department": self.department}
+            )
+        return context
 
     def for_image(self, stage: str, image: ImageIdentity) -> dict[str, Any]:
         """The stage context plus the one screenshot being evaluated for.

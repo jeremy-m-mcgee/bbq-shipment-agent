@@ -110,6 +110,76 @@ def finish(client, job_id, timeout=30.0):
     raise AssertionError(f"run {job_id} did not finish within {timeout}s")
 
 
+POOL = """
+operators:
+  - key: dana
+    department: ops
+  - key: priya
+    department: kitchen
+"""
+
+
+@pytest.fixture
+def with_operators(options, workspace):
+    """A client whose form offers a pool of two."""
+    (workspace / "operators.yaml").write_text(POOL, encoding="utf-8")
+    return TestClient(
+        create_app(
+            replace(options, operators=workspace / "operators.yaml"),
+            screenshot_dir=workspace / "shots",
+        )
+    )
+
+
+class TestTheOperatorField:
+    """Who the run claims to be, as the `user` context kind.
+
+    The department is deliberately not on the form. It is looked up in
+    `config/operators.yaml`, so a posted one could disagree with the file a
+    targeting rule was written against.
+    """
+
+    def test_the_form_offers_the_committed_pool(self, with_operators):
+        body = with_operators.get("/").text
+        assert 'value="dana"' in body and "kitchen" in body
+
+    def test_the_driver_can_read_the_population_off_the_real_page(
+        self, with_operators
+    ):
+        # The contract between this template and `drive.OPERATOR`. The driver
+        # learns the pool from the page rather than the config file, so a
+        # markup change that broke the parse would otherwise only show up in
+        # a live session.
+        from bbq_shipment_agent.drive import operators_in
+
+        assert operators_in(with_operators.get("/").text) == ("dana", "priya")
+
+    def test_the_department_is_not_a_form_field(self, with_operators):
+        assert 'name="department"' not in with_operators.get("/").text
+
+    def test_nobody_is_selected_by_default(self, with_operators):
+        body = with_operators.get("/").text
+        assert "none &mdash; no user context" in body or "no user context" in body
+
+    def test_a_key_nobody_listed_is_refused_by_the_post(self, with_operators):
+        # A 400 on the form that sent it, rather than a run that opens, spends
+        # a vision call and then dies on an unknown key.
+        response = with_operators.post(
+            "/runs", data={"mode": "all", "depth": "plan", "operator": "mallory"}
+        )
+        assert response.status_code == 400
+        assert "not an operator" in response.json()["detail"]
+
+    def test_a_page_with_no_pool_offers_no_field(self, options, workspace):
+        client = TestClient(
+            create_app(
+                replace(options, operators=workspace / "absent.yaml"),
+                screenshot_dir=workspace / "shots",
+            )
+        )
+        assert 'name="operator"' not in client.get("/").text
+
+
 class TestThePicker:
     def test_the_setup_page_lists_every_screenshot(self, client):
         body = client.get("/").text
@@ -266,6 +336,16 @@ class TestTheFormBecomesOptions:
     def test_picking_nothing_is_refused_rather_than_read_as_everything(self, tmp_path):
         with pytest.raises(ValueError, match="no screenshots were selected"):
             self.base(tmp_path, mode="explicit", names=[])
+
+    def test_the_operator_reaches_the_options_as_a_key(self, tmp_path):
+        # A key and never a pair: `open_run` resolves it against the pool, so
+        # the department cannot arrive from the browser.
+        options = self.base(tmp_path, operator="priya")
+        assert options.operator == "priya"
+        assert not hasattr(options, "department")
+
+    def test_naming_nobody_leaves_the_run_unattributed(self, tmp_path):
+        assert self.base(tmp_path, operator="").operator is None
 
     def test_a_sample_becomes_a_count(self, tmp_path):
         options = self.base(tmp_path, mode="sample", count="3", seed="7")

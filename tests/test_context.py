@@ -208,6 +208,88 @@ class TestTheImageCount:
         )
 
 
+class TestTheUserKind:
+    """Who the run claims to be, keyed on a username.
+
+    Its whole justification is the key. `run.key` is a fresh UUID, so a
+    percentage rollout bucketed on the run kind re-rolls every run and splits
+    no population; a username is stable across runs, which makes this the
+    second unit in the system a rollout can mean anything on.
+    """
+
+    def builder(self, **kwargs):
+        return ContextBuilder(
+            run_id="run-1",
+            profile="baseline",
+            operator="priya",
+            department="kitchen",
+            **kwargs,
+        )
+
+    def test_it_carries_the_username_as_the_key_and_the_department_beside_it(self):
+        context = self.builder().for_stage(STAGE_ADDRESS_REPAIR)
+        assert context["user"] == {"key": "priya", "department": "kitchen"}
+
+    def test_the_sdk_accepts_it(self):
+        context = to_ld_context(self.builder().for_stage(STAGE_ADDRESS_REPAIR))
+        assert context.valid
+        assert context.get_individual_context("user").key == "priya"
+
+    def test_an_unattributed_run_carries_no_user_kind_at_all(self):
+        # Rather than a context keyed "unknown", which would look like a
+        # population to a rollout and is not one.
+        context = ContextBuilder(run_id="run-1", profile="baseline").for_stage(
+            STAGE_ADDRESS_REPAIR
+        )
+        assert "user" not in context
+
+    def test_a_department_with_nobody_to_belong_to_is_refused(self):
+        # A kind cannot exist without a key, so this would be silently dropped
+        # and a rule written against the department would never fire.
+        with pytest.raises(ContextError, match="needs an operator"):
+            ContextBuilder(run_id="run-1", profile="baseline", department="kitchen")
+
+    def test_every_stage_and_every_image_sees_the_same_user(self, tmp_path):
+        # A rule serving one operator different instructions has to reach D2
+        # as well as A1, and an experiment is only attributable if the
+        # evaluation and the metric carry the same context.
+        path = tmp_path / "01-imessage.png"
+        path.write_bytes(b"\x89PNG-one")
+        builder = self.builder()
+        contexts = [
+            builder.for_stage(STAGE_ADDRESS_REPAIR),
+            builder.for_stage(STAGE_MANIFEST_VERIFICATION),
+            builder.for_image(STAGE_EXTRACTION, ImageIdentity.of(path)),
+        ]
+        assert len({json.dumps(c["user"], sort_keys=True) for c in contexts}) == 1
+
+    def test_a1_takes_the_pair_already_resolved(self, tmp_path):
+        # The department is looked up in the committed pool, never passed in
+        # beside the key, so A1 cannot hold a pair that disagrees with it.
+        from bbq_shipment_agent.operators import Operator
+        from bbq_shipment_agent.run import initialize_run
+
+        run = initialize_run(
+            ledger_root=tmp_path, operator=Operator("priya", "kitchen")
+        )
+        assert run.context_for_stage("run_init")["user"] == {
+            "key": "priya",
+            "department": "kitchen",
+        }
+        # And it is on the run row, because design 2 wants a run that was
+        # served differently to be diagnosable from the JSONL alone.
+        assert run.evaluation_reasons()["operator"] == {
+            "key": "priya",
+            "department": "kitchen",
+        }
+
+    def test_a_run_with_no_operator_records_none(self, tmp_path):
+        from bbq_shipment_agent.run import initialize_run
+
+        run = initialize_run(ledger_root=tmp_path)
+        assert "operator" not in run.evaluation_reasons()
+
+
 def test_an_undeclared_attribute_is_refused():
     # The failure this guards is an edit that adds a field to ContextBuilder
     # and forgets to declare it, which would otherwise send it to LD.
@@ -226,10 +308,17 @@ def test_declared_attributes_are_the_ones_the_builder_produces():
     from bbq_shipment_agent.context import _ATTRIBUTES
 
     produced = ContextBuilder(
-        run_id="r", profile="p", campaign="c", packet_count=1, image_count=1
+        run_id="r",
+        profile="p",
+        campaign="c",
+        packet_count=1,
+        image_count=1,
+        operator="dana",
+        department="ops",
     ).for_stage("run_init")
     assert set(produced["run"]) - {"key"} == _ATTRIBUTES["run"]
     assert set(produced["stage"]) - {"key"} == _ATTRIBUTES["stage"]
+    assert set(produced["user"]) - {"key"} == _ATTRIBUTES["user"]
 
 
 @pytest.mark.parametrize(

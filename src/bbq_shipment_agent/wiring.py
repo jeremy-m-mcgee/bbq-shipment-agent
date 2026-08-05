@@ -55,6 +55,7 @@ from .capabilities import (
     ValidationMode,
     VerificationMode,
 )
+from .operators import DEFAULT_OPERATORS_PATH, OperatorPool
 from .planning import (
     DEFAULT_LANE,
     DEFAULT_LANES_PATH,
@@ -180,7 +181,15 @@ class RunOptions:
     lanes: Path = DEFAULT_LANES_PATH
     cache: Path = DEFAULT_CACHE_DIR
     recipients: Path = DEFAULT_ROSTER_PATH
+    #: The committed user/department pool. A path rather than the pool itself
+    #: for the same reason `config` and `lanes` are: a front-end holds options,
+    #: not loaded configuration, and the file is read once the run opens.
+    operators: Path = DEFAULT_OPERATORS_PATH
     profile: str | None = None
+    #: Which key from `operators` this run presents itself as. A key and never
+    #: a pair: the department is looked up, so a form cannot claim one. None
+    #: takes the pool's `default_operator`, which may itself be nobody.
+    operator: str | None = None
     campaign: str | None = None
     #: A run context attribute, and only `run init` supplies one. Planning
     #: knows the real count from the roster, and a hand-typed one that
@@ -618,6 +627,12 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
     """
     progress = progress or NullProgress()
     images = screenshots_for(options, progress)
+    # Resolved here, before the client exists, for the same reason screenshots
+    # are: an operator key that names nobody is an operator error, and it
+    # should cost neither a socket nor a run row. This is also the only place
+    # a key becomes a key/department pair, so the two front-ends cannot end up
+    # with different ideas of who is in which department.
+    operator = OperatorPool.load(options.operators).get(options.operator)
 
     client = None if options.offline else launchdarkly_client(
         timeout_seconds=options.timeout
@@ -638,6 +653,7 @@ def open_run(options: RunOptions, progress: Progress | None = None) -> RunContex
             # on each image's content hash. This is why they are resolved
             # before A1 rather than during planning.
             images=tuple(map(ImageIdentity.of, images)),
+            operator=operator,
         )
     except BaseException:
         if client is not None:

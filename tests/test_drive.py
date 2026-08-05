@@ -24,10 +24,12 @@ from bbq_shipment_agent.drive import (
     Response,
     catalogue_of,
     drive,
+    operators_of,
     plan_request,
 )
 
 IMAGES = ("one.png", "two.png", "three.png", "four.png")
+PEOPLE = ("dana", "priya", "marcus")
 
 
 class Clock:
@@ -48,8 +50,9 @@ class FakeApp:
     still running gets the 409 the real `RunService` would send.
     """
 
-    def __init__(self, images=IMAGES, duration=0.0):
+    def __init__(self, images=IMAGES, duration=0.0, operators=()):
         self.images = images
+        self.operators = operators
         self.duration = duration
         self.clock = Clock()
         self.posts: list[list[tuple[str, str]]] = []
@@ -63,6 +66,9 @@ class FakeApp:
             body = "".join(
                 f'<input type="checkbox" name="screenshot" value="{name}">'
                 for name in self.images
+            ) + "".join(
+                f'<option value="{key}" data-operator="{key}">{key}</option>'
+                for key in self.operators
             )
             return Response(self.page_status, body, "/")
         match = re.match(r"/runs/([0-9a-f]+)/state$", path)
@@ -212,6 +218,60 @@ class TestWhatVaries:
     def test_an_unknown_varying_rule_is_refused(self):
         with pytest.raises(DriveError, match="not a way to vary"):
             plan_request(DriveOptions(vary="sideways"), IMAGES, 0, random.Random(1))
+
+
+class TestTheOperator:
+    """Who each run claims to be, drawn from what the page offers.
+
+    The second axis worth varying, and for the same reason the image subset is
+    the first: a username is a context key that is stable across runs, so a
+    percentage rollout on the `user` kind splits a population rather than
+    re-rolling every run the way one bucketed on the run UUID does.
+    """
+
+    def test_the_select_is_the_population(self):
+        assert operators_of(FakeApp(operators=PEOPLE)) == PEOPLE
+
+    def test_a_page_offering_nobody_is_not_an_error(self):
+        # `operators.yaml` may be missing or empty, and driving a run that
+        # carries no user context is a legitimate session.
+        assert operators_of(FakeApp()) == ()
+
+    def test_each_run_names_one_of_them(self):
+        app = FakeApp(operators=PEOPLE)
+        run(app, runs=6, every=0)
+        named = [app.sent(i)["operator"][0] for i in range(6)]
+        assert set(named) <= set(PEOPLE)
+        assert len(set(named)) > 1  # varying, not pinned by accident
+
+    def test_the_department_is_never_posted(self):
+        # The pool is the only source of one. A driver that posted a
+        # department would be inventing a fact the app would have to trust.
+        app = FakeApp(operators=PEOPLE)
+        run(app, runs=2, every=0)
+        assert "department" not in app.sent(0)
+
+    def test_a_named_subset_is_the_only_one_used(self):
+        app = FakeApp(operators=PEOPLE)
+        run(app, runs=4, every=0, operators=("priya",))
+        assert [app.sent(i)["operator"] for i in range(4)] == [["priya"]] * 4
+
+    def test_a_key_the_app_does_not_offer_is_refused_before_the_session(self):
+        # Otherwise it is a 400 on every run, discovered with the whole
+        # session's pacing already underway.
+        with pytest.raises(DriveError, match="no operator called mallory"):
+            run(FakeApp(operators=PEOPLE), runs=1, every=0, operators=("mallory",))
+
+    def test_opting_out_names_nobody(self):
+        app = FakeApp(operators=PEOPLE)
+        run(app, runs=1, every=0, pick_operator=False)
+        assert "operator" not in app.sent(0)
+
+    def test_the_sequence_is_reconstructible_from_the_seed(self):
+        first, second = FakeApp(operators=PEOPLE), FakeApp(operators=PEOPLE)
+        run(first, runs=5, every=0)
+        run(second, runs=5, every=0)
+        assert first.posts == second.posts
 
 
 class TestDepth:

@@ -49,6 +49,7 @@ from .context import (
     to_ld_context,
 )
 from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc_now
+from .operators import Operator
 
 #: LD flag key -> the capability it proposes. Design 6.1 and 6.8.
 #:
@@ -210,11 +211,22 @@ class Run:
 
     def evaluation_reasons(self) -> dict[str, Any]:
         """Everything needed to explain this run's capabilities later."""
-        return {
+        reasons: dict[str, Any] = {
             "capabilities": dict(self.resolved.reasons),
             "flag_payload_source": self.payload.source,
             "flag_payload_reason": self.payload.reason,
         }
+        if self.contexts.operator:
+            # Recorded because a rule can now serve this run differently for
+            # who it claimed to be, and design 2 wants a surprising run
+            # diagnosable from the committed JSONL alone. The same reasoning
+            # that puts the screenshot filenames here: a targeting identity
+            # nobody wrote down is reconstructible from nothing.
+            reasons["operator"] = {
+                "key": self.contexts.operator,
+                "department": self.contexts.department,
+            }
+        return reasons
 
 
 def count_shadow_runs(ledger_root: Path | str) -> int:
@@ -252,6 +264,7 @@ def initialize_run(
     packet_count: int | None = None,
     run_id: str | None = None,
     images: tuple[ImageIdentity, ...] = (),
+    operator: Operator | None = None,
 ) -> Run:
     """A1. Returns the run record's in-memory counterpart.
 
@@ -283,12 +296,17 @@ def initialize_run(
     # so the number a targeting rule sees and the set B1's configs are
     # retrieved for cannot disagree. Zero on a roster run, which is a fact
     # about that run and not a missing value.
+    # The operator arrives already resolved, as a pair from the committed
+    # pool, so A1 never has a key without a department to go with it -- see
+    # `operators`. None means this run carries no `user` kind at all.
     contexts = ContextBuilder(
         run_id=run_id,
         profile=requested_profile,
         campaign=campaign,
         packet_count=packet_count,
         image_count=len(images),
+        operator=operator.key if operator else None,
+        department=operator.department if operator else None,
     )
 
     payload = (provider or OfflineProvider()).fetch(contexts.for_stage(STAGE_RUN_INIT))

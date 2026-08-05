@@ -58,6 +58,12 @@ DEFAULT_POLL = 1.0
 #: name/value pair is the same contract the browser posts back.
 CHECKBOX = re.compile(r'name="screenshot"\s+value="([^"]+)"')
 
+#: The option the operator select renders per person, learned the same way and
+#: for the same reason. The population a `user` rollout splits is a committed
+#: file the driver deliberately does not read: the app renders it, the driver
+#: posts a key back, and the app decides what that means.
+OPERATOR = re.compile(r'data-operator="([^"]+)"')
+
 
 class DriveError(RuntimeError):
     """The driver cannot do its job. An operator error with a fixable cause."""
@@ -157,6 +163,13 @@ class DriveOptions:
     profiles: tuple[str, ...] = ()
     #: Prefix for a per-run campaign attribute, so the run context differs too.
     campaign: str | None = None
+    #: Which operator keys to draw from, empty meaning everyone the page
+    #: offers. One key pins a session to one identity.
+    operators: tuple[str, ...] = ()
+    #: Whether to name an operator at all. On by default: the `user` kind is
+    #: the only kind besides `image` whose key is stable across runs, so a
+    #: session that never varies it leaves the second bucketable axis at rest.
+    pick_operator: bool = True
     seed: int | None = None
     replay: bool = False
     offline: bool = False
@@ -175,7 +188,11 @@ class Request:
 
 
 def plan_request(
-    options: DriveOptions, catalogue: tuple[str, ...], index: int, rng: random.Random
+    options: DriveOptions,
+    catalogue: tuple[str, ...],
+    index: int,
+    rng: random.Random,
+    operators: tuple[str, ...] = (),
 ) -> Request:
     """The form a browser would have posted, chosen by the varying rule.
 
@@ -228,6 +245,15 @@ def plan_request(
         profile = options.profiles[index % len(options.profiles)]
         fields.append(("profile", profile))
         summary = f"{summary}  [{profile}]"
+    if operators:
+        # Randomised rather than cycled, unlike the profiles: a rollout on the
+        # `user` kind buckets each key by hash, so a session that visited them
+        # in a fixed order would still split the same way while looking like
+        # it had been arranged. The rng is the seeded one, so the sequence is
+        # in the session's log and repeatable from `--seed`.
+        who = rng.choice(operators)
+        fields.append(("operator", who))
+        summary = f"{summary}  @{who}"
     if options.campaign:
         fields.append(("campaign", f"{options.campaign}-{index + 1:03d}"))
     if options.offline:
@@ -307,6 +333,31 @@ class DriveReport:
         )
 
 
+def front_page(transport: Transport) -> str:
+    """The picker page, or a refusal that says what was wrong with it."""
+    reply = transport.get("/")
+    if reply.status != 200:
+        raise DriveError(
+            f"the app answered {reply.status} for its own front page. "
+            f"Is {reply.url or 'that URL'} really `bbq-shipment-agent ui`?"
+        )
+    return reply.body
+
+
+def screenshots_in(body: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(CHECKBOX.findall(body)))
+
+
+def operators_in(body: str) -> tuple[str, ...]:
+    """The operator keys the form offers. Empty when the pool is empty.
+
+    Parsed rather than loaded, which is the point: `config/operators.yaml` is
+    the server's business, and a driver that read it could offer a key the
+    running app would refuse.
+    """
+    return tuple(dict.fromkeys(OPERATOR.findall(body)))
+
+
 def catalogue_of(transport: Transport) -> tuple[str, ...]:
     """Which images the picker is offering, read off its own page.
 
@@ -314,13 +365,33 @@ def catalogue_of(transport: Transport) -> tuple[str, ...]:
     files serves the roster form instead, and the driver should drive that
     rather than complain about it.
     """
-    reply = transport.get("/")
-    if reply.status != 200:
+    return screenshots_in(front_page(transport))
+
+
+def operators_of(transport: Transport) -> tuple[str, ...]:
+    """Who the picker is offering to run as."""
+    return operators_in(front_page(transport))
+
+
+def operators_for(options: DriveOptions, offered: tuple[str, ...]) -> tuple[str, ...]:
+    """The keys this session draws from, checked against what is on offer.
+
+    A key the app does not know would be a 400 on every run, so it is named
+    here — once, against the population — rather than discovered on the first
+    POST with the whole session's pacing already underway.
+    """
+    if not options.pick_operator:
+        return ()
+    if not options.operators:
+        return offered
+    unknown = sorted(set(options.operators) - set(offered))
+    if unknown:
         raise DriveError(
-            f"the app answered {reply.status} for its own front page. "
-            f"Is {reply.url or 'that URL'} really `bbq-shipment-agent ui`?"
+            f"the app offers no operator called {', '.join(unknown)}. "
+            f"It knows {sorted(offered) or 'nobody'} — see config/operators.yaml "
+            "on the machine serving the UI."
         )
-    return tuple(dict.fromkeys(CHECKBOX.findall(reply.body)))
+    return tuple(options.operators)
 
 
 def job_id_of(reply: Response) -> str | None:
@@ -344,7 +415,12 @@ def drive(
     than described.
     """
     rng = random.Random(options.seed)
-    catalogue = catalogue_of(transport)
+    # One GET for both populations: they come off the same page, and fetching
+    # it twice would let a driver that reloaded mid-session drive two
+    # different apps.
+    page = front_page(transport)
+    catalogue = screenshots_in(page)
+    operators = operators_for(options, operators_in(page))
     report = DriveReport()
 
     say(
@@ -352,6 +428,8 @@ def drive(
         f"one run per {options.every:g}s, varying by {options.vary}, "
         f"depth {options.depth}"
     )
+    if operators:
+        say(f"  running as one of: {', '.join(sorted(operators))}")
     if not options.replay:
         # Named per depth, because the two cost wildly different things and
         # "live" on its own reads as the expensive one.
@@ -365,7 +443,9 @@ def drive(
         )
 
     try:
-        _loop(options, transport, report, rng, catalogue, say, sleep, clock)
+        _loop(
+            options, transport, report, rng, catalogue, operators, say, sleep, clock
+        )
     except KeyboardInterrupt:
         # The ordinary way an open-ended session ends. The tally is what the
         # operator came for, so it is printed either way rather than lost to
@@ -381,6 +461,7 @@ def _loop(
     report: DriveReport,
     rng: random.Random,
     catalogue: tuple[str, ...],
+    operators: tuple[str, ...],
     say: Callable[[str], None],
     sleep: Callable[[float], None],
     clock: Callable[[], float],
@@ -389,7 +470,7 @@ def _loop(
     index = 0
     while options.runs == 0 or index < options.runs:
         _wait_until(due, sleep, clock)
-        request = plan_request(options, catalogue, index, rng)
+        request = plan_request(options, catalogue, index, rng, operators)
         started = clock()
         reply = transport.post("/runs", request.fields)
 

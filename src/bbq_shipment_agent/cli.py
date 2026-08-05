@@ -39,6 +39,7 @@ from .drive import (
     drive,
 )
 from .ledger import RECORD_TYPES, LedgerCorruption, iter_records, rebuild, stream_path
+from .operators import DEFAULT_OPERATORS_PATH, OperatorError
 from .planning import (
     DEFAULT_LANES_PATH,
     LaneBookError,
@@ -197,7 +198,9 @@ def _options(args: argparse.Namespace) -> RunOptions:
         lanes=getattr(args, "lanes", DEFAULT_LANES_PATH),
         cache=getattr(args, "cache", DEFAULT_CACHE_DIR),
         recipients=getattr(args, "recipients", DEFAULT_ROSTER_PATH),
+        operators=getattr(args, "operators", DEFAULT_OPERATORS_PATH),
         profile=args.profile,
+        operator=getattr(args, "operator", None),
         campaign=args.campaign,
         packet_count=getattr(args, "packet_count", None),
         offline=args.offline,
@@ -650,6 +653,8 @@ def _cmd_drive(args: argparse.Namespace) -> int:
         depth=args.depth,
         profiles=tuple(p.strip() for p in args.profiles.split(",") if p.strip()),
         campaign=args.campaign,
+        operators=tuple(o.strip() for o in args.operators.split(",") if o.strip()),
+        pick_operator=not args.no_operator,
         seed=args.seed,
         replay=args.replay,
         offline=args.offline,
@@ -798,6 +803,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="prefix for a per-run campaign attribute on the run context",
     )
     driver.add_argument(
+        "--operators", default="",
+        help="comma-separated operator keys, one drawn at random per run. "
+             "Default: everyone the app's form offers. A username is the only "
+             "context key besides the image hash that is stable across runs, "
+             "so it is the second axis a rollout can bucket on. One key pins "
+             "the session to one identity.",
+    )
+    driver.add_argument(
+        "--no-operator", action="store_true",
+        help="name nobody, so every run carries no user context kind",
+    )
+    driver.add_argument(
         "--seed", type=int, default=None,
         help="seed the driver's own choices, so a session can be repeated",
     )
@@ -833,6 +850,17 @@ def build_parser() -> argparse.ArgumentParser:
             "--profile", default=None, help="override default_profile for this run"
         )
         sub.add_argument("--campaign", default=None, help="run context attribute")
+        sub.add_argument(
+            "--operator", default=None,
+            help="who this run claims to be: a key from config/operators.yaml. "
+                 "Becomes the `user` context kind, and its department comes "
+                 "from that file rather than from here. Omitted takes the "
+                 "pool's default_operator, which may be nobody.",
+        )
+        sub.add_argument(
+            "--operators", type=Path, default=DEFAULT_OPERATORS_PATH,
+            help=f"the user/department pool (default: {DEFAULT_OPERATORS_PATH})",
+        )
         sub.add_argument(
             "--timeout",
             type=float,
@@ -946,6 +974,7 @@ def main(argv: list[str] | None = None) -> int:
         KillSwitchEngaged,
         LaneBookError,
         ModelUnavailable,
+        OperatorError,
         QuotingUnavailable,
         RosterError,
     ) as exc:

@@ -129,6 +129,28 @@
         every Shippo quote, so it costs one vision call per screenshot and
         needs no other key.
       </p>
+      {% if operators %}
+      {# Each option carries `data-operator` as well as `value`, which is the
+         same shape the screenshot checkboxes have: a machine-readable name on
+         every element, so `drive` can read the population off this page
+         rather than being told the config file twice. #}
+      <label class="field">operator <span class="dim">(the user context kind)</span>
+        <select name="operator">
+          <option value="">none &mdash; no user context</option>
+          {% for person in operators %}
+          <option value="{{ person.key }}" data-operator="{{ person.key }}"
+                  {% if options.operator == person.key %}selected{% endif %}>
+            {{ person.key }} &mdash; {{ person.department }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="dim" style="font-size:12px;margin:0 0 14px">
+        Who the run claims to be. The department comes from
+        <code>config/operators.yaml</code>, never from this form, so a rule
+        targeting a department is reading the committed pool.
+      </p>
+      {% endif %}
       <label class="field">campaign <span class="dim">(run context attribute)</span>
         <input type="text" name="campaign" value="{{ options.campaign or '' }}"
                placeholder="aug-cook">
