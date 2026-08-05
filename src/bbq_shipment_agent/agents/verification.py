@@ -305,10 +305,15 @@ def verify_manifest(
         except ModelUnavailable as exc:
             # A model that cannot be reached at all is not a bounded-retry
             # case: the same call would fail the same way.
+            metrics.track_duration()
             metrics.track_error()
             return Verification(
                 outcome="unavailable", reason=str(exc), iterations=len(attempts)
             )
+
+        # First measured one wins: on a parse retry the operator's wait for a
+        # first token started with the first attempt, not the second.
+        metrics.track_time_to_first_token(attempt.completion.time_to_first_token_ms)
 
         parsed = _parse(attempt.completion.text)
         if isinstance(parsed, str):
@@ -331,6 +336,9 @@ def verify_manifest(
     tokens_in = sum(a.completion.input_tokens for a in attempts if a.completion)
     tokens_out = sum(a.completion.output_tokens for a in attempts if a.completion)
     metrics.track_tokens(tokens_in, tokens_out)
+    metrics.track_duration()
+    # D1 is offered no tools by design 6.2, so no tool calls are reported --
+    # not an empty list, which would claim it declined tools it never had.
     # Success is about the invocation, not the manifest: an agent that
     # correctly reports six blockers did its job. Only an unparseable reply
     # is a failed invocation.

@@ -118,6 +118,11 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `verification-enabled` off is a normal run, not a degraded one. Skipping writes no invocation record; an invocation that *ran* is always recorded, including when its reply could not be parsed.
 - LD metric success is about the invocation, not the manifest. An agent reporting six blockers succeeded.
 - An invocation with a tool loop records `tools_offered` and `tools_called`; one without records neither. Offered comes from the loop that ran, never from `TOOL_NAMES` — B3 is offered less on a run with no screenshots, and a line claiming otherwise turns a tool that was absent into one the model declined. `ledger tools` reads them back.
+- Five metrics reach LD per invocation: tokens, duration, time to first token, tool calls, and success/error. All are at-most-once per tracker except tool calls, and `SdkMetrics` drops the repeat itself rather than letting the tracker log a warning about a tool loop behaving correctly.
+- Duration is the *whole* invocation, tool round trips included, because that is what the operator waits for and design 6.2 wants it attributable per variant. `metrics_for` starts the clock, so call it at the top of the invocation, not just once inside it.
+- Time to first token is why `AnthropicModel` streams; a non-streamed call has no first token to time. Measured at the first `content_block_delta`, never at `message_start`, which carries no content. Replayed completions report `None` and send nothing — an unmeasured latency is not a fast one.
+- Tool calls reported to LD are `tools_called`, never the offered set, and they keep order and repeats like the ledger line. B1 and D1 report nothing rather than an empty list.
+- `track_feedback` stays unwired on purpose. D2's terminal state judges the *plan* C5 computed, not the narration, and design 8 already names the right metric for `review-narrator` — operator edit count, which is a custom metric.
 
 ## Agent configs
 - Hash and snapshot the *un-rendered* template. Rendered text carries `ldctx` (recipient data) into committed files, and its hash differs every run, so it discriminates nothing.

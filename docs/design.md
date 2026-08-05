@@ -637,6 +637,28 @@ Two rows are gone, and the way they went is the rule working rather than failing
 
 **Statistical caveat.** At 22 packets across a few runs a year, nothing here will reach significance. Treat the tracking as a structured event log to query later, not as an experiment platform that will declare a winner.
 
+### Per-invocation metrics
+
+The table above is about *flags*. Underneath it, every agent invocation reports the AI SDK's built-in metrics against the AI Config that served it, which is what makes 6.1's "per-variant metric attribution without a code change" a fact rather than an intention. Five of them:
+
+| Metric | What it means here |
+|---|---|
+| Tokens | Input and output, summed across the invocation. One tracker per invocation, so a D2 turn spanning three model calls reports once. |
+| Success / error | The invocation, not the manifest. An agent reporting six blockers succeeded. |
+| Duration | Wall clock for the whole invocation, **tool execution included**. |
+| Time to first token | The first token of the invocation's first model call. |
+| Tool calls | `tools_called`, in order, repeats kept — the same list the ledger line carries. |
+
+Three of those are new and two of them need their definition defended, because a latency metric is easy to define into meaninglessness.
+
+**Duration includes tool time deliberately.** A B3 instruction variation that validates six addresses before answering is genuinely slower than one that validates two, and the operator waits for both halves. Timing only the model round trips would hide exactly the difference this metric exists to attribute. The ledger's `iterations` and `tools_called` separate the two afterwards, which is the right division: the metric measures the experience, the ledger explains it.
+
+**Time to first token is the reason `AnthropicModel` streams.** It cannot be measured any other way — a non-streamed call returns the finished message in one piece, so the only latency available from it is the whole generation, which is `duration`. The pair is worth having precisely because they move for different reasons: a long answer and a slow model are indistinguishable in duration alone. Nothing downstream sees a stream; the assembled message is identical, and the fixtures are untouched.
+
+Two consequences follow from 6.10 making offline a normal path. A replayed completion reports **no** first-token time rather than zero, because a fictional latency in the same chart as real ones is worse than a gap. And B1 reports per *image* rather than per run, matching its per-image tracker (6.6): a run-level average would flatten the one comparison in this system that has an answer key.
+
+**`track_feedback` is the built-in metric left unwired**, and the reason is this section rather than effort. The only operator judgement collected is D2's terminal state — approved, approved with exclusions, rejected — and that is a verdict on the *plan*, which C5 computed and the narrator is forbidden from participating in (6.3). Wiring it would attribute a rejected plan to whichever instruction variation happened to describe it. The metric this table already names for `review-narrator` is operator edit count, and that is a custom metric, not this one.
+
 ---
 
 ## 9. Non-goals

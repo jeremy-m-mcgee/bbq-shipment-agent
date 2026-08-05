@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -75,6 +76,12 @@ class Completion:
     #: is otherwise invisible, and the ledger would record an attribution that
     #: was never true. Legitimate when they differ; worth saying so.
     model: str | None = None
+    #: Milliseconds from sending the request to the first token of the reply.
+    #: `None` when nothing measured it -- every replayed completion, and any
+    #: call that produced no content at all. Absent rather than zero, for the
+    #: reason the ledger distinguishes an absent key from an empty list: an
+    #: unmeasured latency is not a fast one.
+    time_to_first_token_ms: float | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -177,6 +184,9 @@ class AnthropicModel:
     Holds no model name: every call takes it from the `Invocation`, which took
     it from LaunchDarkly. Changing which model an agent runs on is a console
     edit, not a deploy, which is the whole point of the medium split.
+
+    Every call is streamed and then assembled, solely so that time to first
+    token is measurable -- see `_stream`. No caller sees a stream.
     """
 
     def __init__(self, api_key: str | None = None) -> None:
@@ -229,7 +239,7 @@ class AnthropicModel:
         dropped: list[str] = []
         while True:
             try:
-                message = self._sdk().messages.create(**request)
+                message, first_token_ms = self._stream(request)
                 break
             except APIError as exc:
                 unusable = _refused_parameter(exc, request)
@@ -263,7 +273,43 @@ class AnthropicModel:
             dropped_parameters=tuple(dropped),
             raw_content=message.content,
             model=getattr(message, "model", None),
+            time_to_first_token_ms=first_token_ms,
         )
+
+    def _stream(self, request: dict[str, Any]) -> tuple[Any, float | None]:
+        """One request, streamed, returning the assembled message and TTFT.
+
+        Streaming buys exactly one thing here and it is the reason for it:
+        time to first token cannot be measured any other way. A non-streamed
+        call returns the finished message in one piece, so the only latency
+        available from it is the whole generation -- which is `track_duration`,
+        a different number that moves for different reasons. A long answer and
+        a slow model look identical in it; the pair separates them.
+
+        Nothing downstream changes. `get_final_message` assembles the same
+        `Message` the non-streaming call returned, usage and stop reason
+        included, so the parsing, the tool loop and the recorded fixtures are
+        untouched by this. The request is made on `__enter__`, which keeps a
+        refused model parameter raising `APIError` where the caller's retry
+        loop already catches it.
+
+        The clock stops at the first `content_block_delta` rather than at
+        `message_start`, because that event carries no content: it is the
+        provider acknowledging the request, and timing to it would report the
+        connection rather than the model.
+        """
+        started = time.perf_counter()
+        first_token_at: float | None = None
+        with self._sdk().messages.stream(**request) as stream:
+            for event in stream:
+                if first_token_at is None and getattr(event, "type", "") == "content_block_delta":
+                    first_token_at = time.perf_counter()
+            message = stream.get_final_message()
+        if first_token_at is None:
+            # A reply with no content blocks at all. Rare, and not a latency
+            # of zero -- see `Completion.time_to_first_token_ms`.
+            return message, None
+        return message, (first_token_at - started) * 1000.0
 
 
 def _refused_parameter(exc: Any, request: dict[str, Any]) -> str | None:

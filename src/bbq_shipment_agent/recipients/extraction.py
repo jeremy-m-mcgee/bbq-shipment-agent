@@ -247,12 +247,19 @@ def extract_from_images(
         # first.
         metrics = metrics_for(served)
 
-        parsed, used_in, used_out, tries = _read_one(model, invocation, path)
-        tokens_in += used_in
-        tokens_out += used_out
+        read = _read_one(model, invocation, path)
+        parsed, tries = read.parsed, read.attempts
+        tokens_in += read.input_tokens
+        tokens_out += read.output_tokens
         attempts += tries
 
-        metrics.track_tokens(used_in, used_out)
+        metrics.track_tokens(read.input_tokens, read.output_tokens)
+        metrics.track_time_to_first_token(read.time_to_first_token_ms)
+        # Per image, like the tracker and the ledger line: this is the latency
+        # of reading *this* screenshot, and design 6.6 makes the image the only
+        # unit B1's variation can be scored on. A per-run total would average
+        # away the comparison the rollout exists to make.
+        metrics.track_duration()
         # A string is the reason it could not be parsed -- the same either-or
         # `_parse` returns. Recorded rather than reduced to a flag: without it
         # an instruction variation that stopped asking for JSON is
@@ -290,9 +297,26 @@ def extract_from_images(
     )
 
 
-def _read_one(
-    model: Any, invocation: Invocation, path: Path
-) -> tuple[dict[str, Any] | str, int, int, int]:
+@dataclass(frozen=True)
+class _Read:
+    """What one image's read cost, whatever it produced.
+
+    A record rather than a widening tuple: the caller needs the parse result,
+    two token counts, an attempt count and a first-token latency, and at five
+    values positional unpacking stops saying which is which.
+    """
+
+    #: The parsed object, or the reason it could not be parsed.
+    parsed: dict[str, Any] | str
+    input_tokens: int
+    output_tokens: int
+    attempts: int
+    #: First-token latency of the *first* attempt, or `None` if nothing
+    #: measured it. A retry's first token is not the one the run waited on.
+    time_to_first_token_ms: float | None = None
+
+
+def _read_one(model: Any, invocation: Invocation, path: Path) -> _Read:
     """One image, with a bounded retry on an unparseable reply.
 
     Returns the parsed object, or the reason it could not be parsed -- the
@@ -301,6 +325,7 @@ def _read_one(
     one returned: it describes the reply the run actually gave up on.
     """
     tokens_in = tokens_out = 0
+    first_token_ms: float | None = None
     reason = "the model was never called"
     content: list[dict[str, Any]] = [
         image_block(path),
@@ -315,10 +340,12 @@ def _read_one(
             raise ExtractionError(f"{path.name}: {exc}") from exc
         tokens_in += completion.input_tokens
         tokens_out += completion.output_tokens
+        if first_token_ms is None:
+            first_token_ms = completion.time_to_first_token_ms
 
         parsed = _parse(completion.text)
         if not isinstance(parsed, str):
-            return parsed, tokens_in, tokens_out, attempt
+            return _Read(parsed, tokens_in, tokens_out, attempt, first_token_ms)
         reason = parsed
 
         messages = [
@@ -326,7 +353,7 @@ def _read_one(
             {"role": "assistant", "content": completion.text or "(empty)"},
             {"role": "user", "content": f"That could not be parsed: {reason}.\n\n{RETRY_SHAPE}"},
         ]
-    return reason, tokens_in, tokens_out, MAX_ATTEMPTS
+    return _Read(reason, tokens_in, tokens_out, MAX_ATTEMPTS, first_token_ms)
 
 
 def _unfence(candidate: str) -> str:

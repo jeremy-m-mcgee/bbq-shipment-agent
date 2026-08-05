@@ -139,8 +139,10 @@ def repair_addresses(
         try:
             completion = model.converse(invocation, messages, tools)
         except ModelUnavailable as exc:
+            metrics.track_duration()
             metrics.track_error()
             raise RepairUnavailable(str(exc)) from exc
+        metrics.track_time_to_first_token(completion.time_to_first_token_ms)
         tokens_in += completion.input_tokens
         tokens_out += completion.output_tokens
         messages.append(
@@ -164,6 +166,14 @@ def repair_addresses(
         messages.append({"role": "user", "content": results})
 
     metrics.track_tokens(tokens_in, tokens_out)
+    # `called`, not the offered set: design 6.1 keeps what an agent *may* do in
+    # Python, and a metric naming a tool the model never invoked would turn an
+    # offer into a call. It is the list the ledger line carries.
+    metrics.track_tools_called(called)
+    # Includes the validator round trips the loop made, which is the point: a
+    # variation that validates six times before answering is slower for the
+    # operator, and design 6.2 wants that attributable per variant.
+    metrics.track_duration()
     metrics.track_success() if parsed is not None else metrics.track_error()
 
     repaired, escalated, rejected = _adjudicate(needing_repair, parsed, validator)
