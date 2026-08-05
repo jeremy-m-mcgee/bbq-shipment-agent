@@ -148,7 +148,7 @@ about the pipeline is reachable from the driver.
 UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui --screenshots tests/fixtures/screenshots --ledger /tmp/drive-ledger
 
 # terminal 2
-uv run bbq-shipment-agent drive --every 30 --runs 20 --vary sample --campaign aug-load
+uv run bbq-shipment-agent drive --every 30 --runs 20 --vary sample --campaign aug-load --depth extract
 ```
 
 That starts a run every 30 seconds, each reading a different random subset of
