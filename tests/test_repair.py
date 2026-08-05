@@ -125,6 +125,19 @@ class TestTheLoop:
         assert result.escalated
         assert len(result.repaired) + len(result.escalated) == len(needing_repair)
 
+    def test_every_proposal_the_recording_made_was_adjudicated(self, result):
+        # Not a shape assertion, deliberately. `shippo-addresses.json` held no
+        # recording for the addresses this conversation *proposed* until
+        # `tools/record_shippo.py` put them there, and without them
+        # `RecordedAddressValidator` raised, `_adjudicate` caught the raise and
+        # called every proposal rejected. Everything above still passed.
+        turns = json.loads((FIXTURES / "b3-repairs.json").read_text())["turns"]
+        proposed = json.loads(turns[-1]["text"])["repairs"]
+        assert result.rejected == ()
+        assert {r.key for r in result.repaired} == {
+            row["recipient_key"] for row in proposed
+        }
+
     def test_nobody_is_silently_dropped(self, result, needing_repair):
         # Design 4: escalated to a human queue, never silently dropped. A
         # repair loop that loses a record is worse than one that repairs none.

@@ -1,0 +1,29 @@
+# The run settings for a replayed screenshot run. B1 supplies the people, so
+# `recipients` is deliberately absent -- that is what --screenshots makes
+# optional, and it is the shape of the real gitignored recipients.yaml.
+#
+#   uv run bbq-shipment-agent run plan --offline \
+#     --recipients tests/fixtures/roster-screenshots.yaml \
+#     --screenshots tests/fixtures/screenshots \
+#     --extractions tests/fixtures/b1-extractions.json \
+#     --repairs tests/fixtures/b3-repairs.json \
+#     --validations tests/fixtures/shippo-addresses.json \
+#     --quotes tests/fixtures/shippo-quotes-screenshots.json
+#
+# The origin is the one every recorded quote was measured from. Change it and
+# the recording stops matching, because the lane is part of the quote key.
+origin:
+  name: BBQ HQ
+  street1: 64 Divisadero St
+  city: San Francisco
+  state: CA
+  zip: "94117"
+
+# Pinned rather than defaulted, so the run is reproducible after the calendar
+# moves past them. Saturday is in the set on purpose: one Saturday shipment
+# forces USPS into the carrier pair, which is design 3's highest-leverage
+# interaction and worth having in the demo.
+ship_dates:
+  - 2026-08-15   # Saturday
+  - 2026-08-17   # Monday
+  - 2026-08-18   # Tuesday

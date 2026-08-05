@@ -37,6 +37,28 @@
     "street1": "1000 5th Ave",
     "zip": "10028-0113"
   },
+  "1000 jefferson dr sw|washington|dc|20560-0008|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "The address belongs to a unique ZIP code (large business, government agency or university). Precise delivery and correctness is not guaranteed. "
+    ],
+    "state": "DC",
+    "street1": "1000 Jefferson Dr SW",
+    "zip": "20560-0008"
+  },
+  "1000 jefferson dr sw|washington|dc|20560|us": {
+    "city": "Washington",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "The address belongs to a unique ZIP code (large business, government agency or university). Precise delivery and correctness is not guaranteed. "
+    ],
+    "state": "DC",
+    "street1": "1000 Jefferson Dr SW",
+    "zip": "20560-0008"
+  },
   "1000 jefferson dr|washington|dc|20560|us": {
     "city": "Washington",
     "country": "US",
@@ -49,6 +71,28 @@
     "street1": "1000 Jefferson Dr SW",
     "zip": "20560-0008"
   },
+  "1060 w addison st|chicago|il|60613-4566|us": {
+    "city": "Chicago",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "IL",
+    "street1": "1060 W Addison St",
+    "zip": "60613-4566"
+  },
+  "1060 w addison st|chicago|il|60613|us": {
+    "city": "Chicago",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "IL",
+    "street1": "1060 W Addison St",
+    "zip": "60613-4566"
+  },
   "1060 w addison st|chicago|il|60631|us": {
     "city": "Chicago",
     "country": "US",
@@ -60,6 +104,28 @@
     "state": "IL",
     "street1": "1060 W Addison St",
     "zip": "60613-4566"
+  },
+  "11 n 4th st|saint louis|mo|63102-1810|us": {
+    "city": "SAINT LOUIS",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "The delivery point isn't receiving deliveries. This may be because the building has been unoccupied for 90 days. Please correct this information."
+    ],
+    "state": "MO",
+    "street1": "11 N 4TH ST",
+    "zip": "63102-1810"
+  },
+  "11 n 4th st|saint louis|mo|63102|us": {
+    "city": "SAINT LOUIS",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "The delivery point isn't receiving deliveries. This may be because the building has been unoccupied for 90 days. Please correct this information."
+    ],
+    "state": "MO",
+    "street1": "11 N 4TH ST",
+    "zip": "63102-1810"
   },
   "11 n 4th st|st. louis|mo|63102|us": {
     "city": "SAINT LOUIS",
@@ -143,6 +209,24 @@
     "street1": "233 S Wacker Dr",
     "zip": "60606-7147"
   },
+  "2800 e observatory ave|los angeles|ca|90027-1255|us": {
+    "city": "Los Angeles",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CA",
+    "street1": "2800 E Observatory Ave",
+    "zip": "90027-1255"
+  },
+  "2800 e observatory ave|los angeles|ca|90027|us": {
+    "city": "Los Angeles",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "CA",
+    "street1": "2800 E Observatory Ave",
+    "zip": "90027-1255"
+  },
   "2800 e observatory rd|los angeles|ca|90072|us": {
     "city": "Los Angeles",
     "country": "US",
@@ -165,6 +249,17 @@
     "state": "TX",
     "street1": "300 Alamo Plz",
     "zip": "78205-2606"
+  },
+  "350 5th ave|new york|ny|10118-0110|us": {
+    "city": "New York",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "NY",
+    "street1": "350 5th Ave",
+    "zip": "10118-0110"
   },
   "350 5th ave|new york|ny|10118|us": {
     "city": "New York",
@@ -198,6 +293,24 @@
     "street1": "4 Jersey St",
     "zip": "02215-4148"
   },
+  "4 s market st|boston|ma|02109-6201|us": {
+    "city": "BOSTON",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "MA",
+    "street1": "4 S MARKET ST",
+    "zip": "02109-6201"
+  },
+  "4 s market st|boston|ma|02109|us": {
+    "city": "BOSTON",
+    "country": "US",
+    "is_valid": true,
+    "messages": [],
+    "state": "MA",
+    "street1": "4 S MARKET ST",
+    "zip": "02109-6201"
+  },
   "4 south market|boston|ma|02109|us": {
     "city": "BOSTON",
     "country": "US",
@@ -226,6 +339,28 @@
     "state": "DC",
     "street1": "50 Massachusetts Ave NE",
     "zip": "20002-4214"
+  },
+  "520 chestnut street|philadelphia|pa|19106|us": {
+    "city": "PHILADELPHIA",
+    "country": "US",
+    "is_valid": false,
+    "messages": [
+      "Unable to find a valid city, state or 5-digit zip. Please check the accuracy of the submitted address."
+    ],
+    "state": "PA",
+    "street1": "520 CHESTNUT STREET",
+    "zip": "19106"
+  },
+  "520 chestnut st|philadelphia|pa|19106|us": {
+    "city": "PHILADELPHIA",
+    "country": "US",
+    "is_valid": false,
+    "messages": [
+      "Unable to find a valid city, state or 5-digit zip. Please check the accuracy of the submitted address."
+    ],
+    "state": "PA",
+    "street1": "520 CHESTNUT ST",
+    "zip": "19106"
   },
   "520 chestnut st|philadelpia|pa|19106|us": {
     "city": "PHILADELPIA",

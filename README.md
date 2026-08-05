@@ -121,21 +121,35 @@ uv run bbq-shipment-agent ui --offline --ledger /tmp/ui-ledger \
 The **replay recordings** checkbox is then on by default; unchecking it makes
 the same run live.
 
-One honest limit. `--extractions` and `--repairs` replay B1 and B3 for any
-subset of the fixture screenshots — the recording is matched on image content,
-so reading two of seven replays the right two. But
-`shippo-quotes-sf-dc.json` holds one lane, San Francisco to Washington, and the
-22 people in those screenshots live in twenty-odd other places. A replayed
-screenshot run therefore gets as far as C2 and stops, because `RecordedQuoter`
-refuses to invent a rate it never recorded — which is the behaviour you want.
-Fully offline works today for the **roster** path (`--recipients
-tests/fixtures/roster-sf-dc.yaml`, then tick "all" with no screenshots).
-A *full plan* from screenshots plus recorded quotes needs those lanes recorded
-first.
+That command plans the **roster** path. For the **screenshot** path — the one
+the picker exists for — swap the roster and the quotes:
 
-The exception is **depth**. Set the form to `screenshots only` and a replayed
-screenshot run is completely offline, because it stops before the quoter that
-has one lane. `--extractions` is the only recording it needs.
+```bash
+uv run bbq-shipment-agent ui --offline --ledger /tmp/ui-ledger \
+  --recipients tests/fixtures/roster-screenshots.yaml \
+  --quotes tests/fixtures/shippo-quotes-screenshots.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json \
+  --extractions tests/fixtures/b1-extractions.json \
+  --repairs tests/fixtures/b3-repairs.json
+```
+
+Both are offline all the way to a manifest. `--extractions` and `--repairs`
+replay B1 and B3 for any subset of the fixture screenshots — the recording is
+matched on image content, so reading two of eight replays the right two — and
+`shippo-quotes-screenshots.json` holds every lane those screenshots produce,
+recorded against the live API by `tools/record_shippo.py`. Re-record after
+adding a screenshot; the tool says what it added and pays only for what is new.
+
+The one thing that has to match is the **origin**, because a quote key is a
+lane. `roster-screenshots.yaml` is the San Francisco address every recorded
+rate was measured from, so a different origin is a lane nothing recorded and
+`RecordedQuoter` raises rather than inventing a rate — which is the behaviour
+you want.
+
+**Depth** is the cheaper half of the same thing. Set the form to `screenshots
+only` and the run stops after B1, so `--extractions` is the only recording it
+needs at all.
 
 ### Driving it: many runs, over time
 
@@ -234,6 +248,37 @@ uv run bbq-shipment-agent run plan --offline \
   --validations tests/fixtures/shippo-addresses.json \
   --completions tests/fixtures/d1-completions.json
 ```
+
+That is the roster path, one lane. The screenshot path is offline too, and
+needs the two model recordings as well because B1 and B3 are model calls:
+
+```bash
+uv run bbq-shipment-agent run plan --offline \
+  --recipients tests/fixtures/roster-screenshots.yaml \
+  --screenshots tests/fixtures/screenshots \
+  --extractions tests/fixtures/b1-extractions.json \
+  --repairs tests/fixtures/b3-repairs.json \
+  --quotes tests/fixtures/shippo-quotes-screenshots.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json
+```
+
+### Re-recording the Shippo fixtures
+
+`tools/record_shippo.py` is what put the lanes and B3's proposed addresses in
+those files. It runs the CLI three times — strict validation so the repair loop
+proposes, standard validation for the lanes the demo plans on, and one pass over
+what the proposals validated to — with `--cache` pointed at a scratch directory
+seeded from the fixtures, then folds the answers back.
+
+```bash
+uv run python tools/record_shippo.py --dry-run   # what it would call
+uv run python tools/record_shippo.py             # needs SHIPPO_API_KEY
+```
+
+Run it after adding a screenshot, once `b1-extractions.json` has a reply for
+it. Nothing else needs re-recording: the seeded cache means an unchanged lane
+is not re-quoted, and no model is called at all.
 
 ## Layout
 

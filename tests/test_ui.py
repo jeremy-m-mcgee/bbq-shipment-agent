@@ -329,11 +329,11 @@ class TestDepth:
 class TestAnExtractOnlyRun:
     """A1 and B1 through HTTP, and nothing downstream.
 
-    This is the first *fully* offline screenshot run the app has. Design 10
-    records why a replayed screenshot plan cannot be: `shippo-quotes-sf-dc.json`
-    holds one lane and the fixture screenshots hold twenty-odd destinations, so
-    C2 stops. Stopping after B1 never reaches C2, so the recordings that do
-    exist are the only ones it needs.
+    This is the *cheapest* offline screenshot run the app has, and it was the
+    first. A replayed screenshot plan is offline too now that
+    `shippo-quotes-screenshots.json` holds those lanes, but it replays a few
+    hundred quotes to get there; stopping after B1 never reaches C2 at all, so
+    `--extractions` is the only recording this needs.
     """
 
     @pytest.fixture
