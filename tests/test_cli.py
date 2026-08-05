@@ -288,6 +288,74 @@ class TestExtractRecordsWhatItRead:
                 reasons.update(json.loads(line).get("evaluation_reasons") or {})
         return code, reasons, ledger
 
+    def test_it_reports_what_it_could_not_read(self, tmp_path, capsys):
+        """The terminal summary had the same hole the result page did.
+
+        `run extract` printed the images it was given and the recipients it
+        found, and a screenshot that produced nothing appeared in neither. The
+        progress stream said so while the run went, and then scrolled.
+        """
+        import json
+        import shutil
+        import textwrap
+
+        from bbq_shipment_agent.cli import main
+
+        fixtures = Path(__file__).parent / "fixtures"
+        shots = tmp_path / "shots"
+        shots.mkdir()
+        for name in ("01-imessage-thread.png", "07-whatsapp-group.png"):
+            shutil.copyfile(fixtures / "screenshots" / name, shots / name)
+
+        # Sibling objects with no wrapper: what a vague output spec produced
+        # live, and what the greedy `_JSON_BLOCK` turns into "Extra data".
+        recording = json.loads(
+            (fixtures / "b1-extractions.json").read_text(encoding="utf-8")
+        )
+        recording["replies"]["01-imessage-thread.png"]["text"] = (
+            '{"name": "Ana Ruiz", "street1": "1600 Pennsylvania Ave NW"}\n'
+            '{"name": "Marcus Feld", "street1": "233 S Wacker Dr"}'
+        )
+        broken = tmp_path / "b1-sibling-objects.json"
+        broken.write_text(json.dumps(recording), encoding="utf-8")
+
+        config = tmp_path / "capabilities.yaml"
+        config.write_text(
+            textwrap.dedent(
+                """
+                profiles:
+                  baseline:
+                    planner: "off"
+                    memory: "off"
+                    validation: "off"
+                    verification: "off"
+                    authority: "propose_only"
+                default_profile: "baseline"
+                authority_ceiling: "propose_only"
+                kill_switch: false
+                """
+            ),
+            encoding="utf-8",
+        )
+        code = main([
+            "run", "extract", "--offline",
+            "--screenshots", str(shots),
+            "--extractions", str(broken),
+            "--recipients", str(fixtures / "roster-sf-dc.yaml"),
+            "--ledger", str(tmp_path / "ledger"), "--config", str(config),
+            "--snapshot", str(Path(__file__).parent.parent / "config" / "ld-snapshot.json"),
+        ])
+        assert code == 0
+
+        out = capsys.readouterr().out
+        assert "B1 read 1 of 2 screenshot(s)" in out
+        assert "could not be read" in out
+        assert "Extra data" in out
+        # Named in a reply nothing could parse, so not recipients.
+        assert "Ana Ruiz" not in out
+        # Design 4: chased by a human, not dropped.
+        assert "jules_g" in out
+
     def test_the_hash_to_filename_map_reaches_the_run_row(self, tmp_path):
         _, reasons, _ = self._run(tmp_path)
         mapping = reasons["screenshot_keys"]

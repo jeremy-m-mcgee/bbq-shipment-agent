@@ -11,6 +11,7 @@ first time anyone drove it end to end. So one test starts a real run through
 the HTTP layer, against recorded answers, and reads the manifest off the page.
 """
 
+import json
 import textwrap
 import time
 from dataclasses import replace
@@ -393,6 +394,86 @@ class TestAnExtractOnlyRun:
         job_id, _, _ = finished
         runs = (options.ledger / "runs.jsonl").read_text(encoding="utf-8")
         assert "screenshot_keys" in runs
+
+
+class TestARunThatCouldNotReadEverything:
+    """The case the result page used to swallow.
+
+    A rollout served a variation whose output spec was deliberately vague, the
+    model answered with sibling JSON objects and no wrapper, and four of seven
+    screenshots produced nothing. The page reported "8 recipient(s) read" and
+    said nothing else, so a run that lost 13 of 22 people was indistinguishable
+    from a healthy run of a short list.
+
+    The progress log did carry it, which is why this is about the summary
+    rather than about surfacing it at all: a log scrolls, and the count is what
+    a reader takes away.
+    """
+
+    @pytest.fixture
+    def client(self, options, workspace):
+        (workspace / "snapshot.json").write_bytes(SNAPSHOT.read_bytes())
+        # The shape a vague output spec actually produced live. `_JSON_BLOCK`
+        # is greedy, so it spans both objects and `json.loads` reports
+        # "Extra data" -- the exact reason on eleven ledger rows.
+        recording = json.loads(EXTRACTIONS.read_text(encoding="utf-8"))
+        recording["replies"]["01-imessage-thread.png"]["text"] = (
+            '{"name": "Ana Ruiz", "street1": "1600 Pennsylvania Ave NW"}\n'
+            '{"name": "Marcus Feld", "street1": "233 S Wacker Dr"}'
+        )
+        broken = workspace / "b1-sibling-objects.json"
+        broken.write_text(json.dumps(recording), encoding="utf-8")
+        chosen = replace(
+            options, screenshots=FIXTURE_SHOTS, extractions=broken, quotes=None
+        )
+        return TestClient(create_app(chosen, screenshot_dir=FIXTURE_SHOTS))
+
+    @pytest.fixture
+    def finished(self, client):
+        response = client.post(
+            "/runs",
+            data={
+                "mode": "explicit",
+                # One image that cannot be read, one that reads and contains
+                # someone who gave no address. Both halves on one page.
+                "screenshot": ["01-imessage-thread.png", "07-whatsapp-group.png"],
+                "replay": "1",
+                "depth": "extract",
+            },
+        )
+        assert response.status_code == 200
+        job_id = response.url.path.rsplit("/", 1)[-1]
+        state = finish(client, job_id)
+        return job_id, state, client.get(f"/runs/{job_id}")
+
+    def test_an_unreadable_screenshot_does_not_fail_the_run(self, finished):
+        # It is a partial result, not an error: the images that did read are
+        # still worth showing.
+        _, state, _ = finished
+        assert state["state"] == "finished", state["error"]
+
+    def test_the_page_says_how_many_screenshots_were_read(self, finished):
+        _, _, page = finished
+        assert "B1 read 1 of 2 screenshot(s)" in page.text
+
+    def test_the_page_names_the_screenshot_and_why_it_failed(self, finished):
+        # The reason separates a console edit from a model choice. Without it
+        # every failure reads the same.
+        _, _, page = finished
+        assert "01-imessage-thread.png" in page.text
+        assert "Extra data" in page.text
+
+    def test_nobody_from_the_unreadable_screenshot_is_claimed_as_read(self, finished):
+        # Ana and Marcus are named in the reply that could not be parsed. A
+        # page that listed them would be inventing recipients.
+        _, _, page = finished
+        assert "Ana Ruiz" not in page.text
+        assert "Marcus Feld" not in page.text
+
+    def test_someone_who_gave_no_address_is_shown_rather_than_dropped(self, finished):
+        # Design 4: a person a human needs to chase, not a failure.
+        _, _, page = finished
+        assert "jules_g" in page.text
 
 
 class TestAWholeRun:

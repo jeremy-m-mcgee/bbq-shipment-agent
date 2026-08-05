@@ -109,6 +109,7 @@ def plan_view(context: Any, options: RunOptions) -> dict[str, Any]:
             for r in result.remediations
         ],
         "verification": _verification(result.verification),
+        "extraction": _extraction(context.extraction, context.images),
         "partial": _partial(result.solve),
         "manifest": None,
         "manifest_text": "",
@@ -163,6 +164,7 @@ def extract_view(context: Any, options: RunOptions) -> dict[str, Any]:
             }
             for r in roster.recipients
         ],
+        "extraction": _extraction(context.extraction, context.images),
         # Everything downstream of B1, which did not run. Present and empty so
         # the page renders one shape whatever the depth was.
         "validation": None,
@@ -175,6 +177,35 @@ def extract_view(context: Any, options: RunOptions) -> dict[str, Any]:
         "partial": {"infeasible": [], "plans": []},
         "manifest": None,
         "manifest_text": "",
+    }
+
+
+def _extraction(extraction: Any, images: tuple[Any, ...]) -> dict[str, Any] | None:
+    """What B1 could not read, for a page that otherwise reports only wins.
+
+    None on a run that read no screenshots, so the template's existing guards
+    skip it rather than rendering an empty panel on every roster run.
+
+    `read` is counted against the images actually sent, because the number
+    that matters is a ratio: four of seven screenshots producing nothing is
+    not visible in a recipient count, and a run that lost most of its people
+    otherwise renders as a tidy short list. The reason travels with each row
+    for the same argument `Unreadable` makes -- an instruction variation that
+    stopped asking for JSON, a model that wrapped it in prose and an empty
+    reply are three different problems for three different people.
+    """
+    if extraction is None:
+        return None
+    unreadable = [{"name": u.name, "reason": u.reason} for u in extraction.unreadable]
+    return {
+        "images": len(images),
+        "read": len(images) - len(unreadable),
+        "unreadable": unreadable,
+        "unresolved": [
+            {"name": u.name, "note": u.note, "source": u.provenance.source_image
+             if u.provenance else ""}
+            for u in extraction.unresolved
+        ],
     }
 
 

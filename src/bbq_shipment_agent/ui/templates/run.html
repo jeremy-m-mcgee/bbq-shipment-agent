@@ -27,6 +27,54 @@
   {% endfor %}
 </div>
 
+{# High on the page and outside the outcome branches on purpose. These are the
+   people a run did not find, and a recipient count cannot express them: four
+   screenshots returning nothing renders as a short roster, not as a problem.
+   The progress log above says the same thing while the run streams, and then
+   it scrolls. #}
+{% if view.extraction and (view.extraction.unreadable or view.extraction.unresolved) %}
+<h2 class="bad">B1 read {{ view.extraction.read }} of {{ view.extraction.images }} screenshot(s)</h2>
+<div class="panel">
+  {% if view.extraction.unreadable %}
+  <p style="margin-top:0" class="bad">
+    {{ view.extraction.unreadable|length }} screenshot(s) produced no usable
+    reply. Anyone they named is missing from every count below.
+  </p>
+  <table>
+    <tr><th>screenshot</th><th>why it could not be read</th></tr>
+    {% for u in view.extraction.unreadable %}
+    <tr><td class="mono">{{ u.name }}</td><td class="dim">{{ u.reason }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="dim" style="font-size:12px">
+    The reason separates a console edit from a model choice: instructions that
+    stopped asking for JSON, a model that wrapped it in prose, and an empty
+    reply all read as &ldquo;unreadable&rdquo; without it. The image table
+    below says which variation was serving.
+  </p>
+  {% endif %}
+  {% if view.extraction.unresolved %}
+  <p{% if view.extraction.unreadable %} style="margin-top:20px"{% endif %}>
+    {{ view.extraction.unresolved|length }}
+    {{ 'person' if view.extraction.unresolved|length == 1 else 'people' }}
+    asked for a packet and gave no usable address.
+  </p>
+  <table>
+    <tr><th>name</th><th>from</th><th>what they said</th></tr>
+    {% for u in view.extraction.unresolved %}
+    <tr><td>{{ u.name }}</td>
+      <td class="mono dim" style="font-size:12px">{{ u.source }}</td>
+      <td class="dim">{{ u.note or '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="dim" style="font-size:12px">
+    Not a failure &mdash; design 4 sends these to a human to chase rather than
+    dropping them.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if header %}
 <h2>Capabilities &mdash; A1 resolved these once, for the whole run</h2>
 <div class="grid2">

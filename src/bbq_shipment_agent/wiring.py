@@ -480,7 +480,7 @@ def build_roster(
     run: Any = None,
     images: tuple[Path, ...] = (),
     progress: Progress | None = None,
-) -> Any:
+) -> tuple[Any, Any]:
     """The run input, from the file and -- when asked -- from screenshots.
 
     The file always supplies the origin, the candidate ship dates and the lane
@@ -488,13 +488,25 @@ def build_roster(
     screenshot directory, B1 supplies the people and the file's `recipients`
     key becomes optional.
 
+    Returns the roster and B1's `ExtractionResult`, or `None` for a run that
+    read no screenshots. The result is returned rather than folded into the
+    roster because `Roster` is the run *input*, and what B1 could not read is
+    a fact about the reading. It is returned rather than only emitted because
+    the progress stream that reports it has scrolled away by the time anyone
+    reads the summary: a screenshot that produced nothing is the difference
+    between a short roster and a broken run, and only one of those is worth
+    acting on.
+
     `images` is resolved by `screenshots_for` before A1 and passed in, rather
     than chosen here: B1's config is retrieved at run start under a context
     keyed on the images, so this function cannot be the one that picks them.
     """
     progress = progress or NullProgress()
     if not images:
-        return load_roster(options.recipients, lane_book=lane_book(options, progress))
+        roster = load_roster(
+            options.recipients, lane_book=lane_book(options, progress)
+        )
+        return roster, None
 
     roster = load_roster(
         options.recipients,
@@ -524,7 +536,7 @@ def build_roster(
         recipients = tuple(
             replace(r, lane=book.lane_for(r.address.state, season)) for r in recipients
         )
-    return roster.with_recipients(recipients)
+    return roster.with_recipients(recipients), extracted
 
 
 def repair_model(options: RunOptions, planner: PlannerMode) -> Any:
@@ -582,6 +594,10 @@ class RunContext:
     client: Any = None
     #: Set once planning has run. Kept here so a front-end holds one object.
     roster: Any = None
+    #: B1's `ExtractionResult`, or None on a run that read no screenshots. The
+    #: roster says who was found; this says what could not be read, which a
+    #: summary reporting only the first cannot distinguish from a short list.
+    extraction: Any = None
     images: tuple[Path, ...] = ()
     result: Any = None
     extra_reasons: dict[str, Any] = field(default_factory=dict)
@@ -656,7 +672,9 @@ def extract_with(
             "an extract-only run needs screenshots; there is nothing for B1 "
             "to read, and the roster file needs no extracting."
         )
-    context.roster = build_roster(options, context.run, context.images, progress)
+    context.roster, context.extraction = build_roster(
+        options, context.run, context.images, progress
+    )
     record_run_reasons(options.ledger, context.run, context.extra_reasons)
     progress.emit(
         "B1",
@@ -690,8 +708,9 @@ def plan_with(
     run = context.run
     # `images` and `extra_reasons` were settled by `open_run`, which is what
     # lets B1's config be retrieved under a context keyed on them.
-    roster = build_roster(options, run, context.images, progress)
+    roster, extraction = build_roster(options, run, context.images, progress)
     context.roster = roster
+    context.extraction = extraction
 
     mode = run.capabilities.validation
     verification = run.capabilities.verification

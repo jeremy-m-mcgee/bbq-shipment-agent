@@ -296,7 +296,10 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
         if context.client is not None:
             context.client.close()
 
-    print(f"\nB1 read {len(context.images)} screenshot(s):")
+    extraction = context.extraction
+    unreadable = extraction.unreadable if extraction is not None else ()
+    read = len(context.images) - len(unreadable)
+    print(f"\nB1 read {read} of {len(context.images)} screenshot(s):")
     for image in context.images:
         key = context.extra_reasons.get("screenshot_keys", {}).get(image.name, "?")
         config = context.run.image_configs.get(key)
@@ -313,6 +316,23 @@ def _cmd_run_extract(args: argparse.Namespace) -> int:
             f"  {recipient.name:<22} {address.street1}, {address.city} "
             f"{address.state} {address.zip}{confidence}  [{source}]"
         )
+
+    # After the recipients rather than before, and unconditionally rather than
+    # only on failure: the count above is what a reader takes away, and it
+    # cannot express a screenshot that returned nothing. A run that lost most
+    # of its people otherwise ends on a tidy short list.
+    if unreadable:
+        print(f"\n{len(unreadable)} screenshot(s) could not be read:")
+        for u in unreadable:
+            print(f"  {u.name:<28} {u.reason}")
+        print("  Anyone these named is missing from the count above.")
+    if extraction is not None and extraction.unresolved:
+        count = len(extraction.unresolved)
+        noun = "person" if count == 1 else "people"
+        print(f"\n{count} {noun} gave no usable address:")
+        for u in extraction.unresolved:
+            source = u.provenance.source_image if u.provenance else "?"
+            print(f"  {u.name:<22} [{source}]  {u.note or '(no note)'}")
     return 0
 
 
