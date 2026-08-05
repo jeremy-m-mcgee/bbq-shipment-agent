@@ -256,11 +256,11 @@ def _runner_up(plan: CarrierPlan, chosen: CarrierPlan) -> RunnerUp:
 
 
 def render(manifest: Manifest) -> str:
-    """A plain-text manifest, for reading before D2 exists.
+    """A plain-text manifest, as `run plan` prints it.
 
-    Not the review interface -- that is build order step 8. This is the
-    minimum needed to look at what the spine produced and judge whether it is
-    sensible, which is the whole point of steps 1 through 3.
+    Not the review interface -- D2 is `review.py`, and the browser has its own
+    renderer in `ui/view.py`. This is the spine's own account of what it
+    produced, readable without either.
     """
     lines: list[str] = [
         f"{manifest.run_id}",

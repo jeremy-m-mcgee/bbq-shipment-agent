@@ -195,16 +195,6 @@ class Quote:
     def key(self) -> str:
         return f"{self.carrier.lower()}:{self.service_token}"
 
-    @property
-    def has_transit_estimate(self) -> bool:
-        """Whether this quote can be thermally gated at all.
-
-        A quote with no estimate cannot be assessed for arrival temperature,
-        and guessing one would reintroduce exactly the fabrication this module
-        exists to remove. C3 drops these and says so.
-        """
-        return self.estimated_days is not None
-
 
 @dataclass(frozen=True)
 class CarrierMessage:
@@ -270,9 +260,9 @@ class RateQuoter(Protocol):
 class ShippoQuoter:
     """Live quotes from Shippo, with retry and an on-disk cache.
 
-    A run asks for every box size against every gel pack count for every
-    recipient, so an uncached run is hundreds of calls and UPS answers "Too
-    Many Requests" on Shippo's shared master account. The cache makes
+    A run asks for every gel pack count for every recipient, so an uncached
+    run is hundreds of calls and UPS answers "Too Many Requests" on Shippo's
+    shared master account. The cache makes
     re-running a plan during development free rather than rate-limited, and
     the retry turns the remaining flakiness into latency, which at three to
     five runs a year costs nothing.

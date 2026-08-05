@@ -1,7 +1,9 @@
 """The planning input: one recipient, resolved and ready to plan against.
 
-Build order step 3 takes "a hand-written recipient list as input", so this is
-what B2 and B4 will eventually produce and what C1 through C6 consume today.
+What phase B hands to phase C: `recipients.dedupe.to_shipments` builds these at
+the end of B4, dropping the provenance and confidence a `Recipient` carries so
+that a stage with no business re-reading a screenshot cannot.
+
 Keeping it a plain frozen dataclass rather than a ledger record is deliberate:
 planning runs entirely in memory and only the chosen plan is ever written, so
 nothing here should be shaped by what the append-only file needs.

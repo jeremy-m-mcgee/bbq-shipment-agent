@@ -1,5 +1,4 @@
-
-"""C3: the thermal gate, and the seam step 4 replaces. Design sections 4 and 5.
+"""C3: the thermal gate, and the model behind it. Design sections 4 and 5.
 
 ## The threshold is not a model parameter
 
@@ -10,7 +9,7 @@ module constant so there is exactly one place it could be changed and that
 place is a commit.
 
 The distinction matters more than it looks: everything else in this module is
-an estimate that step 4 improves. The threshold is the one number that is not.
+an estimate. The threshold is the one number that is not.
 
 ## What the model is today
 
@@ -56,7 +55,7 @@ as a calibrated risk score.
 A quote without an `estimated_days` cannot be assessed for arrival
 temperature, and inventing one would reintroduce exactly the fabrication the
 live-rates work removed. Such configurations are dropped here rather than
-gated, and `ungateable` says how many.
+gated.
 """
 
 from __future__ import annotations
@@ -85,9 +84,10 @@ SECONDS_PER_DAY = 86_400
 class Lane:
     """Design 5's lane-based ambient assumption.
 
-    Static per lane today. Design 10 records seasonal adjustment as an open
-    question with no calibration data behind it yet, so this stays a stated
-    assumption rather than a computed value.
+    Built by `lanes.LaneBook.lane_for` from a destination band plus a monthly
+    offset, and `key` says which assumption produced `ambient_c` rather than
+    only what the number was. Every value behind it is stated belief in a
+    committed file, never a measurement -- design 5 gave up on calibration.
     """
 
     key: str
@@ -116,7 +116,7 @@ class ThermalModel(Protocol):
 
 
 class LumpedCapacitanceModel:
-    """Design 5's approach with nominal constants. Replaced in step 4."""
+    """Design 5's approach with nominal constants. C3's default model."""
 
     def predict_arrival_temp_c(
         self, load: Load, configuration: Configuration, lane: Lane
@@ -212,11 +212,6 @@ def evaluate_configurations(
         # underneath every downstream cost.
         if configuration.elapsed_transit_days is not None
     )
-
-
-def ungateable(configurations: tuple[Configuration, ...]) -> tuple[Configuration, ...]:
-    """Configurations C3 cannot assess, because their quote carried no ETA."""
-    return tuple(c for c in configurations if c.elapsed_transit_days is None)
 
 
 def thermal_gate(

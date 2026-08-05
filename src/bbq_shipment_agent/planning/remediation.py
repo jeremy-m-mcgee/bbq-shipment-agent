@@ -53,9 +53,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Any
 
 from .configurations import enumerate_configurations
+from .lanes import LaneBook
 from .load import define_load
 from .rates import Address, RateQuoter
 from .shipment import Shipment
@@ -128,7 +128,7 @@ def remediate(
     candidate_dates: tuple[date, ...],
     quoter: RateQuoter,
     *,
-    lane_book: Any = None,
+    lane_book: LaneBook | None = None,
     model: ThermalModel | None = None,
     horizon_months: int = DEFAULT_HORIZON_MONTHS,
 ) -> Remediation:
@@ -222,7 +222,7 @@ def remediate(
         reason=(
             f"{shortfall}. No month in the next {horizon_months} is cool enough "
             f"on this lane to change that, so the destination cannot be served "
-            "with the current box sizes and gel pack counts."
+            "with the current box and gel pack counts."
         ),
         current_ambient_c=shipment.lane.ambient_c,
         best_margin_c=best_margin,
@@ -236,7 +236,7 @@ def remediate_all(
     candidate_dates: tuple[date, ...],
     quoter: RateQuoter,
     *,
-    lane_book: Any = None,
+    lane_book: LaneBook | None = None,
     model: ThermalModel | None = None,
     horizon_months: int = DEFAULT_HORIZON_MONTHS,
 ) -> tuple[Remediation, ...]:

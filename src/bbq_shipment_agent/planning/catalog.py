@@ -1,9 +1,8 @@
 """The physical and carrier domain. Design sections 3 and 5.
 
-What lives here is the part of the domain we own: two box sizes, seven gel
-pack counts, three ship days. That is still small enough to enumerate
-exhaustively, which is what section 1 relies on when it says no solver is
-needed.
+What lives here is the part of the domain we own: box geometry, six gel pack
+counts, three ship days. That is still small enough to enumerate exhaustively,
+which is what section 1 relies on when it says no solver is needed.
 
 Carriers and services are deliberately *not* here. They were, as a four-member
 enum and a nine-entry service table with transit times chosen by hand, and
@@ -23,10 +22,11 @@ lose a spacecraft, so the conversion happens once, here, and never again.
 
 Box geometry, gel pack mass, and the EPS conductivity below are nominal values
 chosen to be physically plausible. Design 5 requires assumptions to be stated
-rather than buried: these are stated, and they are the numbers step 4's
-calibrated model replaces. The *structure* -- that hold time falls as surface
-area rises, that gel packs carry the cooling budget -- is not an assumption
-and should survive recalibration.
+rather than buried: these are stated, and they stay stated -- E3 was the only
+source of real arrival data and it went with the rest of dispatch, so design 5
+now says plainly that the model will not be calibrated. The *structure* -- that
+hold time falls as surface area rises, that gel packs carry the cooling budget
+-- is not an assumption and is what `TestThermalGate` pins instead.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ class Box:
 
     Carries dimensions and wall thickness rather than a precomputed UA value.
     Design 5 computes UA from geometry and material properties, so the box has
-    to expose the geometry for step 4 to compute against; a stored UA would
+    to expose the geometry for the model to compute against; a stored UA would
     make the box a thermal-model output rather than a physical fact.
     """
 
@@ -109,8 +109,8 @@ class Box:
 
     @property
     def volume_cm3(self) -> float:
-        """Outer volume, for dimensional weight. Design 5 notes the larger
-        box costs more here as well as thermally."""
+        """Outer volume. What `smallest_fitting_box` ranks on, and what a
+        carrier bills dimensional weight against."""
         length, width, height = self.outer_m
         return length * width * height * 1_000_000
 
@@ -129,8 +129,9 @@ class Box:
         """Conductance through the walls, W/K. Design 5's computed UA.
 
         Plane-wall approximation: conduction only, ignoring corners, seams,
-        and the internal and external film coefficients. Adequate for ranking
-        two box sizes against each other, which is all the spine asks of it.
+        and the internal and external film coefficients. Adequate for the one
+        question C3 asks of it -- whether a parcel holds for the transit it is
+        quoted -- and not for a claim about a real box.
         """
         return self.conductivity_w_mk * self.surface_area_m2 / self.wall_m
 
@@ -150,14 +151,12 @@ _WALL_M = 0.05
 #: dimensional weight, and no compensating thermal mass because the mass is
 #: not there.
 #:
-#: Both are defined; only the smallest one the load fits in is quoted. This
-#: entry used to say the larger was "enumerated for completeness and its
-#: selection is a signal worth investigating", which could not happen: being
-#: dominated on both cost and thermal margin, it can never be selected, so the
-#: signal can never fire. It also cannot rescue an infeasible shipment, since
-#: it is never thermally better and caps at the same `MAX_GEL_PACKS`. See
-#: `configurations.smallest_fitting_box`. It stays defined because the rule is
-#: "smallest box that fits", which needs something to be larger than.
+#: Both are defined; only the smallest one the load fits in is quoted, because
+#: a box dominated on cost *and* thermal margin can never be selected and can
+#: never rescue an infeasible shipment either -- it caps at the same
+#: `MAX_GEL_PACKS`. See `configurations.smallest_fitting_box`. The larger one
+#: stays defined because "smallest box that fits" needs something to be
+#: smallest of, and a load that outgrows the small cavity still takes it.
 BOXES: dict[BoxSize, Box] = {
     BoxSize.SMALL: Box(
         size=BoxSize.SMALL,

@@ -1,7 +1,12 @@
 """C2: enumerate configurations. Design section 4, Phase C.
 
-"Cross product of box size, gel pack count, ship date, and carrier service,
-per shipment. All four carriers at this stage. No pair restriction yet."
+"Cross product of gel pack count, ship date, and carrier service, per
+shipment, in the smallest box the load fits in. All four carriers at this
+stage. No pair restriction yet."
+
+Box size is a fit check rather than an axis of the cross product -- design 5
+found the larger box dominated on cost and thermal margin at once, so
+`smallest_fitting_box` picks it and nothing crosses over it.
 
 The pair restriction is still deliberately absent -- C5 evaluates carrier
 subsets against this full set, and a shipment feasible under some carrier but
@@ -144,13 +149,10 @@ def smallest_fitting_box(load: Load) -> Box | None:
     simultaneously". A larger box is dominated on both axes at this product
     weight -- more surface area and so a shorter hold time, plus higher
     dimensional weight -- and gains nothing back in ballast, because at 1.5 lb
-    the ballast is not there.
-
-    Measured on one live run before this became the rule: at the same lane and
-    the same gel pack count, the small box was cheaper in 35 of 35 comparisons
-    and the large box in none, while `TestBoxGeometry` pins the thermal half
-    of the same claim. Both boxes also cap at `MAX_GEL_PACKS`, so a larger one
-    cannot buy hold time a smaller one cannot.
+    the ballast is not there. Measured on one live run before this became the
+    rule: at the same lane and gel pack count, the small box was cheaper in 35
+    of 35 comparisons and the large box in none. `TestBoxGeometry` pins the
+    thermal half.
 
     Ranked by outer volume, then tare. Both are physical facts about the box,
     so the choice does not move when the thermal model is re-tuned.
@@ -169,13 +171,11 @@ def parcel_variants(load: Load) -> tuple[ParcelSpec, ...]:
     -- more refrigerant is never thermally worse but always weighs more, and C5
     wants the cheapest count that clears the gate. The floor is operator policy
     rather than physics: nobody ships frozen barbecue with an empty box, and a
-    parcel never offered is one C5 can never pick. Box size is not crossed at
-    all: `smallest_fitting_box` explains why the larger one can never win.
+    parcel never offered is one C5 can never pick.
 
-    This halves the quoting call count, which is the reason it was noticed --
-    a live run spent 49 of 98 parcel quotes on a box that was dominated on
-    every one of them. The correctness argument stands on its own, though, and
-    would hold if quoting were free.
+    Box size is not crossed at all -- see `smallest_fitting_box`. That also
+    halves the quoting call count, which is how it was noticed, but the
+    correctness argument stands on its own and would hold if quoting were free.
     """
     box = smallest_fitting_box(load)
     if box is None:

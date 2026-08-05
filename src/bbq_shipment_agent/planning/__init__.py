@@ -1,18 +1,24 @@
 """The deterministic planning spine. Design section 4, Phase C.
 
-Build order step 3: C1 through C6 with zero model calls. Every decision here
-is ordinary Python, which is design 2's central claim -- "a language model is
-not in the path of any decision that can be computed."
+C1 through C6, with zero model calls anywhere in the package. Every decision
+here is ordinary Python, which is design 2's central claim -- "a language model
+is not in the path of any decision that can be computed."
 
 * C1 `load`           -- packet contents to mass and dimensions
 * C2 `configurations` -- parcel variants crossed with quoted services
-* C3 `thermal`        -- the 4.4C gate, plus the seam step 4 replaces
+* C3 `thermal`        -- the 4.4C gate and the model behind it
+* C4 `remediation`    -- what to do with a shipment nothing can carry
 * C5 `solve`          -- every legal carrier subset, ranked
 * C6 `manifest`       -- the reviewable work package
 
-`rates` is not a pipeline stage but the seam the whole spine rests on: which
-carriers and services exist, what they cost, and how long they take are
-answers from a live API rather than constants anyone chose.
+C4 is in that list rather than in `agents/` because design 6.3 demoted it: its
+one open-ended move turned out to be physically impossible, and what remained
+is arithmetic.
+
+Two modules are not stages. `rates` is the seam the whole spine rests on --
+which carriers and services exist, what they cost and how long they take are
+answers from a live API rather than constants anyone chose. `lanes` reads the
+committed ambient assumptions that `thermal` gates against.
 """
 
 from .catalog import (
@@ -38,13 +44,6 @@ from .configurations import (
 )
 from .lanes import DEFAULT_LANES_PATH, LaneBook, LaneBookError
 from .load import Load, define_load
-from .remediation import (
-    DEFAULT_HORIZON_MONTHS,
-    Remediation,
-    RemediationMove,
-    remediate,
-    remediate_all,
-)
 from .manifest import (
     Excluded,
     Manifest,
@@ -52,6 +51,13 @@ from .manifest import (
     RunnerUp,
     assemble_manifest,
     render,
+)
+from .remediation import (
+    DEFAULT_HORIZON_MONTHS,
+    Remediation,
+    RemediationMove,
+    remediate,
+    remediate_all,
 )
 from .rates import (
     SATURDAY_CARRIERS,
@@ -84,7 +90,6 @@ from .thermal import (
     ThermalModel,
     evaluate_configurations,
     thermal_gate,
-    ungateable,
 )
 
 __all__ = [
@@ -96,8 +101,8 @@ __all__ = [
     "CarrierMessage",
     "CarrierPlan",
     "Configuration",
-    "DEFAULT_LANE",
     "DEFAULT_HORIZON_MONTHS",
+    "DEFAULT_LANE",
     "DEFAULT_LANES_PATH",
     "Enumeration",
     "EvaluatedConfiguration",
@@ -117,12 +122,12 @@ __all__ = [
     "ManifestRow",
     "ParcelSpec",
     "Quote",
-    "Remediation",
-    "RemediationMove",
     "QuoteResult",
     "QuotingUnavailable",
     "RateQuoter",
     "RecordedQuoter",
+    "Remediation",
+    "RemediationMove",
     "RunnerUp",
     "SATURDAY_CARRIERS",
     "ShipDay",
@@ -138,14 +143,13 @@ __all__ = [
     "evaluate_configurations",
     "heaviest_variant",
     "parcel_variants",
-    "smallest_fitting_box",
     "pin_carriers",
-    "render",
     "remediate",
     "remediate_all",
+    "render",
     "ship_day_for",
     "shipment_options",
+    "smallest_fitting_box",
     "solve_carriers",
     "thermal_gate",
-    "ungateable",
 ]

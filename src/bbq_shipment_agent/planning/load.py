@@ -27,9 +27,9 @@ PRODUCT_MASS_KG = PRODUCT_MASS_LB / LB_PER_KG
 #: Packed frozen, straight from the freezer.
 PRODUCT_INITIAL_TEMP_C = -18.0
 
-#: Specific heat of frozen packed meat, J/(kg*K). Nominal, and one of the
-#: values step 4 revisits; the product contributes so little to the budget
-#: that the run is insensitive to it, which is exactly design 5's point.
+#: Specific heat of frozen packed meat, J/(kg*K). Nominal and staying that
+#: way; the product contributes so little to the budget that the run is
+#: insensitive to it, which is exactly design 5's point.
 PRODUCT_SPECIFIC_HEAT_J_KG_K = 2_000.0
 
 #: Bounding box of one packet, metres. Uniform today.
