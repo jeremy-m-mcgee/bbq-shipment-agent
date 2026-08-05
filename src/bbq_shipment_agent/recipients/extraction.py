@@ -76,6 +76,35 @@ MAX_ATTEMPTS = 2
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
+#: A reply that is nothing but one fenced block. Anchored at both ends so a
+#: fence quoted mid-prose is left to `_JSON_BLOCK` rather than mistaken for
+#: the whole answer.
+_FENCE = re.compile(r"^```[A-Za-z0-9_+-]*[ \t]*\r?\n(.*?)\r?\n?```$", re.DOTALL)
+
+#: What the retry asks for, stated rather than referred to.
+#:
+#: It used to say "the JSON object described in your instructions", which
+#: assumes the served instructions describe one. Instruction text lives in
+#: LaunchDarkly and is free to vary -- that is the point of it living there --
+#: so a variation whose output spec is a bullet list left the retry pointing at
+#: a specification that did not exist. Measured against `sonnet-3-5-output-block`
+#: on `05-email.png`: the second attempt returned byte-identical output to the
+#: first, so the retry cost a vision call and could not have succeeded.
+#:
+#: Python owns the parser, so Python knows what it needs and can say so without
+#: the instructions agreeing. Naming the fields matters as much as the shape:
+#: that variation asks for `street` and `zip9`, which parse and then fail the
+#: completeness check, which reads as a person with no address rather than as a
+#: reply in the wrong schema.
+RETRY_SHAPE = (
+    "Reply with one JSON object and nothing else — no prose, no code fence. "
+    'It must have a single key "recipients", holding a list with one entry '
+    "per person. Each entry uses exactly these keys: "
+    '"name", "street1", "city", "state", "zip", "confidence", "note", and '
+    '"region" as {"x": 0, "y": 0, "width": 0, "height": 0}. '
+    "Use those key names even if you were told different ones earlier."
+)
+
 
 class ExtractionError(Exception):
     """B1 could not read a screenshot at all."""
@@ -295,32 +324,66 @@ def _read_one(
         messages = [
             {"role": "user", "content": content},
             {"role": "assistant", "content": completion.text or "(empty)"},
-            {
-                "role": "user",
-                "content": (
-                    f"That could not be parsed: {reason}. Reply with the JSON "
-                    "object described in your instructions and nothing else."
-                ),
-            },
+            {"role": "user", "content": f"That could not be parsed: {reason}.\n\n{RETRY_SHAPE}"},
         ]
     return reason, tokens_in, tokens_out, MAX_ATTEMPTS
 
 
+def _unfence(candidate: str) -> str:
+    """The contents of a lone markdown code fence, or the text unchanged.
+
+    A fence is how a model volunteers that something is JSON, and stripping it
+    is not tolerance for a malformed reply -- it is reading the reply.
+    """
+    match = _FENCE.match(candidate)
+    return match.group(1).strip() if match else candidate
+
+
+def _load(candidate: str) -> Any:
+    """Parsed JSON, or `ValueError` carrying the reason it is not.
+
+    The whole string first, and only then the embedded-value search, because
+    the search is destructive on a reply that was already valid. `_JSON_BLOCK`
+    spans the first brace to the last, so on a top-level array it strips the
+    brackets and turns `[{...}, {...}]` into `{...}, {...}` -- one object
+    followed by a comma, which is where `invalid JSON (Extra data)` came from
+    on eleven ledger rows. The model had returned valid JSON and the extractor
+    made it invalid.
+    """
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+    match = _JSON_BLOCK.search(candidate)
+    if match is None:
+        raise ValueError("no JSON object in the reply")
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON ({exc.msg})") from exc
+
+
 def _parse(text: str) -> dict[str, Any] | str:
-    """The parsed object, or a string saying why it could not be parsed."""
-    candidate = (text or "").strip()
+    """The parsed object, or a string saying why it could not be parsed.
+
+    Tolerant about the container and unchanged about the contents. Instruction
+    text lives in LaunchDarkly and is free to vary, so which wrapper a reply
+    arrives in is not something Python can insist on -- but what a recipient
+    row has to contain is still `_records_from`'s business, and that is
+    deliberately untouched here.
+    """
+    candidate = _unfence((text or "").strip())
     if not candidate:
         return "the reply was empty"
     try:
-        parsed = json.loads(candidate)
-    except json.JSONDecodeError:
-        match = _JSON_BLOCK.search(candidate)
-        if match is None:
-            return "no JSON object in the reply"
-        try:
-            parsed = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            return f"invalid JSON ({exc.msg})"
+        parsed = _load(candidate)
+    except ValueError as exc:
+        return str(exc)
+    # A bare list is the recipients list. An instruction that asks for output
+    # "for each recipient" invites exactly this, and refusing it discards a
+    # correct extraction over the shape of its container.
+    if isinstance(parsed, list):
+        parsed = {"recipients": parsed}
     if not isinstance(parsed, dict):
         return f"expected a JSON object, got {type(parsed).__name__}"
     if not isinstance(parsed.get("recipients"), list):

@@ -339,3 +339,103 @@ class TestRefusals:
             run, IMAGES[:1], model=WrongShape(), ledger_root=tmp_path / "ledger"
         )
         assert result.unreadable[0].reason == "the JSON object has no `recipients` list"
+
+
+#: What `screenshot-extraction` really returned for `05-email.png` under the
+#: `sonnet-3-5-output-block` variation, captured live. Abridged to two of the
+#: three recipients and otherwise the bytes as they arrived: a fenced block
+#: around a bare array, the field names that variation's output spec asks for,
+#: and a region in corner rather than origin-and-size form.
+CAPTURED_VAGUE_REPLY = """```json
+[
+  {
+    "name": "Owen Doyle",
+    "street": "1000 Jefferson Dr",
+    "city": "Washington",
+    "state": "DC",
+    "zip9": "20560",
+    "confidence": 0.95,
+    "note": "Building, apartment side entrance, easiest to leave it with the desk",
+    "region": {"x1": 33, "y1": 607, "x2": 680, "y2": 775}
+  },
+  {
+    "name": "Lena Ford",
+    "street": "1060 W Addison St",
+    "city": "Chicago",
+    "state": "IL",
+    "zip9": "60631",
+    "confidence": 0.95,
+    "note": null,
+    "region": {"x1": 33, "y1": 818, "x2": 610, "y2": 895}
+  }
+]
+```"""
+
+
+class TestTheContainerIsNotTheContents:
+    """A vague output spec varies the wrapper, and that used to lose the run.
+
+    Design 6.1 puts instruction text in LaunchDarkly, so which container a
+    reply arrives in is not something Python can insist on. What a recipient
+    row must contain still is, and these tests hold those apart: the reply
+    below parses, and the people in it are still not recipients.
+    """
+
+    def _read(self, run, tmp_path, text):
+        class Fixed:
+            def converse(self, invocation, messages, tools=()):
+                return Completion(text=text)
+
+        return extract_from_images(
+            run, IMAGES[:1], model=Fixed(), ledger_root=tmp_path / "ledger"
+        )
+
+    def test_the_captured_reply_is_no_longer_unreadable(self, run, tmp_path):
+        # It was valid JSON all along. `_JSON_BLOCK` spans the first brace to
+        # the last, so on a bare array it stripped the brackets and produced
+        # `{...}, {...}` -- "invalid JSON (Extra data)" on eleven ledger rows,
+        # manufactured by the extractor rather than returned by the model.
+        result = self._read(run, tmp_path, CAPTURED_VAGUE_REPLY)
+        assert result.unreadable == ()
+
+    def test_a_bare_array_is_the_recipients_list(self, run, tmp_path):
+        result = self._read(
+            run, tmp_path,
+            '[{"name": "Ana", "street1": "1600 Pennsylvania Ave NW", '
+            '"city": "Washington", "state": "DC", "zip": "20500"}]',
+        )
+        assert [r.name for r in result.recipients] == ["Ana"]
+
+    def test_a_fence_is_read_rather_than_tolerated(self, run, tmp_path):
+        result = self._read(
+            run, tmp_path,
+            '```json\n{"recipients": [{"name": "Ana", '
+            '"street1": "1600 Pennsylvania Ave NW", "city": "Washington", '
+            '"state": "DC", "zip": "20500"}]}\n```',
+        )
+        assert [r.name for r in result.recipients] == ["Ana"]
+
+    def test_prose_with_no_json_still_fails(self, run, tmp_path):
+        # Tolerance about the container is not tolerance about everything.
+        result = self._read(run, tmp_path, "I could not read that screenshot.")
+        assert result.unreadable[0].reason == "no JSON object in the reply"
+
+    def test_objects_with_no_container_still_fail(self, run, tmp_path):
+        result = self._read(run, tmp_path, '{"name": "Ana"}\n{"name": "Marcus"}')
+        assert result.unreadable != ()
+
+    def test_the_wrong_field_names_are_unresolved_not_recipients(self, run, tmp_path):
+        # The half deliberately left alone. `street`/`zip9` parse and then
+        # fail the completeness check, so these people are reported as having
+        # given no address -- which is wrong about *why*, and is the open
+        # question on #14 rather than something to paper over here.
+        result = self._read(run, tmp_path, CAPTURED_VAGUE_REPLY)
+        assert result.recipients == ()
+        assert [u.name for u in result.unresolved] == ["Owen Doyle", "Lena Ford"]
+
+    def test_a_corner_region_is_dropped_rather_than_misread(self, run, tmp_path):
+        # `{x1,y1,x2,y2}` is not `{x,y,width,height}`, and reading one as the
+        # other would hand B3 a crop box pointing somewhere plausible and
+        # wrong. None is the honest answer: B3 re-reads the whole screenshot.
+        result = self._read(run, tmp_path, CAPTURED_VAGUE_REPLY)
+        assert all(u.provenance.region is None for u in result.unresolved)

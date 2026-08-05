@@ -399,11 +399,15 @@ class TestAnExtractOnlyRun:
 class TestARunThatCouldNotReadEverything:
     """The case the result page used to swallow.
 
-    A rollout served a variation whose output spec was deliberately vague, the
-    model answered with sibling JSON objects and no wrapper, and four of seven
-    screenshots produced nothing. The page reported "8 recipient(s) read" and
-    said nothing else, so a run that lost 13 of 22 people was indistinguishable
-    from a healthy run of a short list.
+    A rollout served a variation whose output spec was deliberately vague, four
+    of seven screenshots produced nothing parseable, and the page reported "8
+    recipient(s) read" and said nothing else. A run that lost 13 of 22 people
+    was indistinguishable from a healthy run of a short list.
+
+    The reply here is synthetic and only has to be unparseable: what is under
+    test is whether the summary reports the failure, not how the failure
+    arises. The shape B1 actually returned under that variation is in
+    `test_extraction.py`, with the parsing it needs.
 
     The progress log did carry it, which is why this is about the summary
     rather than about surfacing it at all: a log scrolls, and the count is what
@@ -413,9 +417,9 @@ class TestARunThatCouldNotReadEverything:
     @pytest.fixture
     def client(self, options, workspace):
         (workspace / "snapshot.json").write_bytes(SNAPSHOT.read_bytes())
-        # The shape a vague output spec actually produced live. `_JSON_BLOCK`
-        # is greedy, so it spans both objects and `json.loads` reports
-        # "Extra data" -- the exact reason on eleven ledger rows.
+        # Two objects with no wrapper: unparseable by construction, and it
+        # stays unparseable however tolerant `_parse` becomes, which is what
+        # this test wants of it.
         recording = json.loads(EXTRACTIONS.read_text(encoding="utf-8"))
         recording["replies"]["01-imessage-thread.png"]["text"] = (
             '{"name": "Ana Ruiz", "street1": "1600 Pennsylvania Ave NW"}\n'

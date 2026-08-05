@@ -307,8 +307,9 @@ class TestExtractRecordsWhatItRead:
         for name in ("01-imessage-thread.png", "07-whatsapp-group.png"):
             shutil.copyfile(fixtures / "screenshots" / name, shots / name)
 
-        # Sibling objects with no wrapper: what a vague output spec produced
-        # live, and what the greedy `_JSON_BLOCK` turns into "Extra data".
+        # Unparseable by construction, and it stays that way however tolerant
+        # `_parse` becomes. What B1 really returned under the vague variation
+        # is in `test_extraction.py`; here the reply only has to fail.
         recording = json.loads(
             (fixtures / "b1-extractions.json").read_text(encoding="utf-8")
         )
