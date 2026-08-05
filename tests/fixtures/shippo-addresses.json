@@ -93,6 +93,17 @@
     "street1": "116 Rep John Lewis Way N",
     "zip": "37219-2309"
   },
+  "1200 getty center dr|los angeles|ca|90049|us": {
+    "city": "Los Angeles",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "CA",
+    "street1": "1200 Getty Center Dr",
+    "zip": "90049-1657"
+  },
   "1600 pennsylvania ave nw|washington|dc|20500-0005|us": {
     "city": "Washington",
     "country": "US",
@@ -227,6 +238,17 @@
     "street1": "520 CHESTNUT ST",
     "zip": "19106"
   },
+  "600 congress ave|austin|tx|78701|us": {
+    "city": "Austin",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "More information, such as an apartment or suite number, may give a more specific address."
+    ],
+    "state": "TX",
+    "street1": "600 Congress Ave",
+    "zip": "78701-3238"
+  },
   "64 divisadero st|san francisco|ca|94110|us": {
     "city": "San Francisco",
     "country": "US",
@@ -246,6 +268,17 @@
     "state": "CA",
     "street1": "64 Divisadero St",
     "zip": "94117-3211"
+  },
+  "700 boylston st|boston|ma|021??|us": {
+    "city": "Boston",
+    "country": "US",
+    "is_valid": true,
+    "messages": [
+      "Different 5-digit ZIP code detected for the submitted address. Corrected ZIP in the ZIP code field"
+    ],
+    "state": "MA",
+    "street1": "700 Boylston St",
+    "zip": "02116-2813"
   },
   "99999 nowhere blvd|fargo|nd|58102|us": {
     "city": "FARGO",

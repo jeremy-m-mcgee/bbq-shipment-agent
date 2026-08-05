@@ -43,6 +43,12 @@
       "model": "claude-sonnet-5",
       "output_tokens": 645,
       "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Marina Kovac\",\n      \"street1\": \"2800 E Observatory Rd\",\n      \"city\": \"Los Angeles\",\n      \"state\": \"CA\",\n      \"zip\": \"90072\",\n      \"region\": {\"x\": 51, \"y\": 490, \"width\": 800, \"height\": 100},\n      \"confidence\": 0.9,\n      \"note\": \"Zip corrected in later message at 1:22 PM (originally omitted).\"\n    },\n    {\n      \"name\": \"Yuki Tanaka\",\n      \"street1\": \"116 Rep. John Lewis Way N\",\n      \"city\": \"Nashville\",\n      \"state\": \"TN\",\n      \"zip\": \"3721?\",\n      \"region\": {\"x\": 51, \"y\": 913, \"width\": 1119, \"height\": 80},\n      \"confidence\": 0.5,\n      \"note\": \"ZIP code appears cut off by screen edge, only partially visible.\"\n    },\n    {\n      \"name\": \"jules_g\",\n      \"street1\": null,\n      \"city\": null,\n      \"state\": null,\n      \"zip\": null,\n      \"region\": {\"x\": 51, \"y\": 1240, \"width\": 800, \"height\": 100},\n      \"confidence\": 0.0,\n      \"note\": \"Says 'you know where I am' but never provides an actual address in the visible thread.\"\n    }\n  ]\n}"
+    },
+    "08-imessage-cousins.png": {
+      "input_tokens": 4716,
+      "model": "claude-sonnet-5",
+      "output_tokens": 439,
+      "text": "{\n  \"recipients\": [\n    {\n      \"name\": \"Dana\",\n      \"street1\": \"1200 Getty Center Dr\",\n      \"city\": \"Los Angeles\",\n      \"state\": \"CA\",\n      \"zip\": \"90049\",\n      \"region\": {\"x\": 60, \"y\": 855, \"width\": 840, \"height\": 210},\n      \"confidence\": 0.97,\n      \"note\": \"leave at desk if out\"\n    },\n    {\n      \"name\": \"Ruben\",\n      \"street1\": \"600 Congress Ave\",\n      \"city\": \"Austin\",\n      \"state\": \"TX\",\n      \"zip\": \"78701\",\n      \"region\": {\"x\": 60, \"y\": 1535, \"width\": 715, \"height\": 250},\n      \"confidence\": 0.95,\n      \"note\": \"combined street from earlier message with corrected city/state/zip\"\n    },\n    {\n      \"name\": \"Simone\",\n      \"street1\": \"700 Boylston St\",\n      \"city\": \"Boston\",\n      \"state\": \"MA\",\n      \"zip\": \"021??\",\n      \"region\": {\"x\": 60, \"y\": 1905, \"width\": 790, \"height\": 155},\n      \"confidence\": 0.6,\n      \"note\": \"last digits of zip obscured by heart emoji reaction\"\n    }\n  ]\n}"
     }
   }
 }

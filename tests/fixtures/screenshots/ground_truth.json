@@ -371,6 +371,57 @@
           "notes": "Clearly wants a packet but gave no usable address (\"just send it to my place, you know where I am\"). No street, city, state, or ZIP provided. Region points at the message where the (non-)address would be."
         }
       ]
+    },
+    {
+      "file": "08-imessage-cousins.png",
+      "source_type": "imessage",
+      "recipients": [
+        {
+          "name": "Dana Whitlock",
+          "street1": "1200 Getty Center Dr",
+          "city": "Los Angeles",
+          "state": "CA",
+          "zip": "90049",
+          "region": {
+            "x": 96,
+            "y": 888,
+            "width": 769,
+            "height": 120
+          },
+          "difficulty": "clean",
+          "notes": ""
+        },
+        {
+          "name": "Ruben Ortiz",
+          "street1": "600 Congress Ave",
+          "city": "Austin",
+          "state": "TX",
+          "zip": "78701",
+          "region": {
+            "x": 96,
+            "y": 1290,
+            "width": 719,
+            "height": 60
+          },
+          "difficulty": "correctable",
+          "notes": "Address is only complete if two messages are read together: the street arrives in one bubble and the city, state and ZIP in the next. The region points at the street, per the instruction that says to do so."
+        },
+        {
+          "name": "Simone Achebe",
+          "street1": "700 Boylston St",
+          "city": "Boston",
+          "state": "MA",
+          "zip": "021??",
+          "region": {
+            "x": 96,
+            "y": 1914,
+            "width": 718,
+            "height": 120
+          },
+          "difficulty": "hard",
+          "notes": "The last two ZIP digits sit under a reaction badge. Ground truth records what the image shows -- \"021??\" -- not the resolved 02116, because B1 is instructed to transcribe damage and lower its confidence rather than guess. An extraction returning 02116 has corrected silently, which is the one failure nothing downstream can detect.\nTwo digits rather than one, which this file claimed until the image was rendered and read. `reaction_covers` anchors the badge on that many trailing characters, but the badge is a circle wider than the glyphs it centres on, so it takes the neighbour with it. The number to write here is the one the rendered image supports, not the one the spec asked for."
+        }
+      ]
     }
   ]
 }

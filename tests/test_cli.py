@@ -358,10 +358,29 @@ class TestExtractRecordsWhatItRead:
         assert "jules_g" in out
 
     def test_the_hash_to_filename_map_reaches_the_run_row(self, tmp_path):
+        # Named the sample rather than described it, once: seed 5 of seven
+        # images. Adding an eighth screenshot re-drew the sample and failed a
+        # test about something else entirely, which is the wrong thing to
+        # notice when the fixture set is meant to grow.
         _, reasons, _ = self._run(tmp_path)
         mapping = reasons["screenshot_keys"]
-        assert set(mapping) == {"03-instagram-dm.png", "05-email.png"}
+        available = {
+            p.name for p in (Path(__file__).parent / "fixtures" / "screenshots").glob("*.png")
+        }
+        assert len(mapping) == 2
+        assert set(mapping) <= available
         assert all(len(key) == 16 for key in mapping.values())
+
+    def test_the_same_seed_re_reads_the_same_sample(self, tmp_path):
+        # What the seed is for, and what naming the pair was reaching for.
+        # Design 10: a seeded sample is reconstructible from its seed, which is
+        # a claim about repeatability rather than about which files won.
+        a, b = tmp_path / "a", tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        _, reasons_a, _ = self._run(a)
+        _, reasons_b, _ = self._run(b)
+        assert reasons_a["screenshot_keys"] == reasons_b["screenshot_keys"]
 
     def test_every_invocation_image_key_resolves_to_a_filename(self, tmp_path):
         # The property the map exists for: LaunchDarkly is given the hash and

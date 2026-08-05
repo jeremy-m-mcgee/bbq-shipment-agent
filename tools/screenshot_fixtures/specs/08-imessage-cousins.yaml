@@ -1,0 +1,109 @@
+# One thread, three people, three different reasons B1 might get it wrong.
+#
+# Real buildings, invented people. The addresses go through a live validator
+# and the set is only useful if the validator returns its genuine verdict, so
+# these have to be places that really exist -- and nobody's home, because this
+# file is committed.
+
+file: 08-imessage-cousins.png
+source_type: imessage
+theme: imessage
+title: Cousins
+subtitle: 4 people
+
+thread:
+  - day: Saturday 09:12
+
+  - outgoing: true
+    timestamp: "9:12 AM"
+    runs:
+      - text: >-
+          doing another brisket run next month. if you want a packet send me
+          where to ship it
+
+  - sender: Dana
+    timestamp: "9:14 AM"
+    runs:
+      - text: "yes please!! send it to "
+      - text: "1200 Getty Center Dr, Los Angeles CA 90049"
+        address_for: dana
+      - text: " — leave it at the desk if I'm out"
+
+  - sender: Ruben
+    timestamp: "9:20 AM"
+    runs:
+      - text: "im in for one. "
+      - text: "600 Congress Ave"
+        address_for: ruben
+
+  - sender: Ruben
+    timestamp: "9:20 AM"
+    runs:
+      - text: "sorry that's "
+      - text: "Austin TX 78701"
+        address_for: ruben_city
+      - text: " forgot the city lol"
+
+  - sender: Simone
+    timestamp: "9:31 AM"
+    reaction: heart
+    reaction_over_text: true
+    runs:
+      - text: "me too please. "
+      # The full ZIP is typed and the reaction badge is drawn over its last
+      # digit. Writing "0211?" here instead would put the damage in the text,
+      # and a model reading a literal question mark is not doing the hard
+      # thing the `hard` label claims.
+      - text: "700 Boylston St, Boston MA 02116"
+        address_for: simone
+
+  - outgoing: true
+    timestamp: "9:33 AM"
+    runs:
+      - text: "got it, thanks all"
+
+# `difficulty` grades how hard the text is to read out of the image. It says
+# nothing about whether the address is deliverable -- see the fixtures README,
+# which records that those are two different axes and that the delivered set
+# contains every combination that matters.
+recipients:
+  - key: dana
+    name: Dana Whitlock
+    street1: 1200 Getty Center Dr
+    city: Los Angeles
+    state: CA
+    zip: "90049"
+    difficulty: clean
+    notes: ""
+
+  - key: ruben
+    name: Ruben Ortiz
+    street1: 600 Congress Ave
+    city: Austin
+    state: TX
+    zip: "78701"
+    difficulty: correctable
+    notes: >-
+      Address is only complete if two messages are read together: the street
+      arrives in one bubble and the city, state and ZIP in the next. The region
+      points at the street, per the instruction that says to do so.
+
+  - key: simone
+    name: Simone Achebe
+    street1: 700 Boylston St
+    city: Boston
+    state: MA
+    zip: "021??"
+    difficulty: hard
+    notes: >-
+      The last two ZIP digits sit under a reaction badge. Ground truth records
+      what the image shows -- "021??" -- not the resolved 02116, because B1 is
+      instructed to transcribe damage and lower its confidence rather than
+      guess. An extraction returning 02116 has corrected silently, which is the
+      one failure nothing downstream can detect.
+
+      Two digits rather than one, which this file claimed until the image was
+      rendered and read. `reaction_covers` anchors the badge on that many
+      trailing characters, but the badge is a circle wider than the glyphs it
+      centres on, so it takes the neighbour with it. The number to write here
+      is the one the rendered image supports, not the one the spec asked for.
