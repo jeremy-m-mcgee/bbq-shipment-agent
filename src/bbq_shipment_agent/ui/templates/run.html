@@ -305,7 +305,7 @@
 </div>
 {% endif %}
 
-{% if view.escalated or view.suppressed or view.remediations or view.repair %}
+{% if view.escalated or view.suppressed or view.remediations or view.repair or view.repair_unavailable %}
 <h2>Everyone not on the plan</h2>
 <div class="panel">
   {% if view.repair %}
@@ -314,6 +314,14 @@
   {% for r in view.repair.repaired %}
   <div class="dim" style="font-size:13px">repaired {{ r.name }}: {{ r.address }}</div>
   {% endfor %}
+  {% endif %}
+
+  {% if view.repair_unavailable %}
+  <p style="margin-top:0">B3 &mdash; <span class="warn">did not run</span>
+    <span class="dim">{{ view.repair_unavailable }}</span></p>
+  <div class="dim" style="font-size:13px">
+    The set below stayed escalated; nothing was repaired.
+  </div>
   {% endif %}
 
   {% if view.escalated %}

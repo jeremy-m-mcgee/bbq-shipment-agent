@@ -144,6 +144,10 @@ class PlanResult:
     #: a caller should not have to distinguish "verification is off" from
     #: "verification ran and found nothing" by checking for None.
     verification: Verification | None = None
+    #: Why B3 could not run, when it was asked to and failed. `None` both when
+    #: it ran and when it was never asked -- the two cases are told apart by
+    #: `repair`, and neither is a failure. See the handler in `plan_run`.
+    repair_unavailable: str | None = None
 
     @property
     def escalated(self) -> tuple[Excluded, ...]:
@@ -201,6 +205,7 @@ def plan_run(
     eligible = validation.eligible
     escalated = validation.escalated
     repair: RepairResult | None = None
+    repair_unavailable: str | None = None
     planner = run.capabilities.planner
     if repairer is not None and validation.for_repair and planner is not PlannerMode.OFF:
         try:
@@ -212,10 +217,26 @@ def plan_run(
                 screenshots=screenshots,
                 ledger_root=ledger_root,
             )
-        except RepairUnavailable:
-            # No repair loop is a normal path, the same way no verification
-            # is: the set stays escalated, which is the safe direction.
+        except RepairUnavailable as exc:
+            # The set stays escalated, which is the safe direction. What is
+            # *not* safe is staying quiet about it.
+            #
+            # This used to read "no repair loop is a normal path, the same way
+            # no verification is". The comparison does not hold. D1 skipping
+            # is a decision -- `verification-enabled` is off, and the run says
+            # so. Reaching here is a failure: B3 was asked, it had a set, and
+            # it could not finish. Discarding the exception made the two
+            # indistinguishable from outside, because `repair` is `None` for
+            # both.
+            #
+            # That is not hypothetical. A live strict run put ten recipients
+            # into `for_repair`, lost B3 to an error, exited 0, dropped eight
+            # packets off the manifest, and left no record anywhere of why --
+            # not in the ledger, not on the console. Reconstructing it took a
+            # patched re-run, which is exactly the diagnosis design 2 says the
+            # committed JSONL should have answered on its own.
             repair = None
+            repair_unavailable = str(exc)
         else:
             if planner is PlannerMode.ON:
                 eligible = eligible + repair.repaired
@@ -279,6 +300,7 @@ def plan_run(
         manifest,
         mode,
         extra_reasons,
+        repair_unavailable=repair_unavailable,
     )
 
     # D1 runs only when there is something to verify. A missing manifest is
@@ -305,6 +327,7 @@ def plan_run(
         manifest=manifest,
         reason=reason,
         verification=verification,
+        repair_unavailable=repair_unavailable,
     )
 
 
@@ -318,6 +341,8 @@ def _record_planning(
     manifest: Manifest | None,
     mode: ValidationMode,
     extra_reasons: dict[str, Any] | None = None,
+    *,
+    repair_unavailable: str | None = None,
 ) -> None:
     """Append what planning learned to the run row opened at A1.
 
@@ -335,6 +360,12 @@ def _record_planning(
     reasons.update(extra_reasons or {})
     reasons["validation_mode"] = mode.value
     reasons["validation_corrected"] = validation.corrected_count
+    if repair_unavailable is not None:
+        # Absent when B3 ran and when it was never asked, present only when it
+        # was asked and failed. A stage that vanished from a run is the thing
+        # a reader six months from now cannot infer from any other field: the
+        # escalations look exactly like B2's either way.
+        reasons["repair_unavailable"] = repair_unavailable
     if suppression.consolidated:
         # The packer needs this the other way round from the suppression
         # list: this parcel covers these people, so a card with two names

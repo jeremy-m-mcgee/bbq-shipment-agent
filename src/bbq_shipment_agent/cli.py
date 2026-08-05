@@ -378,6 +378,12 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
         for r in result.repair.repaired:
             print(f"    repaired {r.name}: {r.address.street1}, {r.address.city} "
                   f"{r.address.state} {r.address.zip}")
+    if result.repair_unavailable is not None:
+        # Not a warning about a stage that was switched off -- one that was
+        # asked to run and could not. The escalations printed below are B2's,
+        # and without this line they read as though B3 had considered them.
+        print(f"B3  did not run: {result.repair_unavailable}")
+        print("    the set below stayed escalated; nothing was repaired.")
     for excluded in result.escalated:
         print(f"escalated: {excluded.name} — {excluded.reason}")
     # C4. Empty in the usual case; a recommendation, never an action.
@@ -411,6 +417,12 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
         plan_with(context, options, PrintProgress())
         print()
         run, roster, result = context.run, context.roster, context.result
+        # Review is the surface where this matters most: the operator is about
+        # to approve a manifest whose escalation list they will read as having
+        # survived the repair loop. It did not run.
+        if result.repair_unavailable is not None:
+            print(f"B3  did not run: {result.repair_unavailable}")
+            print("    the escalation list below never reached the repair loop.\n")
         if result.manifest is None:
             print(f"no manifest: {result.reason}")
             _print_partial(result.solve)

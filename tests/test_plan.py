@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+from bbq_shipment_agent.agents.model import ModelUnavailable
 from bbq_shipment_agent.capabilities import ValidationMode
 from bbq_shipment_agent.ledger import RunRecord, iter_records, rebuild
 from bbq_shipment_agent.plan import plan_run
@@ -448,6 +449,75 @@ class TestRepairIsInTheSpine:
         assert not result.applied_repairs
         # The escalations are B2's, untouched by what B3 would have done.
         assert result.escalated == result.validation.escalated
+        assert result.repair_unavailable is None, "it ran; nothing to explain"
+
+    def test_a_failed_repair_loop_is_recorded_not_swallowed(self, workspace):
+        """B3 asked-and-failed must not look like B3 never-asked.
+
+        `repair` is `None` for both, so without a reason the two are the same
+        run from outside. A live strict run lost ten recipients this way: the
+        loop died, the escalations stayed, eight packets left the manifest,
+        and the exit code was 0. Design 2 says a surprising run is diagnosable
+        from the committed JSONL alone, and that one was not.
+        """
+        import json as _json
+
+        self._needing_repair_run(workspace, "shadow")
+        (workspace / "recipients.yaml").write_text(
+            ROSTER + """  - key: sloppy
+    name: Sloppy Sam
+    street1: 64 divisadero st
+    city: san francisco
+    state: CA
+    zip: "94110"
+""",
+            encoding="utf-8",
+        )
+        roster = load_roster(workspace / "recipients.yaml")
+        run = initialize_run(
+            ledger_root=workspace / "ledger",
+            config_path=workspace / "capabilities.yaml",
+            agent_source=SnapshotAgentConfigs(SNAPSHOT),
+            snapshot_path=workspace / "snapshot.json",
+        )
+
+        class Dies:
+            """The shape of a transient provider error mid-loop."""
+
+            def converse(self, invocation, messages, tools=()):
+                raise ModelUnavailable("address-repair: 529 overloaded_error")
+
+        result = plan_run(
+            run,
+            roster,
+            ledger_root=workspace / "ledger",
+            quoter=RecordedQuoter.from_file(QUOTES),
+            validator=RecordedAddressValidator.from_file(VALIDATIONS),
+            repairer=Dies(),
+        )
+
+        # The safe direction is unchanged: nobody was repaired, and everyone
+        # B2 escalated is still escalated.
+        assert result.repair is None
+        assert result.escalated == result.validation.escalated
+
+        # ...but the run now says so, in both places a reader looks.
+        assert result.repair_unavailable is not None
+        assert "overloaded_error" in result.repair_unavailable
+
+        appends = list(iter_records(workspace / "ledger", RunRecord))
+        reasons = appends[-1].evaluation_reasons
+        assert "overloaded_error" in reasons["repair_unavailable"]
+
+    def test_a_repair_loop_never_asked_records_nothing(self, workspace):
+        """The other half. `planner-mode: off` is a decision, not a failure,
+        and a reason on that run would be noise that reads like a fault."""
+        run_plan(workspace, validation="strict", verifier=None)
+        result = run_plan(workspace, validation="strict")
+        assert result.repair is None
+        assert result.repair_unavailable is None
+        appends = list(iter_records(workspace / "ledger", RunRecord))
+        assert "repair_unavailable" not in appends[-1].evaluation_reasons
 
 
 class TestThePlanReviewSeam:

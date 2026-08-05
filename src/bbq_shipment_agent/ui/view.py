@@ -87,6 +87,7 @@ def plan_view(context: Any, options: RunOptions) -> dict[str, Any]:
             "escalated": len(result.validation.escalated),
         },
         "repair": _repair(result),
+        "repair_unavailable": result.repair_unavailable,
         "escalated": [
             {"key": e.recipient_key, "name": e.name, "reason": e.reason}
             for e in result.escalated
@@ -169,6 +170,7 @@ def extract_view(context: Any, options: RunOptions) -> dict[str, Any]:
         # the page renders one shape whatever the depth was.
         "validation": None,
         "repair": None,
+        "repair_unavailable": None,
         "escalated": [],
         "suppressed": [],
         "consolidated": {},
