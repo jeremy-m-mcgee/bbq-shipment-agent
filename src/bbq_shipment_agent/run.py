@@ -279,11 +279,16 @@ def initialize_run(
     # agree by coincidence. `requested_profile` is what `resolve` will report
     # back as `resolved.profile` -- both are `profile or default_profile` --
     # so carrying it forward is not a guess about the outcome.
+    # `image_count` is derived from `images` rather than passed alongside it,
+    # so the number a targeting rule sees and the set B1's configs are
+    # retrieved for cannot disagree. Zero on a roster run, which is a fact
+    # about that run and not a missing value.
     contexts = ContextBuilder(
         run_id=run_id,
         profile=requested_profile,
         campaign=campaign,
         packet_count=packet_count,
+        image_count=len(images),
     )
 
     payload = (provider or OfflineProvider()).fetch(contexts.for_stage(STAGE_RUN_INIT))

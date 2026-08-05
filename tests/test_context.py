@@ -22,6 +22,7 @@ def test_shape_matches_the_design_document():
         profile="planner_trial",
         campaign="aug-cook",
         packet_count=22,
+        image_count=7,
     ).for_stage(STAGE_ADDRESS_REPAIR)
     assert context == {
         "kind": "multi",
@@ -30,6 +31,7 @@ def test_shape_matches_the_design_document():
             "profile": "planner_trial",
             "campaign": "aug-cook",
             "packet_count": 22,
+            "image_count": 7,
         },
         "stage": {"key": "address_repair"},
     }
@@ -136,6 +138,76 @@ class TestTheImageKind:
         assert ImageIdentity.of(path).key == ImageIdentity.of(path).key
 
 
+class TestTheImageCount:
+    """How many screenshots the operator submitted, on the run kind.
+
+    Settled immediately before extraction, which here means before A1: B1's
+    config is retrieved once per image at run start, so a count attached when
+    B1 runs would arrive after the one evaluation most likely to target on it.
+    """
+
+    def shots(self, tmp_path, count):
+        paths = []
+        for index in range(count):
+            path = tmp_path / f"{index:02d}-imessage.png"
+            path.write_bytes(b"\x89PNG-%d" % index)
+            paths.append(path)
+        return tuple(map(ImageIdentity.of, paths))
+
+    def test_the_builder_carries_it_on_the_run_kind(self):
+        context = ContextBuilder(
+            run_id="run-1", profile="baseline", image_count=7
+        ).for_stage(STAGE_ADDRESS_REPAIR)
+        assert context["run"]["image_count"] == 7
+
+    def test_the_image_context_carries_it_and_the_image_kind_still_does_not(
+        self, tmp_path
+    ):
+        # The count describes the run; the image kind stays key-only, which is
+        # what keeps a private screenshot's identity a content hash.
+        (image,) = self.shots(tmp_path, 1)
+        context = ContextBuilder(
+            run_id="run-1", profile="baseline", image_count=3
+        ).for_image(STAGE_EXTRACTION, image)
+        assert context["run"]["image_count"] == 3
+        assert context["image"] == {"key": image.key}
+
+    def test_a1_derives_it_from_the_images_it_was_given(self, tmp_path):
+        # Derived rather than passed alongside, so the number a targeting rule
+        # sees and the set B1's configs were retrieved for cannot disagree.
+        from bbq_shipment_agent.run import initialize_run
+
+        images = self.shots(tmp_path, 3)
+        run = initialize_run(ledger_root=tmp_path, images=images)
+        assert run.context_for_stage(STAGE_EXTRACTION)["run"]["image_count"] == 3
+        assert (
+            run.contexts.for_image(STAGE_EXTRACTION, images[0])["run"]["image_count"]
+            == 3
+        )
+
+    def test_a_roster_run_says_zero_rather_than_staying_silent(self, tmp_path):
+        # A1 always knows how many images were submitted, so "none" is a
+        # measurement. An absent attribute would make it indistinguishable
+        # from a caller that never said.
+        from bbq_shipment_agent.run import initialize_run
+
+        run = initialize_run(ledger_root=tmp_path)
+        assert run.context_for_stage("run_init")["run"]["image_count"] == 0
+
+    def test_every_stage_in_the_run_sees_the_same_count(self, tmp_path):
+        # The run kind is identical across evaluations or a rollout on it is
+        # incoherent -- the property the one builder exists for.
+        from bbq_shipment_agent.run import initialize_run
+
+        images = self.shots(tmp_path, 2)
+        run = initialize_run(ledger_root=tmp_path, images=images)
+        stages = [STAGE_EXTRACTION, STAGE_ADDRESS_REPAIR, STAGE_MANIFEST_VERIFICATION]
+        assert (
+            len({run.context_for_stage(stage)["run"]["image_count"] for stage in stages})
+            == 1
+        )
+
+
 def test_an_undeclared_attribute_is_refused():
     # The failure this guards is an edit that adds a field to ContextBuilder
     # and forgets to declare it, which would otherwise send it to LD.
@@ -154,7 +226,7 @@ def test_declared_attributes_are_the_ones_the_builder_produces():
     from bbq_shipment_agent.context import _ATTRIBUTES
 
     produced = ContextBuilder(
-        run_id="r", profile="p", campaign="c", packet_count=1
+        run_id="r", profile="p", campaign="c", packet_count=1, image_count=1
     ).for_stage("run_init")
     assert set(produced["run"]) - {"key"} == _ATTRIBUTES["run"]
     assert set(produced["stage"]) - {"key"} == _ATTRIBUTES["stage"]

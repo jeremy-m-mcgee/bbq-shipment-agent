@@ -372,7 +372,8 @@ One flag, evaluated against a multi-context, rather than parallel config trees p
 context = run.contexts.for_stage("address_repair")
 # {"kind": "multi",
 #  "run":   {"key": run.id, "profile": "planner_trial",
-#            "campaign": "aug-cook", "packet_count": 22},
+#            "campaign": "aug-cook", "packet_count": 22,
+#            "image_count": 7},
 #  "stage": {"key": "address_repair"}}
 
 mode = flags.variation("planner-mode", context, default="off")
@@ -393,6 +394,10 @@ That is not symmetry with the other kinds, it is the only kind a rollout can mea
 The key is a content hash rather than a filename for two reasons, and the privacy one is the load-bearing one: these are screenshots of private message threads, and a context is sent to LaunchDarkly's servers. Nothing about the file leaves this machine — not the name, not the directory. What the hash refers to goes on the run row as `evaluation_reasons["screenshot_keys"]`, committed but local, which is what keeps section 2's "diagnosable from the committed JSONL" true for the one stage whose variation is worth diagnosing. The second reason is that the same bytes are the same unit: a renamed or re-sorted directory is not a new population to bucket, which is also why `RecordedVision` matches replays on content.
 
 Two consequences were forced by building it. Screenshots are now resolved **before** A1 rather than inside `build_roster` during planning — a config retrieved at run start cannot be keyed on an image chosen later, and the reordering also means a bad `--screenshot-count` fails before a run row has been appended to an append-only file. And B1 records **one invocation per image** rather than one per batch, carrying `image_key`, because a batch-level record cannot express a run in which two variations were served, which is precisely the run a rollout is executed to measure.
+
+**How many images were submitted is a `run` attribute, settled before A1.** `image_count` says how many screenshots this run handed B1, and it sits on the run kind beside `packet_count` rather than on the `image` kind, which stays key-only for the privacy reason above. It is a count and never a name, so it discloses nothing the run row does not already hold locally.
+
+It is set immediately before extraction, which in this pipeline means *before A1* rather than at B1, and the difference is the whole point. `screenshots_for` resolves the images first precisely so B1's config can be retrieved per image at run start; a count attached when B1 actually runs would arrive after every evaluation that could target on it, `screenshot-extraction`'s included, so a rule written against it would never fire — the same failure this section already records for a `memory-mode` rule written against `stage: address_repair`. It is therefore derived from the same `images` tuple A1 is given, so the number a targeting rule sees and the set of configs retrieved cannot disagree, and a roster run carries `0` rather than nothing: A1 always knows the answer, so "no screenshots" is a measurement, not a silence.
 
 **One builder constructs every context.** `ContextBuilder` holds the run's targeting identity, is built at the top of A1 before the capability provider is contacted, and is carried on the run; `context.py` is the only module that calls `Context.from_dict`, and a test pins that. This is not tidiness. A percentage rollout is only coherent if every evaluation of that flag within a run presents the same attributes, and an experiment is only attributable if the evaluation event and the metric event carry the same context. Both held before, by coincidence: each call site rebuilt the dict from the run's fields and A1 hand-built its own, because it runs before the run exists. Attributes are declared per kind in one list and anything undeclared is refused rather than forwarded — the same shape as `resolve` rejecting unknown capability keys, and for the reason the ledger has a secrets rule, since a context is sent to LaunchDarkly's servers.
 

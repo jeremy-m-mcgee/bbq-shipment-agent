@@ -75,8 +75,15 @@ STAGE_REVIEW_NARRATOR = "review_narrator"
 #: message thread leaves this machine -- not the filename, not the directory
 #: it sat in. What the hash refers to is recorded on the run row, where it is
 #: committed but local.
+#:
+#: `image_count` is how many screenshots were submitted for this run, and it
+#: is a `run` attribute rather than an `image` one for the same reason
+#: `packet_count` is: it describes the run, and the `image` kind is key-only
+#: on purpose. It is a count and never a name, so it leaks nothing a run row
+#: does not already hold. See `ContextBuilder.image_count` for why it is
+#: settled before A1 rather than at B1.
 _ATTRIBUTES: dict[str, frozenset[str]] = {
-    "run": frozenset({"profile", "campaign", "packet_count"}),
+    "run": frozenset({"profile", "campaign", "packet_count", "image_count"}),
     "stage": frozenset(),
     "image": frozenset(),
 }
@@ -156,6 +163,21 @@ class ContextBuilder:
     profile: str
     campaign: str | None = None
     packet_count: int | None = None
+    #: How many screenshots this run submitted to B1.
+    #:
+    #: Settled immediately before extraction, which in this pipeline means
+    #: before A1 rather than at B1: `wiring.screenshots_for` resolves the
+    #: images first precisely so B1's config can be retrieved per image at run
+    #: start (design 6.6). A count attached at B1 would arrive after every
+    #: evaluation that could target on it -- including `screenshot-extraction`
+    #: itself -- so a targeting rule written against it would never fire. It
+    #: reaches the builder at construction instead, which is also what keeps
+    #: the run kind identical across every evaluation in the run.
+    #:
+    #: `None` means nobody said, which is a hand-built builder or a caller
+    #: that predates images. `initialize_run` always passes a number, so a
+    #: roster run says 0 -- "no screenshots" is a measurement, not a silence.
+    image_count: int | None = None
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -179,6 +201,7 @@ class ContextBuilder:
                     "profile": self.profile,
                     "campaign": self.campaign,
                     "packet_count": self.packet_count,
+                    "image_count": self.image_count,
                 },
             ),
             "stage": _individual("stage", stage, {}),
