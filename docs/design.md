@@ -39,7 +39,9 @@ The candidate configuration space per shipment is small enough to enumerate exha
 
 - *Explanation is the exception to the cost.* A model that explains a tradeoff carries almost none of the risk of a model that makes a decision, because it sits strictly downstream of a computed result and cannot alter it. The pair solve in C5 produces six candidate plans differing simultaneously across cost, coverage, stranded shipments, thermal margin, and forced-carrier interactions. Reading those differences off a table and holding the interactions in working memory is precisely the comparison humans do badly, especially at the end of a review when attention is thinnest. Narrating it is a legitimate and cheap use of the model, and it needs none of the guardrails that gate the acting loops.
 
-**Capability and authority are different things.** Capability flags (planning, memory, verification) can be toggled freely because the worst case is a weaker proposal in a document being reviewed anyway. Authority flags change what happens in the world if the code is wrong, and are subject to a ceiling that no runtime configuration can raise.
+**Capability and authority are different things — and only one of them still exists here.** Capability flags (planning, validation, verification) can be toggled freely because the worst case is a weaker proposal in a document being reviewed anyway. Authority flags change what happens in the world if the code is wrong, and would be subject to a ceiling that no runtime configuration can raise.
+
+The distinction is kept because it is the right one to apply to any acting stage added later. What is *not* kept is the machinery: `authority-level` and its ceiling were removed once dispatch was (section 9), because the system has no action to authorize and a permission nothing consults is decorative — the same test 6.6 applied when it deleted the `shipment` context kind. `memory-mode` went at the same time and for the same reason: it was resolved, clamped, fingerprinted and recorded, and no stage ever read it. A flag is worth its config surface only when some stage's behaviour turns on it.
 
 **Every run is reconstructible.** The resolved capability set, the capability overrides the flag layer proposed, and the evaluation reasons are recorded on the run row, and every row that depends on them carries the capability fingerprint pointing back at it. A surprising run must be diagnosable months later, from the committed JSONL and nothing else.
 
@@ -56,8 +58,9 @@ These are enforced in code and cannot be overridden by flag, CLI argument, or en
 | Constraint | Value | Rationale |
 |---|---|---|
 | Arrival temperature | at or below 4.4C | Food safety |
-| Authority ceiling | `propose_only` | Human in the send loop. Gates nothing today — see 6.5 |
 | Carriers per run | at most 2 | Operational simplicity at drop-off |
+
+The authority ceiling was a third row here, `propose_only`, enforced by a clamp in `resolve`. It is gone with the rest of the authority machinery — see 6.5. "The human stays in the send loop" is now guaranteed by there being no send: no stage in the pipeline spends money or makes an irreversible external call, which is a stronger claim than a permission nothing checks.
 
 ### Soft constraints
 
@@ -109,7 +112,7 @@ Yellow nodes are model-driven loops. Everything else is deterministic.
 ### Phase A: Run setup
 
 **A1. Initialize run.**
-Generate a run ID. Read the kill switch from repo config and abort if set. Evaluate the flag payload against the run context, clamp `authority-level` against the repo ceiling, and record the resolved capability set plus the proposed overrides on the run record.
+Generate a run ID. Read the kill switch from repo config and abort if set. Evaluate the flag payload against the run context, apply the declared prerequisites (6.9), and record the resolved capability set plus the proposed overrides on the run record.
 
 Output: run record with capability fingerprint.
 
@@ -127,10 +130,10 @@ Runs before C2, and the corrected address is the one that gets quoted. A carrier
 
 Deterministic. The model-driven stage that reasons about a broken address is B3, which is offered validation as a tool.
 
-**B3. Repair.** *Agent loop. Gated by `planner-mode` and `memory-mode`.*
+**B3. Repair.** *Agent loop. Gated by `planner-mode`.*
 Runs only on the correctable and failed set. Re-reads the source image region, proposes a correction, re-validates through Shippo, retries within a bounded budget. Records that still fail are escalated to a human queue, never silently dropped.
 
-With `memory-mode` at `read` or higher, recipients with prior extraction failures are pre-flagged before validation rather than after.
+This entry also said that with `memory-mode` at `read` or higher, recipients with prior extraction failures would be pre-flagged before validation rather than after. That was never built, and `memory-mode` has been removed rather than left as a flag describing behaviour the code does not have. If pre-flagging is wanted later it needs B3 to read prior failures out of the ledger — note that this is a genuine new dependency on prior state, though not one that touches B4's "reads no ledger and no clock" property in section 9.
 
 B3 proposes and the validator adjudicates. The failure mode worth designing against is not a bad repair but a *good-looking* one: a model that infers a house number from context can produce an address that validates cleanly for the wrong doorstep, and nothing downstream can distinguish that from a correct one. So the loop reports what it read from the image separately from what it proposes, and escalation is a normal successful outcome rather than a failed repair.
 
@@ -233,7 +236,7 @@ Append-only JSONL in the repo, on approval. See section 7. The approved plan is 
 
 **E1 (purchase labels) and E3 (backfill actuals) were removed.** See section 9. Section 1 always stopped at "a reviewable work package that a human approves before any money is spent" — dispatch was the one part of the pipeline that went past the stated purpose, and cutting it costs the system nothing it was built to do.
 
-The consequences are real and are recorded where they land: section 5 loses its calibration path, section 6.5's authority machinery no longer gates anything that exists, and section 7's illustration of a deferred append needed a different example.
+The consequences are real and are recorded where they land: section 5 loses its calibration path, section 6.5's authority machinery lost the only stage it gated and has since been removed outright, and section 7's illustration of a deferred append needed a different example.
 
 ---
 
@@ -291,14 +294,13 @@ LaunchDarkly is a delivery layer for values. It does not execute anything. The d
 | Agent instruction text | LD |
 | Which instruction variation is served | LD |
 | Model, temperature, token ceiling | LD |
-| `planner-mode`, `memory-mode`, `verification-enabled` | LD |
+| `planner-mode`, `validation-mode`, `verification-enabled` | LD |
 | Tool definitions and execution | Python |
 | Which tools each agent is offered | Python |
 | Stage sequencing, retries, error handling | Python |
 | Thermal gate and the 4.4C threshold | Python constant |
 | Configuration enumeration and pair solve | Python |
 | Ledger writes, Shippo calls | Python |
-| `authority-level` and the ceiling | Repo config |
 | `pipeline-kill-switch` | Repo config |
 
 **Medium split, scoped to agents.** LD holds the instruction set for each of the four agents, along with model parameters. Python holds everything else: tool definitions, tool execution, stage sequencing, and every deterministic decision. Instruction text is the only thing that moves out of the repo.
@@ -330,7 +332,7 @@ There is a stronger reason than symmetry. Section 8 warns that at 22 packets acr
 
 The registry in code is named `LD_CONFIGURED_STAGES` for exactly this reason. It means "gets its model and instructions from LaunchDarkly", which is not the same claim as "is an agent".
 
-The flag set does not multiply with the agent count. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, six flags — and the sixth, `validation-mode`, belongs to a deterministic stage rather than an agent, which is the point: LaunchDarkly serves runtime behaviour, not just agent instructions.
+The flag set does not multiply with the agent count. `planner-mode` remains one flag, targeted per agent through the `stage` context kind. Four agents, four flags — and one of the four, `validation-mode`, belongs to a deterministic stage rather than an agent, which is the point: LaunchDarkly serves runtime behaviour, not just agent instructions. It was six until `memory-mode` and `authority-level` were removed for gating nothing (6.5), which is the other point: a flag earns its place by changing what a stage does.
 
 ### 6.3 What is not an agent
 
@@ -354,15 +356,21 @@ Moving instruction text to LD breaks the guarantee that instructions and tool si
    Per-image retrieval of B1 (6.6) put a hole in mitigation 2 that this had to close. The snapshot holds one entry per agent key, so a rollout serving two variations of `screenshot-extraction` in one run would leave the losing variation's text in a ledger hash and nowhere in the repo — the join the hash exists to provide, broken in exactly the run it was most wanted for. Any variation the canonical entry does not hold is therefore archived alongside it under `agent-key#variation-key`. The offline reader looks up bare agent keys and so can never serve one back: it is an audit trail, never a cache.
 4. **Read-only agents are the safe place to iterate.** `manifest-verification` and `review-narrator` touch no tools with changing signatures. Instruction churn there carries close to zero drift risk. `address-repair` calls tools that will change while the system is being built, and its instructions should be treated as more expensive to edit.
 
-### 6.5 Authority stays in the repo
+### 6.5 Authority was here and has been removed
 
-LD's core virtue is that changes are immediate and easy. That is precisely the property that should not apply to the flag governing whether the system can spend money. `authority-level` and `authority_ceiling` live in a committed config file, so changing one shows up in `git log`.
+**`authority-level`, `authority_ceiling` and the clamp are gone, along with `memory-mode`.** Neither capability was read by any stage. This section used to argue for keeping authority anyway, and the argument is worth preserving because it is the one that eventually lost.
 
-Python clamps whatever LD serves against the repo ceiling. LD can lower authority. It can never raise it. A stale cached payload or a misconfigured targeting rule cannot expand what the system is permitted to do.
+The case for keeping it was: the clamp is the demonstrated mechanism, and a permission that has never been exercised is not evidence that the mechanism works; it was resolved, clamped, recorded on the run row and tested on every run, so if an acting stage were ever added the ceiling would already be load-bearing rather than retrofitted. And the ceiling made "the human stays in the send loop" checkable in `git log` rather than merely true by absence.
 
-**Since dispatch was removed (section 9), `authority-level` gates nothing that exists.** Label purchase was the only stage that read it. It is kept anyway, for two reasons worth separating from inertia. The clamp is the demonstrated mechanism, and a permission that has never been exercised is not evidence that the mechanism works; it is resolved, clamped, recorded on the run row and tested on every run, so if an acting stage is ever added the ceiling is already load-bearing rather than retrofitted. And the ceiling is what makes "the human stays in the send loop" checkable in `git log` rather than merely true by absence — the guarantee should not quietly depend on nobody having written the code yet.
+The section closed by saying what it must not become — decorative — and offering the test: *a reader should be able to tell that nothing consults it*. That test is the one 6.6 then used to delete the `shipment` context kind, and applying it consistently is what removed authority too. Three points settled it:
 
-What it must not become is decorative. A reader should be able to tell that nothing consults it today, which is why this paragraph exists.
+- **Dispatch is a non-goal, not a deferral** (section 9). The ceiling was insurance against a stage the design has ruled out, and "the system spends no money" is now guaranteed by there being no code that could — a stronger guarantee than a clamp over an unused field.
+- **The mechanism does not have to be live to be recoverable.** It is four lines of comparison in `resolve` plus a config key. Re-adding it alongside an acting stage is cheaper than the confusion of a permission that gates nothing, and the acting stage is the change that should carry it.
+- **It was not free.** Every run resolved, clamped, fingerprinted and wrote a value no stage read, and every profile in the config carried a line implying the system had authority levels to configure. `memory-mode` was worse: it also described *behaviour* — the B3 pre-flagging in section 4 — that was never built.
+
+What replaced them is a smaller claim that is actually enforced: every capability in `CAPABILITY_TYPES` is read by a stage, and a test pins the set. `planner` gates B3, `validation` gates B2, `verification` gates D1.
+
+The kill switch stays in repo config for the reason authority used to be there: stopping the pipeline should be a visible commit, not a console toggle.
 
 ### 6.6 Context model
 
@@ -381,11 +389,11 @@ mode = flags.variation("planner-mode", context, default="off")
 
 **What the `stage` kind actually varies, in the built system, is AI Config retrieval.** Each configured stage is evaluated under its own kind, so `address-repair` and `review-narrator` can be served different instruction text and different models by targeting rule. That part works and is exercised.
 
-Capability flags are not evaluated that way. A1 resolves all four once, under `stage: run_init`, and every stage reads the resolved set. A targeting rule written against `stage: address_repair` for `memory-mode` would therefore never fire — this section previously implied it would, with an example about memory being on for one stage and off for another.
+Capability flags are not evaluated that way. A1 resolves them all once, under `stage: run_init`, and every stage reads the resolved set. A targeting rule written against `stage: address_repair` for `planner-mode` would therefore never fire — this section previously implied it would, with an example about a capability being on for one stage and off for another.
 
 That is a deliberate limitation rather than an oversight, and section 7 depends on it: one run has one resolved capability set and one fingerprint, and every shipment row points at it. Per-stage capability resolution would mean several sets per run and a fingerprint that names none of them.
 
-**A `shipment` kind was defined here and has been removed.** It was in the example above, keyed by recipient with `variant`, `zone` and `prior_failures` attributes, and described as the way a record that has failed before could be pre-flagged without a code change. Nothing ever evaluated against it: no caller in `src/` passed a recipient key, so every context the system built had two kinds in it and this one was a claim the code did not make. Section 6.5 says of `authority-level` that what it must not become is decorative, and the test it offers — a reader should be able to tell whether anything consults it — is one this kind failed. Per-unit targeting is not abandoned by removing it. It moves to an `image` kind at B1 — the one stage where a variation can be scored against an answer key rather than admired.
+**A `shipment` kind was defined here and has been removed.** It was in the example above, keyed by recipient with `variant`, `zone` and `prior_failures` attributes, and described as the way a record that has failed before could be pre-flagged without a code change. Nothing ever evaluated against it: no caller in `src/` passed a recipient key, so every context the system built had two kinds in it and this one was a claim the code did not make. Section 6.5 offered the test — a reader should be able to tell whether anything consults it — and this kind failed it. So, later, did `authority-level` and `memory-mode`, which 6.5 now records as removals rather than as a permission being kept. Per-unit targeting is not abandoned by removing it. It moves to an `image` kind at B1 — the one stage where a variation can be scored against an answer key rather than admired.
 
 **The `image` kind, and why it is the only unit worth having.** Its key is the content hash of one screenshot, and it carries no attributes at all. B1's config is retrieved once per image at A1, so a targeting rule or a percentage rollout can serve different instructions or a different vision model to different images inside one run.
 
@@ -410,52 +418,48 @@ Six independent flags is 64 combinations, which will not be tested. Use named pr
 profiles:
   baseline:
     planner: off              # python sequences the stages
-    memory: off
+    validation: standard      # b2 applies validator corrections
     verification: off
-    authority: propose_only
 
   planner_trial:
     planner: shadow           # runs, output logged not used
-    memory: read
+    validation: standard
     verification: on
-    authority: propose_only
 
   full:
     planner: on
-    memory: read_write
+    validation: strict        # correctable addresses go to a human
     verification: on
-    authority: propose_only   # still
 
 default_profile: baseline
 
-# hard ceiling, not raisable by CLI or env
-authority_ceiling: propose_only
 kill_switch: false
 ```
 
 `planner` is not a boolean. `shadow` runs the planner path in parallel and logs its output without acting on it, which is how a capability earns promotion.
+
+Three capabilities rather than the five this example used to show. `memory` and `authority` were removed for gating nothing (6.5), and the arithmetic that motivated this section survives the cut: three flags is still eight combinations, and profiles are still how you avoid testing all of them.
 
 ### 6.8 Flag taxonomy
 
 | Flag | Type | Lifetime |
 |---|---|---|
 | `planner-mode` | experiment | temporary, sunset date |
-| `memory-mode` | release | temporary until proven |
 | `verification-enabled` | release | temporary until proven |
 | `validation-mode` | operational | permanent |
-| `authority-level` | permission | permanent |
 | `pipeline-kill-switch` | operational | permanent |
 
-Permission flags do not live in the same file as the others, are not overridable from the CLI, and changing one is a visible commit.
+There is no longer a permission row. `authority-level` was the only one, and 6.5 records why it went; `memory-mode` was a release flag for a release that never happened. The rule they were governed by still holds for anything that replaces them: a flag that changes what the system may do in the world does not live in LaunchDarkly, is not overridable from the CLI, and changing it is a visible commit. `pipeline-kill-switch` is the one flag that still meets that description, and it is in repo config accordingly.
 
 ### 6.9 Prerequisites
 
 Express capability dependencies declaratively rather than as hand-written clamping logic:
 
-- `authority-level` above `propose_only` requires `verification-enabled` on
 - `planner-mode: on` requires `planner-mode: shadow` to have been evaluated across a minimum number of runs
 
 This logic is easy to get subtly wrong and hard to test, which is why it should be data.
+
+One rule rather than two: `authority-level` above `propose_only` requires `verification-enabled` on was the other, and it went with authority itself (6.5). The mechanism is unchanged and still worth having for one rule — the surviving prerequisite is the harder of the two anyway, since it counts completed shadow runs out of the committed ledger rather than comparing two values in hand. A `when` or `requires` key naming a capability the repo does not have now fails loudly at resolve time instead of silently never applying, which is what keeps a leftover rule from looking enforced.
 
 ### 6.10 Offline behavior
 
@@ -531,6 +535,19 @@ committed append-only file, which answers no question the run row does not and
 makes the diff unreadable. Naming the equivalence class is the fingerprint's
 whole job; storing a hash beside the values it hashes is not.
 
+**Removing a capability re-partitions that equivalence class, and old rows
+keep their old names.** `cap_fingerprint` hashes the resolved mapping, so runs
+from before `authority` and `memory` were dropped (6.5) hash five values and
+runs after hash three. Two runs that behaved identically therefore carry
+different fingerprints across the change, and no old fingerprint can collide
+with a new one. Nothing needs migrating and nothing should be: the ledger is
+append-only, every affected run row still carries the `cap_snapshot` its
+fingerprint named, and rewriting history to make the hashes line up would
+destroy the record it exists to keep. A query spanning the change should group
+by `cap_snapshot` fields rather than by fingerprint — which is what
+`count_shadow_runs` already does, reading
+`$.capabilities.planner` rather than joining on a hash.
+
 This assumes a shipment's capabilities are the run's, which holds because A1
 resolves once and nothing re-evaluates per shipment. The assumption is what
 keeps capability flags run-scoped even though AI Config retrieval is not: if
@@ -598,9 +615,10 @@ Each capability flag should move a specific metric. If it does not, turn it off.
 | Flag | Should move |
 |---|---|
 | `planner-mode` | Irregular requests handled without a code change |
-| `memory-mode` | Exceptions pre-flagged before they fail validation |
+| `validation-mode` | Wrong-destination quotes caught before they reach a manifest |
 | `verification-enabled` | Errors caught during review |
-| `authority-level` | Operator time in the review step |
+
+Two rows are gone, and the way they went is the rule working rather than failing. `memory-mode` was supposed to move "exceptions pre-flagged before they fail validation" and `authority-level` "operator time in the review step"; neither could move anything, because neither was read by a stage. "If it does not, turn it off" was the stated policy and removal is its limit case — see 6.5.
 
 `verification-enabled` is the one to watch closest. It is supposed to reduce the number of problems that reach the human. If the operator's edit count during review does not drop, it is generating self-congratulatory checks rather than finding real issues. This is a common failure and easy to miss.
 
@@ -616,7 +634,9 @@ This is not in tension with the four agent configs in section 6.2. Those are fou
 
 **Autonomous triggering.** A system that decides on its own when a run is warranted is more agentic and worse, given that runs happen around events only the operator knows about.
 
-**Raising the authority ceiling.** Not a future milestone. The human stays in the send loop.
+**Acting on the world unattended.** Not a future milestone. The human stays in the send loop.
+
+This entry read "raising the authority ceiling" while a ceiling existed. It no longer does — 6.5 removed the whole mechanism once dispatch was cut — so the non-goal is stated as the thing itself rather than as a setting. Nothing in the pipeline spends money, buys a label, or makes an irreversible external call, and adding a stage that did would be the change this entry rules out. Such a stage should arrive with its own permission and ceiling; 6.5 keeps the argument for what that would look like.
 
 **Time-based suppression.** Rejected. The original design excluded anyone already served inside a configurable window, checked against the ledger.
 
@@ -630,7 +650,7 @@ Section 1 already drew the line here: the purpose is "a reviewable work package 
 
 E2 survives in reduced form: approval still writes the shipment rows, because a plan that was approved and then not recorded would leave the ledger unable to answer what any run actually decided.
 
-Two consequences are worth naming rather than discovering later. The thermal model loses its calibration path, since E3 was the only source of real arrival data — section 5 now says the model will not be calibrated. And the authority machinery in 6.5 no longer gates anything that exists; it is kept, and why is explained there.
+Two consequences are worth naming rather than discovering later. The thermal model loses its calibration path, since E3 was the only source of real arrival data — section 5 now says the model will not be calibrated. And the authority machinery in 6.5 was left gating nothing that exists; it was kept for a while on a stated argument and has since been removed, which 6.5 records.
 
 **Dry ice.** Rejected. Gel packs avoid hazmat classification and keep all four carriers available.
 
@@ -773,7 +793,7 @@ Adding it moved one claim. `cli.py` used to be the only place the live paths wer
 
 Four rules, and each one is a thing a UI makes easy to get wrong:
 
-- **The form configures a run, not the system.** There is no control for the 4.4C threshold, the carrier cap or the authority level, because those are a Python constant, a Python constant and a committed config file. A control that existed and was ignored by the handler would still be a lie about what the system is.
+- **The form configures a run, not the system.** There is no control for the 4.4C threshold, the carrier cap or the kill switch, because those are a Python constant, a Python constant and a committed config file. A control that existed and was ignored by the handler would still be a lie about what the system is.
 - **The ledger path is fixed at launch, not on the form.** Clicking a button feels cheaper than typing a command and the append is just as real, so the target is shown on the page and cannot be moved from it.
 - **Loopback with no host option and no authentication.** The page serves validated home addresses and screenshots of private messages. "Nothing off this machine can reach it" is the whole security model, and a `--host` flag would retire it silently.
 - **What was read is recorded, not just displayed.** A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing, so the filenames go on the run row in `evaluation_reasons`. Section 2 requires a surprising run to be diagnosable from the committed JSONL alone, and a UI that let you pick images without recording the pick would have broken that for the one stage where the choice is measurable.

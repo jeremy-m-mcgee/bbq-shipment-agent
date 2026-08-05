@@ -9,9 +9,9 @@ the CLI, and none of them can reach a stage directly.
 
 The controls are the ones a run is *configured* by, and stop there. There is
 no field for the 4.4C arrival threshold, none for the carrier cap, and none
-for authority -- those are a Python constant, a Python constant and a repo
-config file respectively, and a form control implying otherwise would be
-wrong even if the POST handler ignored it. The manifest is read-only: this
+for the kill switch -- the first two are Python constants and the third is a
+repo config file, and a form control implying otherwise would be wrong even
+if the POST handler ignored it. The manifest is read-only: this
 front-end stops at the same place `run plan` does.
 
 ## Loopback only

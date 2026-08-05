@@ -5,13 +5,12 @@ from enum import StrEnum
 
 from bbq_shipment_agent.capabilities import (
     DEFAULT_CONFIG_PATH,
-    AuthorityLevel,
     CAPABILITY_TYPES,
     CapabilityConfig,
     CapabilityConfigError,
     CapabilitySet,
-    MemoryMode,
     PlannerMode,
+    ValidationMode,
     VerificationMode,
     resolve,
 )
@@ -27,18 +26,13 @@ BASE = """
     profiles:
       baseline:
         planner: "off"
-        memory: "off"
         validation: "standard"
         verification: "off"
-        authority: "propose_only"
       full:
         planner: "on"
-        memory: "read_write"
         validation: "strict"
         verification: "on"
-        authority: "purchase_labels"
     default_profile: "baseline"
-    authority_ceiling: "propose_only"
     kill_switch: false
 """
 
@@ -49,16 +43,16 @@ class TestShippedConfig:
     def test_it_loads(self):
         assert CapabilityConfig.load(DEFAULT_CONFIG_PATH).profiles
 
-    def test_authority_ceiling_is_propose_only(self):
-        # docs/design.md section 3: a hard constraint. If this fails, someone
-        # has changed what the system is permitted to do in the world.
-        config = CapabilityConfig.load(DEFAULT_CONFIG_PATH)
-        assert config.authority_ceiling is AuthorityLevel.PROPOSE_ONLY
-
-    def test_no_profile_exceeds_the_ceiling(self):
-        config = CapabilityConfig.load(DEFAULT_CONFIG_PATH)
-        for name, capabilities in config.profiles.items():
-            assert not (config.authority_ceiling < capabilities.authority), name
+    def test_every_capability_is_one_a_stage_reads(self):
+        # `authority` and `memory` were both resolved, clamped, fingerprinted
+        # and recorded while no stage consulted either, which is the
+        # decorative-permission failure design 6.5 warns about and 6.6 removed
+        # the `shipment` context kind for. This pins the set so a capability
+        # cannot come back without a consumer arriving with it:
+        #   planner     -> plan.py, gating B3 and whether repairs are applied
+        #   validation  -> plan.py, gating B2
+        #   verification-> agents/verification.py, gating D1
+        assert set(CAPABILITY_TYPES) == {"planner", "validation", "verification"}
 
     def test_kill_switch_is_off(self):
         assert CapabilityConfig.load(DEFAULT_CONFIG_PATH).kill_switch is False
@@ -67,7 +61,6 @@ class TestShippedConfig:
         config = CapabilityConfig.load(DEFAULT_CONFIG_PATH)
         baseline = config.profiles[config.default_profile]
         assert baseline.planner is PlannerMode.OFF
-        assert baseline.memory is MemoryMode.OFF
         assert baseline.verification is VerificationMode.OFF
 
 
@@ -81,12 +74,9 @@ class TestYamlBooleanTrap:
             profiles:
               baseline:
                 planner: off
-                memory: off
                 validation: standard
                 verification: on
-                authority: "propose_only"
             default_profile: baseline
-            authority_ceiling: "propose_only"
             kill_switch: false
             """,
         )
@@ -96,33 +86,6 @@ class TestYamlBooleanTrap:
 
     def test_planner_is_not_a_boolean(self):
         assert {m.value for m in PlannerMode} == {"off", "shadow", "on"}
-
-
-class TestAuthorityClamp:
-    def test_a_flag_cannot_raise_authority_past_the_ceiling(self, tmp_path):
-        config = CapabilityConfig.load(write_config(tmp_path, BASE))
-        resolved = resolve(config, overrides={"authority": "purchase_labels"})
-        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
-        assert resolved.reasons["authority"].startswith("CLAMPED_TO_CEILING")
-
-    def test_a_profile_cannot_exceed_the_ceiling_either(self, tmp_path):
-        config = CapabilityConfig.load(write_config(tmp_path, BASE))
-        resolved = resolve(config, profile="full", shadow_runs=99)
-        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
-
-    def test_a_flag_may_still_lower_authority(self, tmp_path):
-        # LD can lower authority, never raise it — lowering must keep working.
-        config = CapabilityConfig.load(
-            write_config(tmp_path, BASE.replace('ceiling: "propose_only"', 'ceiling: "purchase_labels"'))
-        )
-        resolved = resolve(config, profile="full", overrides={"authority": "propose_only"},
-                           shadow_runs=99)
-        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
-        assert resolved.reasons["authority"] == "FLAG_OVERRIDE"
-
-    def test_authority_levels_order_by_rank_not_alphabetically(self):
-        assert AuthorityLevel.PROPOSE_ONLY < AuthorityLevel.PURCHASE_LABELS
-        assert not (AuthorityLevel.PURCHASE_LABELS < AuthorityLevel.PROPOSE_ONLY)
 
 
 class TestFlagPayloadCannotCarryFreeText:
@@ -159,6 +122,7 @@ class TestUnusableOverrides:
     """
 
     def test_an_unparseable_value_leaves_the_profile_standing(self, tmp_path):
+        # Falls back to the profile, never to "leave whatever was there".
         config = CapabilityConfig.load(write_config(tmp_path, BASE))
         resolved = resolve(config, overrides={"planner": "variation 2"})
         assert resolved.capabilities.planner is PlannerMode.OFF
@@ -172,28 +136,34 @@ class TestUnusableOverrides:
     def test_a_non_string_value_is_also_discarded(self, tmp_path):
         # LD will serve whatever type the variation holds, including a number.
         config = CapabilityConfig.load(write_config(tmp_path, BASE))
-        resolved = resolve(config, overrides={"memory": 7})
-        assert resolved.capabilities.memory is MemoryMode.OFF
-        assert resolved.reasons["memory"].startswith("FLAG_VALUE_INVALID")
+        resolved = resolve(config, overrides={"validation": 7})
+        assert resolved.capabilities.validation is ValidationMode.STANDARD
+        assert resolved.reasons["validation"].startswith("FLAG_VALUE_INVALID")
 
     def test_one_bad_value_does_not_discard_the_good_ones(self, tmp_path):
         config = CapabilityConfig.load(write_config(tmp_path, BASE))
         resolved = resolve(
-            config, overrides={"planner": "variation 2", "memory": "read"}
+            config, overrides={"planner": "variation 2", "verification": "on"}
         )
-        assert resolved.capabilities.memory is MemoryMode.READ
-        assert resolved.reasons["memory"] == "FLAG_OVERRIDE"
+        assert resolved.capabilities.verification is VerificationMode.ON
+        assert resolved.reasons["verification"] == "FLAG_OVERRIDE"
 
     def test_an_unknown_capability_is_recorded_not_raised(self, tmp_path):
         config = CapabilityConfig.load(write_config(tmp_path, BASE))
         resolved = resolve(config, overrides={"telepathy": "on"})
         assert resolved.reasons["telepathy"] == "UNKNOWN_CAPABILITY_IGNORED"
 
-    def test_a_bad_value_cannot_smuggle_authority_past_the_ceiling(self, tmp_path):
-        # Discarding must fall back to the profile, never to "leave it alone".
+    def test_a_removed_capability_is_treated_as_unknown(self, tmp_path):
+        # `authority-level` and `memory-mode` no longer map to a field. A
+        # console still serving them must not fail a run, and must leave a
+        # trace saying the repo ignored it.
         config = CapabilityConfig.load(write_config(tmp_path, BASE))
-        resolved = resolve(config, overrides={"authority": "root"})
-        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
+        resolved = resolve(
+            config, overrides={"authority": "purchase_labels", "memory": "read_write"}
+        )
+        assert resolved.reasons["authority"] == "UNKNOWN_CAPABILITY_IGNORED"
+        assert resolved.reasons["memory"] == "UNKNOWN_CAPABILITY_IGNORED"
+        assert not hasattr(resolved.capabilities, "authority")
 
     def test_the_committed_config_is_still_strict(self, tmp_path):
         # The degrade applies to values LD hands over at runtime. A bad value
@@ -212,10 +182,6 @@ class TestUnusableOverrides:
 class TestPrerequisites:
     CONFIG = BASE + """
     prerequisites:
-      - id: authority_needs_verification
-        when: {authority_above: "propose_only"}
-        requires: {verification: "on"}
-        demote: {authority: "propose_only"}
       - id: planner_on_needs_shadow_history
         when: {planner: "on"}
         requires: {shadow_runs_at_least: 5}
@@ -235,27 +201,31 @@ class TestPrerequisites:
         resolved = resolve(config, profile="full", shadow_runs=5)
         assert resolved.capabilities.planner is PlannerMode.ON
 
-    def test_authority_is_demoted_when_verification_is_off(self, tmp_path):
-        raised = self.CONFIG.replace('ceiling: "propose_only"', 'ceiling: "purchase_labels"')
-        config = CapabilityConfig.load(write_config(tmp_path, raised))
-        resolved = resolve(
-            config, profile="full", overrides={"verification": "off"}, shadow_runs=99
-        )
-        assert resolved.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
-        assert resolved.reasons["authority"] == (
-            "PREREQUISITE_UNMET:authority_needs_verification"
-        )
+    def test_a_prerequisite_on_a_removed_capability_is_rejected(self, tmp_path):
+        # The `when` and `requires` keys are checked against CAPABILITY_TYPES,
+        # so a rule left over from the authority ceiling fails loudly at
+        # resolve time rather than silently never applying.
+        stale = BASE + """
+    prerequisites:
+      - id: authority_needs_verification
+        when: {authority: "purchase_labels"}
+        requires: {verification: "on"}
+        demote: {planner: "off"}
+    """
+        config = CapabilityConfig.load(write_config(tmp_path, stale))
+        with pytest.raises(CapabilityConfigError, match="unknown `when` key"):
+            resolve(config)
 
     def test_a_cycle_fails_loudly_rather_than_hanging(self, tmp_path):
         cyclic = BASE + """
     prerequisites:
       - id: a
         when: {planner: "off"}
-        requires: {memory: "read"}
+        requires: {verification: "on"}
         demote: {planner: "shadow"}
       - id: b
         when: {planner: "shadow"}
-        requires: {memory: "read"}
+        requires: {verification: "on"}
         demote: {planner: "off"}
     """
         config = CapabilityConfig.load(write_config(tmp_path, cyclic))
@@ -266,18 +236,19 @@ class TestPrerequisites:
 class TestFingerprint:
     def test_same_capabilities_same_fingerprint(self):
         a = CapabilitySet.from_mapping(
-            {"planner": "off", "memory": "off", "validation": "standard", "verification": "off",
-             "authority": "propose_only"}, source="a")
+            {"planner": "off", "validation": "standard", "verification": "off"},
+            source="a",
+        )
         b = CapabilitySet.from_mapping(
-            {"authority": "propose_only", "verification": "off", "memory": "off",
-             "validation": "standard", "planner": "off"}, source="b")
+            {"verification": "off", "validation": "standard", "planner": "off"},
+            source="b",
+        )
         assert a.fingerprint() == b.fingerprint()
 
     def test_any_difference_changes_it(self):
-        base = {"planner": "off", "memory": "off", "validation": "standard", "verification": "off",
-                "authority": "propose_only"}
+        base = {"planner": "off", "validation": "standard", "verification": "off"}
         a = CapabilitySet.from_mapping(base, source="a")
-        b = CapabilitySet.from_mapping({**base, "memory": "read"}, source="b")
+        b = CapabilitySet.from_mapping({**base, "validation": "strict"}, source="b")
         assert a.fingerprint() != b.fingerprint()
 
 
@@ -288,8 +259,19 @@ class TestConfigValidation:
 
     def test_unknown_capability_is_rejected(self, tmp_path):
         path = write_config(tmp_path, BASE.replace(
-            '        authority: "propose_only"\n      full:',
-            '        authority: "propose_only"\n        telepathy: "on"\n      full:', 1))
+            '        verification: "off"\n      full:',
+            '        verification: "off"\n        telepathy: "on"\n      full:', 1))
+        with pytest.raises(CapabilityConfigError, match="unknown capability"):
+            CapabilityConfig.load(path)
+
+    def test_a_profile_still_carrying_authority_is_rejected(self, tmp_path):
+        # The removal has to be visible in the config too. A profile left
+        # holding `authority: propose_only` would otherwise read as though the
+        # ceiling were still enforced.
+        path = write_config(tmp_path, BASE.replace(
+            '        verification: "off"\n      full:',
+            '        verification: "off"\n        authority: "propose_only"\n      full:',
+            1))
         with pytest.raises(CapabilityConfigError, match="unknown capability"):
             CapabilityConfig.load(path)
 
@@ -321,4 +303,8 @@ def test_snapshot_carries_values_and_reasons_only(tmp_path):
     config = CapabilityConfig.load(write_config(tmp_path, BASE))
     snapshot = resolve(config).to_snapshot()
     assert set(snapshot) == {"profile", "capabilities", "reasons"}
-    assert snapshot["capabilities"]["authority"] == "propose_only"
+    assert snapshot["capabilities"] == {
+        "planner": "off",
+        "validation": "standard",
+        "verification": "off",
+    }

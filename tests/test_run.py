@@ -4,9 +4,9 @@ import textwrap
 import pytest
 
 from bbq_shipment_agent.capabilities import (
-    AuthorityLevel,
     KillSwitchEngaged,
     PlannerMode,
+    ValidationMode,
 )
 from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.context import STAGE_MANIFEST_VERIFICATION
@@ -32,24 +32,17 @@ CONFIG = """
     profiles:
       baseline:
         planner: "off"
-        memory: "off"
         validation: "standard"
         verification: "off"
-        authority: "propose_only"
       planner_trial:
         planner: "shadow"
-        memory: "read"
         validation: "standard"
         verification: "on"
-        authority: "propose_only"
       full:
         planner: "on"
-        memory: "read_write"
         validation: "strict"
         verification: "on"
-        authority: "purchase_labels"
     default_profile: "baseline"
-    authority_ceiling: "propose_only"
     kill_switch: {kill}
     prerequisites:
       - id: planner_on_needs_shadow_history
@@ -164,7 +157,7 @@ class TestOfflinePath:
     def test_no_provider_falls_back_to_the_config_profile(self, ledger, config_path):
         run = initialize_run(ledger_root=ledger, config_path=config_path)
         assert run.capabilities.planner is PlannerMode.OFF
-        assert run.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
+        assert run.capabilities.validation is ValidationMode.STANDARD
 
     def test_the_fallback_is_recorded_as_such(self, ledger, config_path):
         run = initialize_run(ledger_root=ledger, config_path=config_path)
@@ -186,20 +179,31 @@ class TestOfflinePath:
         assert run.evaluation_reasons()["flag_payload_reason"] == "LD_UNREACHABLE"
 
 
-class TestAuthorityIsNotNegotiable:
-    def test_a_provider_cannot_raise_authority(self, ledger, config_path):
-        provider = StubProvider(authority="purchase_labels")
+class TestRemovedCapabilitiesCannotComeBackByPayload:
+    """`authority` and `memory` are gone from the repo, so a payload naming
+    one has nothing to set. It must not fail the run either -- a console still
+    holding the old flags is exactly the state this repo is in the day the
+    removal ships."""
+
+    def test_a_provider_proposing_one_is_ignored_and_recorded(
+        self, ledger, config_path
+    ):
+        provider = StubProvider(authority="purchase_labels", memory="read_write")
         run = initialize_run(
             ledger_root=ledger, config_path=config_path, provider=provider
         )
-        assert run.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
-        assert run.resolved.reasons["authority"].startswith("CLAMPED_TO_CEILING")
+        assert run.resolved.reasons["authority"] == "UNKNOWN_CAPABILITY_IGNORED"
+        assert run.resolved.reasons["memory"] == "UNKNOWN_CAPABILITY_IGNORED"
 
-    def test_a_profile_cannot_raise_authority_either(self, ledger, config_path):
+    def test_the_resolved_set_has_no_field_for_them(self, ledger, config_path):
         run = initialize_run(
             ledger_root=ledger, config_path=config_path, profile="full"
         )
-        assert run.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
+        assert set(run.capabilities.to_mapping()) == {
+            "planner",
+            "validation",
+            "verification",
+        }
 
 
 class TestContextConstruction:
@@ -258,11 +262,11 @@ class TestLedgerRecording:
         initialize_run(
             ledger_root=ledger,
             config_path=config_path,
-            provider=StubProvider(memory="read_write"),
+            provider=StubProvider(validation="strict"),
         )
         connection = rebuild(ledger)
         assert connection.execute(
-            "SELECT json_extract_string(evaluation_reasons, '$.capabilities.memory') "
+            "SELECT json_extract_string(evaluation_reasons, '$.capabilities.validation') "
             "FROM runs"
         ).fetchone() == ("FLAG_OVERRIDE",)
 
@@ -332,24 +336,31 @@ class TestLaunchDarklyProvider:
     def test_flag_keys_map_onto_capability_names(self, ledger, config_path):
         client = FlagClient({
             "planner-mode": "shadow",
-            "memory-mode": "read",
+            "validation-mode": "strict",
             "verification-enabled": "on",
         })
         payload = LaunchDarklyProvider(client).fetch(
             self._context(ledger, config_path)
         )
         assert payload.overrides == {
-            "planner": "shadow", "memory": "read", "verification": "on"
+            "planner": "shadow", "validation": "strict", "verification": "on"
         }
         assert payload.source == "launchdarkly"
 
-    def test_it_never_asks_for_authority(self, ledger, config_path):
-        # Design 6.5: authority lives in repo config so a change is a visible
-        # commit. The provider is not offered the chance to propose one.
+    def test_it_asks_for_nothing_the_repo_cannot_use(self, ledger, config_path):
+        # Every key evaluated costs a round trip and writes a reason to the
+        # ledger. `authority-level` and `memory-mode` were removed with the
+        # capabilities they proposed, so asking for either would record a
+        # reason for a value no stage consults.
         client = FlagClient()
         LaunchDarklyProvider(client).fetch(self._context(ledger, config_path))
         assert "authority-level" not in client.asked
-        assert "authority" not in CAPABILITY_FLAGS.values()
+        assert "memory-mode" not in client.asked
+        assert set(CAPABILITY_FLAGS.values()) == {
+            "planner",
+            "validation",
+            "verification",
+        }
 
     def test_an_absent_flag_proposes_nothing(self, ledger, config_path):
         # An absent flag is not an instruction to change anything, so the
@@ -369,26 +380,17 @@ class TestLaunchDarklyProvider:
             self._context(ledger, config_path)
         )
         assert "planner-mode:RULE_MATCH:r-9" in payload.reason
-        assert "memory-mode:RULE_MATCH:r-9" in payload.reason
+        assert "validation-mode:RULE_MATCH:r-9" in payload.reason
 
     def test_the_proposal_is_recorded_verbatim(self, ledger, config_path):
-        # A hash could not answer "what did LD ask for before the clamp" --
-        # digests do not invert. The values are four enum strings; store them.
-        client = FlagClient({"memory-mode": "read"})
+        # A hash could not answer "what did LD ask for before the
+        # prerequisites ran" -- digests do not invert. The values are three
+        # enum strings; store them.
+        client = FlagClient({"validation-mode": "strict"})
         payload = LaunchDarklyProvider(client).fetch(
             self._context(ledger, config_path)
         )
-        assert payload.overrides == {"memory": "read"}
-
-    def test_a_proposal_still_cannot_raise_authority(self, ledger, config_path):
-        # Defense in depth: even if a provider proposed one, the clamp runs.
-        run = initialize_run(
-            ledger_root=ledger,
-            config_path=config_path,
-            provider=StubProvider(authority="purchase_labels"),
-            profile="planner_trial",
-        )
-        assert run.capabilities.authority is AuthorityLevel.PROPOSE_ONLY
+        assert payload.overrides == {"validation": "strict"}
 
 
 class TestSdkBootstrap:

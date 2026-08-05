@@ -1,17 +1,32 @@
-"""Capability configuration, clamping, and prerequisites. Design section 6.
+"""Capability configuration and prerequisites. Design section 6.
 
 The split this module enforces: LaunchDarkly proposes capability values, the
-repo decides what is permitted. `authority_ceiling` and `kill_switch` are read
-only from the committed config file, never from a flag payload, an environment
-variable, or a CLI argument -- so changing what the system may do in the world
-is always a diff someone can find in `git log`.
+repo decides what is permitted. `kill_switch` is read only from the committed
+config file, never from a flag payload, an environment variable, or a CLI
+argument -- so stopping the pipeline is always a diff someone can find in
+`git log`.
 
 Resolution is a pipeline, and every stage records why it did what it did:
 
-    profile defaults -> flag overrides -> authority clamp -> prerequisites
+    profile defaults -> flag overrides -> prerequisites
 
 The reasons land on the run record. A run that behaved surprisingly months ago
 has to be explainable from the ledger alone.
+
+## `authority` and `memory` were here and have been removed
+
+Neither was read by anything. `authority-level` lost its only consumer when
+dispatch was cut (design 9) and was kept for a while on the argument that the
+ceiling clamp was a mechanism worth having proven; `memory-mode` was resolved,
+clamped, fingerprinted and recorded, and no stage ever consulted it -- the
+pre-flagging behaviour design 4 described for B3 was never built.
+
+Both fail the test design 6.5 sets for itself and 6.6 applied to the
+`shipment` context kind: a capability nothing consults is decorative, and a
+reader should not have to grep to find that out. Removing them takes the
+ceiling clamp and the `authority_needs_verification` prerequisite with them.
+What remains -- `planner`, `validation`, `verification` -- each changes what a
+run actually does.
 """
 
 from __future__ import annotations
@@ -37,12 +52,6 @@ class PlannerMode(StrEnum):
     ON = "on"
 
 
-class MemoryMode(StrEnum):
-    OFF = "off"
-    READ = "read"
-    READ_WRITE = "read_write"
-
-
 class ValidationMode(StrEnum):
     """B2's strictness. Not a boolean, for the same reason `planner` is not.
 
@@ -64,40 +73,17 @@ class VerificationMode(StrEnum):
     ON = "on"
 
 
-class AuthorityLevel(StrEnum):
-    """Ordered. `rank` is what the ceiling clamp compares.
-
-    Nothing consults the resolved value: `purchase_labels` named a stage that
-    was removed rather than built (design 9), so the system has no action to
-    authorize. Both members are kept because the *clamp* is the mechanism
-    worth having proven — a ceiling that has never had to refuse anything is
-    not evidence that it works. Design 6.5 sets out the full argument.
-    """
-
-    PROPOSE_ONLY = "propose_only"
-    PURCHASE_LABELS = "purchase_labels"
-
-    @property
-    def rank(self) -> int:
-        return _AUTHORITY_ORDER.index(self)
-
-    def __lt__(self, other: AuthorityLevel) -> bool:  # type: ignore[override]
-        return self.rank < other.rank
-
-
-_AUTHORITY_ORDER: tuple[AuthorityLevel, ...] = (
-    AuthorityLevel.PROPOSE_ONLY,
-    AuthorityLevel.PURCHASE_LABELS,
-)
-
 #: Capability name -> the enum that validates it. Drives parsing and the
 #: fingerprint, so a new capability is added in exactly one place.
+#:
+#: Every entry here is read by a stage: `planner` by B3 (`plan.py`),
+#: `validation` by B2, `verification` by D1. That is the bar a capability has
+#: to clear to be in this dict -- see the note on removals in the module
+#: docstring.
 CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
     "planner": PlannerMode,
-    "memory": MemoryMode,
     "validation": ValidationMode,
     "verification": VerificationMode,
-    "authority": AuthorityLevel,
 }
 
 
@@ -131,10 +117,8 @@ class CapabilitySet:
     """The capability values a run actually operates under."""
 
     planner: PlannerMode
-    memory: MemoryMode
     validation: ValidationMode
     verification: VerificationMode
-    authority: AuthorityLevel
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any], *, source: str) -> CapabilitySet:
@@ -191,10 +175,7 @@ class Prerequisite:
 
     def applies_to(self, capabilities: CapabilitySet) -> bool:
         for key, expected in self.when.items():
-            if key == "authority_above":
-                if not (AuthorityLevel(expected) < capabilities.authority):
-                    return False
-            elif key in CAPABILITY_TYPES:
+            if key in CAPABILITY_TYPES:
                 if getattr(capabilities, key).value != expected:
                     return False
             else:
@@ -224,7 +205,6 @@ class CapabilityConfig:
 
     profiles: dict[str, CapabilitySet]
     default_profile: str
-    authority_ceiling: AuthorityLevel
     kill_switch: bool
     prerequisites: tuple[Prerequisite, ...] = ()
 
@@ -235,8 +215,8 @@ class CapabilityConfig:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except FileNotFoundError as exc:
             raise CapabilityConfigError(
-                f"{path}: not found. Authority and the kill switch are only ever "
-                "read from this file, so the run cannot proceed without it."
+                f"{path}: not found. The kill switch is only ever read from this "
+                "file, so the run cannot proceed without it."
             ) from exc
         except yaml.YAMLError as exc:
             raise CapabilityConfigError(f"{path}: {exc}") from exc
@@ -256,16 +236,6 @@ class CapabilityConfig:
             raise CapabilityConfigError(
                 f"{path}: default_profile {default_profile!r} is not a defined profile."
             )
-
-        ceiling_raw = _coerce_yaml_scalar(
-            "authority_ceiling", raw.get("authority_ceiling", "propose_only")
-        )
-        try:
-            ceiling = AuthorityLevel(ceiling_raw)
-        except ValueError as exc:
-            raise CapabilityConfigError(
-                f"{path}: authority_ceiling {ceiling_raw!r} is not a known level."
-            ) from exc
 
         kill_switch = raw.get("kill_switch", False)
         if not isinstance(kill_switch, bool):
@@ -287,7 +257,6 @@ class CapabilityConfig:
         return cls(
             profiles=profiles,
             default_profile=default_profile,
-            authority_ceiling=ceiling,
             kill_switch=kill_switch,
             prerequisites=prerequisites,
         )
@@ -329,8 +298,9 @@ def resolve(
     """Resolve the capability set a run will operate under.
 
     `overrides` is whatever the flag layer proposed (empty on the offline
-    path). It is applied *before* the clamp, never after, so nothing a flag
-    payload says can survive the ceiling.
+    path). It is applied first and the prerequisites run over the result, so
+    a proposal is always subject to the repo's declared dependencies rather
+    than the other way round.
 
     A proposal the repo cannot use is discarded, not raised on. Everything
     downstream of the flag layer degrades and explains itself -- unmet
@@ -376,31 +346,12 @@ def resolve(
             capabilities = capabilities.replace(**{name: value})
             reasons[name] = "FLAG_OVERRIDE"
 
-    capabilities, reasons = _clamp_authority(capabilities, reasons, config)
     capabilities, reasons = _apply_prerequisites(
         capabilities, reasons, config, shadow_runs=shadow_runs
     )
     return ResolvedCapabilities(
         capabilities=capabilities, profile=profile_name, reasons=reasons
     )
-
-
-def _clamp_authority(
-    capabilities: CapabilitySet, reasons: dict[str, str], config: CapabilityConfig
-) -> tuple[CapabilitySet, dict[str, str]]:
-    """Apply the repo ceiling. This is the one-way valve in section 6.5.
-
-    A stale cached payload or a misconfigured targeting rule cannot expand what
-    the system is permitted to do, because the clamp runs after every proposal
-    and only ever moves authority down.
-    """
-    if config.authority_ceiling < capabilities.authority:
-        reasons = {
-            **reasons,
-            "authority": f"CLAMPED_TO_CEILING:{config.authority_ceiling.value}",
-        }
-        capabilities = capabilities.replace(authority=config.authority_ceiling)
-    return capabilities, reasons
 
 
 def _apply_prerequisites(

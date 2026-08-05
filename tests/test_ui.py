@@ -37,12 +37,9 @@ CONFIG = """
     profiles:
       baseline:
         planner: "off"
-        memory: "off"
         validation: "standard"
         verification: "off"
-        authority: "propose_only"
     default_profile: "baseline"
-    authority_ceiling: "propose_only"
     kill_switch: false
 """
 
@@ -533,8 +530,13 @@ class TestAWholeRun:
         # The capability header is the most useful thing here and the easiest
         # to lose: in the CLI it scrolls past above the manifest.
         _, page = finished
-        assert "propose_only" in page.text
         assert "baseline" in page.text
+        # Every capability the run resolved, by name -- the table is built
+        # from `to_mapping`, so a capability removed from the repo drops off
+        # the page without the template knowing anything changed.
+        assert "planner" in page.text
+        assert "validation" in page.text
+        assert "verification" in page.text
 
     def test_the_plain_text_manifest_is_the_same_artifact(self, client, finished):
         job_id, _ = finished

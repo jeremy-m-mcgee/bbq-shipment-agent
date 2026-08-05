@@ -1,7 +1,13 @@
 # Capability configuration. See docs/design.md section 6.7.
 #
-# Permission flags live here rather than in LaunchDarkly on purpose: changing
-# what the system is allowed to do has to be a visible commit (section 6.5).
+# `kill_switch` lives here rather than in LaunchDarkly on purpose: stopping the
+# pipeline has to be a visible commit, not a console toggle.
+#
+# `authority` and `authority_ceiling` were here and are gone. Dispatch was
+# removed (section 9), so nothing read the resolved value and the ceiling
+# clamped a capability no stage consulted. `memory` went with it for the same
+# reason -- design 4's pre-flagging behaviour was never built. Every capability
+# below is read by a stage.
 #
 # Values are quoted deliberately. YAML 1.1 parses bare `off` and `on` as
 # booleans, and `planner` is not a boolean -- it has three states, and `shadow`
@@ -13,30 +19,20 @@
 profiles:
   baseline:
     planner: "off"            # python sequences the stages
-    memory: "off"
-    validation: "standard"     # b2 applies validator corrections
+    validation: "standard"    # b2 applies validator corrections
     verification: "off"
-    authority: "propose_only"
 
   planner_trial:
     planner: "shadow"         # runs, output logged not used
-    memory: "read"
     validation: "standard"
     verification: "on"
-    authority: "propose_only"
 
   full:
     planner: "on"
-    memory: "read_write"
     validation: "strict"      # correctable addresses go to a human
     verification: "on"
-    authority: "propose_only" # still
 
 default_profile: "baseline"
-
-# Hard ceiling, not raisable by CLI or environment. LaunchDarkly can lower
-# authority; it can never raise it.
-authority_ceiling: "propose_only"
 
 kill_switch: false
 
@@ -45,13 +41,6 @@ kill_switch: false
 # it never aborts the run. Degrading to a weaker proposal that a human is
 # reviewing anyway is the correct failure mode.
 prerequisites:
-  - id: authority_needs_verification
-    description: >-
-      Spending money requires the self-critique pass to be on.
-    when: {authority_above: "propose_only"}
-    requires: {verification: "on"}
-    demote: {authority: "propose_only"}
-
   - id: planner_on_needs_shadow_history
     description: >-
       Promoting the planner to on requires shadow to have been evaluated

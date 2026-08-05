@@ -98,8 +98,8 @@ quotes.
 
 It stops where `run plan` stops. There is no approval button — D2 is still the
 `run review` conversation — and no control for the 4.4C threshold, the carrier
-cap or the authority level, because those are a Python constant, a Python
-constant and a committed config file.
+cap or the kill switch, because those are a Python constant, a Python constant
+and a committed config file.
 
 It binds `127.0.0.1` with no host option and has no authentication. That is the
 trade: nothing off this machine can reach it, and it serves real home addresses
@@ -247,6 +247,6 @@ uv run bbq-shipment-agent run plan --offline \
 | `src/bbq_shipment_agent/review.py` | D2 edit handling and terminal states |
 | `src/bbq_shipment_agent/agents/` | model seam, tools, D1 verification, D2 narrator |
 | `src/bbq_shipment_agent/ledger/` | append-only JSONL, DuckDB rebuild |
-| `config/capabilities.yaml` | profiles, permission flags, authority ceiling |
+| `config/capabilities.yaml` | capability profiles, prerequisites, kill switch |
 | `config/lanes.yaml` | ambient assumptions per destination band and month |
 | `ledger/*.jsonl` | committed source of truth; `ledger.duckdb` is derived |

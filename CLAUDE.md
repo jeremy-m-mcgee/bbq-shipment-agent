@@ -7,16 +7,16 @@ Full design: @docs/design.md
 
 ## Hard rules
 - 4.4C arrival threshold is a constant in code. Never a flag, CLI arg, or env var.
-- authority_ceiling lives in config/capabilities.yaml. LD can lower authority, never raise it.
 - Max 2 carriers per run.
-- The system spends no money. Dispatch (E1/E3) was removed — design 9. Nothing consults `authority` today; it stays resolved, clamped and recorded so the mechanism is not retrofitted later.
+- The system spends no money. Dispatch (E1/E3) was removed — design 9. `authority-level`, `authority_ceiling` and the clamp were removed too, once it was clear they gated nothing — design 6.5. An acting stage added later brings its own permission with it; do not reintroduce one ahead of the stage.
+- Every capability in `CAPABILITY_TYPES` is read by a stage: `planner` by B3, `validation` by B2, `verification` by D1. A test pins the set. A capability nothing consults is decorative — that is why `authority` and `memory` are gone.
 - Ledger is append-only JSONL. DuckDB is derived and rebuildable. Never write DuckDB as source of truth.
 - A ledger line is a partial update, not a row. To change a value, append another record with the same merge key. Never edit or delete a line.
 - Ledger timestamps are UTC. Naive datetimes are rejected, not assumed.
 
 ## Secrets
 - Secrets live in `.env` (gitignored). `.env.example` is the committed template and holds no real values.
-- Never in `config/capabilities.yaml` — that file is committed on purpose so authority changes show up in `git log`.
+- Never in `config/capabilities.yaml` — that file is committed on purpose so a change to what the pipeline may do shows up in `git log`.
 - Never in LD agent instruction text. The run-start snapshot commits that text to the repo.
 - Never in a ledger record, especially `cap_snapshot`. The ledger is committed and append-only, so a secret written there cannot be removed by a later append.
 - `flag_payload` records the *parsed* capability overrides, never the raw LD payload. `resolve` rejects unknown keys and coerces every value through a `StrEnum`, so the recorded dict is structurally incapable of carrying free text. A test pins that: adding a capability whose values are not an enum breaks it rather than silently widening what reaches the ledger.
@@ -81,7 +81,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - Two: the CLI and `ui`. Neither sequences a stage. Both build a `RunOptions` and call `wiring.open_run` then `wiring.plan_with`, so an offline fallback or a cache path cannot drift between them.
 - `wiring.py` is the only module that constructs something which opens a socket. If a new live client appears anywhere else, that claim is dead and the "no test can open a socket" property goes with it.
 - The UI binds 127.0.0.1 and there is no host flag. It has no authentication because nothing off the machine can reach it, and it serves real home addresses and screenshots of private messages. Adding a host option changes that trade silently.
-- The form configures a run. It does not configure the system: no control for the 4.4C threshold, the carrier cap, authority, or the ledger path. A field for the ledger is a way to append a real run to the wrong file.
+- The form configures a run. It does not configure the system: no control for the 4.4C threshold, the carrier cap, the kill switch, or the ledger path. A field for the ledger is a way to append a real run to the wrong file.
 - `/screenshots/{name}` serves from a dict built by globbing the resolved directory, keyed by exact filename. Never `dir / name`.
 - One run at a time, refused rather than queued: two would append to the same ledger and quote the same lanes twice.
 - Which images B1 read go on the run row (`evaluation_reasons["screenshots"]`). A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing.
@@ -93,10 +93,9 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - What `drive` varies is the screenshot subset, because design 6.6 makes the image the only unit a rollout can bucket on. Runs differing only in start time measure nothing. `--every` is a floor on starts: the server refuses a concurrent run, so the driver waits and reports what it was refused.
 
 ## Capability rules
-- A provider proposes; the repo decides. Order is fixed: profile → flag overrides → ceiling clamp → prerequisites.
-- Never clamp before applying overrides, or a payload could survive the ceiling.
+- A provider proposes; the repo decides. Order is fixed: profile → flag overrides → prerequisites.
 - Unmet prerequisites demote and record why. They never abort the run.
-- LD serves `planner-mode`, `memory-mode`, `verification-enabled` and nothing else. `authority-level` is never asked for — see `CAPABILITY_FLAGS`.
+- LD serves `planner-mode`, `validation-mode`, `verification-enabled` and nothing else — see `CAPABILITY_FLAGS`. A key naming a capability the repo does not have is recorded as `UNKNOWN_CAPABILITY_IGNORED`, not acted on and not fatal; the console may still be serving `authority-level` or `memory-mode`.
 - An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
 - B1's config is retrieved once per screenshot, under an `image` context keyed on the file's content hash — the only unit a rollout can mean anything on, since `run.key` is a fresh UUID. Screenshots are therefore resolved before A1, not in `build_roster`. B1 records one invocation per image, carrying `image_key`.
 - LaunchDarkly is never given a filename. The `image` kind is key-only and the key is a content hash; `evaluation_reasons["screenshot_keys"]` on the run row is what resolves it locally.

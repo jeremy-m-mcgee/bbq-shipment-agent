@@ -6,12 +6,12 @@ Config retrieval: each configured stage is evaluated under its own kind, so
 `address-repair` and `review-narrator` can be served different instruction
 text and different models by targeting rule.
 
-Capability flags are *not* evaluated that way. A1 resolves all four once under
+Capability flags are *not* evaluated that way. A1 resolves them all once under
 `stage: run_init` and every stage reads the resolved set, which is what lets
 one run have one fingerprint. Design 6.6 says so explicitly; this docstring
-used to claim the opposite, with an example about memory being on for one
-stage and off for another, and a targeting rule written against that claim
-would never have fired.
+used to claim the opposite, with an example about a capability being on for
+one stage and off for another, and a targeting rule written against that
+claim would never have fired.
 
 ## One builder, and why it is not merely tidy
 
@@ -63,8 +63,9 @@ STAGE_REVIEW_NARRATOR = "review_narrator"
 #: The `shipment` kind is deliberately absent. It was defined here, described
 #: in design 6.6 and 7, and never evaluated against by anything in `src/` --
 #: no caller ever passed a `recipient_key`. A kind nothing evaluates is
-#: decorative, which this design treats as a defect elsewhere (6.5 on
-#: authority), so it was removed rather than left as an invitation. Per-unit
+#: decorative, which this design treats as a defect wherever it appears -- the
+#: `authority` and `memory` capabilities were removed on the same test -- so
+#: it went rather than being left as an invitation. Per-unit
 #: targeting is the `image` kind's job instead: B1 is the one stage with an
 #: answer key to score a variation against. If B3 ever needs per-recipient
 #: targeting, the kind comes back here and nowhere else, which is what having

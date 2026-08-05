@@ -258,9 +258,9 @@ class AgentConfigSource(Protocol):
 class OfflineAgentConfigs:
     """Supplies nothing. Section 6.10 step 4, for agent text.
 
-    No instructions means no agents, and `baseline` already has planner,
-    memory, and verification off, so the run falls back to the deterministic
-    spine and a manually reviewed manifest. Less helpful, not less correct.
+    No instructions means no agents, and `baseline` already has planner and
+    verification off, so the run falls back to the deterministic spine and a
+    manually reviewed manifest. Less helpful, not less correct.
     """
 
     def __init__(self, reason: str = "NO_SDK_KEY") -> None:
