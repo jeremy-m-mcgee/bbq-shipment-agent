@@ -1,8 +1,8 @@
 """A1: initialize a run. Design section 4, Phase A.
 
 Generate a run ID, read the kill switch from repo config and abort if set,
-evaluate the flag payload against the run context, clamp authority against the
-repo ceiling, and record the resolved capability set plus what the flag layer
+evaluate the flag payload against the run context, apply the repo's declared
+prerequisites, and record the resolved capability set plus what the flag layer
 proposed on the run record.
 
 The flag layer sits behind `CapabilityProvider`. `OfflineProvider` is not a
@@ -52,14 +52,13 @@ from .ledger import AgentInvocationRecord, LedgerWriter, RunRecord, rebuild, utc
 
 #: LD flag key -> the capability it proposes. Design 6.1 and 6.8.
 #:
-#: `authority-level` is deliberately absent. Design 6.5 keeps authority in
-#: repo config precisely because LD's core virtue, immediate and easy change,
-#: is the wrong property for the flag governing whether the system can spend
-#: money. The clamp in `resolve` runs regardless, as defense in depth against
-#: a provider that proposes one anyway.
+#: `authority-level` and `memory-mode` were here and are gone with the
+#: capabilities they proposed -- nothing read either one. A flag key that
+#: resolves to no field would still be evaluated, still cost a round trip, and
+#: still write a reason to the ledger for a value no stage consults, which is
+#: the decorative-permission failure design 6.5 warned about.
 CAPABILITY_FLAGS: dict[str, str] = {
     "planner-mode": "planner",
-    "memory-mode": "memory",
     "validation-mode": "validation",
     "verification-enabled": "verification",
 }
@@ -103,9 +102,9 @@ class OfflineProvider:
 class LaunchDarklyProvider:
     """Evaluates the capability flags in `CAPABILITY_FLAGS`.
 
-    Proposes only. Everything it returns still passes through the ceiling
-    clamp and the prerequisites, and it is never asked for `authority-level`
-    at all -- see the note on `CAPABILITY_FLAGS`.
+    Proposes only. Everything it returns still passes through the repo's
+    prerequisites, and a key naming a capability the repo does not have is
+    recorded and ignored rather than acted on -- see `resolve`.
     """
 
     def __init__(self, client: Any) -> None:

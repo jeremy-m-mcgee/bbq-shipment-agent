@@ -11,7 +11,7 @@ refer to the pipeline in [design.md](design.md) section 4.
 | `cli.py` | The command line front-end: `ledger verify\|rebuild`, `run init\|plan\|review`, and `ui`. It builds a `RunOptions` and calls `wiring`, so it sequences no stage itself. |
 | `wiring.py` | The only module that constructs anything which opens a socket — LD client, Shippo quoter, Anthropic model. Both front-ends assemble their live or replayed paths here, so an offline fallback or cache path cannot drift between them. |
 | `run.py` | A1: mint a run ID, check the kill switch, resolve capabilities against the run context, and open the run record. Also holds the `CapabilityProvider` seam and the LD client bootstrap. |
-| `capabilities.py` | Loads `config/capabilities.yaml` and resolves a capability set in fixed order: profile, then flag overrides, then the authority ceiling clamp, then prerequisites. The ceiling and kill switch are read only from the committed file, never from a flag or environment variable. |
+| `capabilities.py` | Loads `config/capabilities.yaml` and resolves a capability set in fixed order: profile, then flag overrides, then prerequisites. Every capability it knows about is read by a stage — `authority` and `memory` were removed for gating nothing (design 6.5), taking the ceiling clamp with them. The kill switch is read only from the committed file, never from a flag or environment variable. |
 | `context.py` | The only place a LaunchDarkly evaluation context is built (`run`, `stage` and `image` kinds), and the only caller of `Context.from_dict`. Attributes are declared per kind and an undeclared one is refused rather than forwarded, because a context is sent to LD's servers. |
 | `agent_configs.py` | Retrieves the four LD-configured stages' instructions and model parameters at A1, hashes the *un-rendered* template, and writes the run-start snapshot to `config/ld-snapshot.json`. That snapshot is both the audit trail and the offline instruction cache. |
 | `hashing.py` | One hashing convention — algorithm, encoding and truncation — shared by the flag payload and the instruction template. Everything that hashes routes through here so hashes recorded months apart still compare. |
@@ -76,6 +76,6 @@ home addresses and screenshots of private messages.
 | Module | Purpose |
 |---|---|
 | `__init__.py` | Exposes `create_app`. |
-| `app.py` | The routes: pick screenshots, start a run, watch it, read the manifest. Goes through `wiring` exactly as the CLI does, and the form configures a run rather than the system — no control for the threshold, the carrier cap, authority or the ledger path. |
+| `app.py` | The routes: pick screenshots, start a run, watch it, read the manifest. Goes through `wiring` exactly as the CLI does, and the form configures a run rather than the system — no control for the threshold, the carrier cap, the kill switch or the ledger path. |
 | `service.py` | Runs a plan on a worker thread and emits the same stage events the CLI prints, because a browser request cannot block for minutes. One run at a time, refused rather than queued. |
 | `view.py` | Turns a `PlanResult` into the plain dictionaries a template renders, so no template reaches into the pipeline's shape. Keeps its row model the same as `ReviewSession.manifest`. |

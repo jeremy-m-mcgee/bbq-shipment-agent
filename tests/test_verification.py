@@ -33,12 +33,9 @@ CONFIG = """
     profiles:
       baseline:
         planner: "off"
-        memory: "off"
         validation: "standard"
         verification: "{verification}"
-        authority: "propose_only"
     default_profile: "baseline"
-    authority_ceiling: "propose_only"
     kill_switch: false
 """
 
