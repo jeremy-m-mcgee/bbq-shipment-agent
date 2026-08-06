@@ -755,20 +755,27 @@ class TestModeDescriptor:
         assert "default" in described["effect"]
 
 
-class TestTheProfilePicker:
-    """The profile is a LaunchDarkly targeting label, not a mode switch."""
+class TestThereIsNoProfileControl:
+    """The profile is only a LaunchDarkly targeting label, so the human form
+    does not offer it. The modes it targets are shown on the run page, not
+    chosen here."""
 
-    def test_the_conventional_labels_are_offered(self, client):
-        # baseline/planner_trial/full are the labels LaunchDarkly targeting is
-        # written against. There is no repo config to enumerate them now, so
-        # they are conventional -- but still the ones the form should offer.
+    def test_the_form_has_no_profile_control(self, client):
         body = client.get("/").text
-        assert 'value="baseline"' in body
-        assert 'value="planner_trial"' in body
-        assert 'value="full"' in body
+        assert 'name="profile"' not in body
+        # And none of the old option labels linger as dead markup.
+        assert 'value="baseline"' not in body
+        assert 'value="planner_trial"' not in body
 
-    def test_the_page_says_launchdarkly_decides_the_modes(self, client):
-        assert "LaunchDarkly decides" in client.get("/").text
+    def test_the_post_still_accepts_a_profile_for_the_driver(self, client):
+        # `drive` posts a profile per run as its rollout axis, so the endpoint
+        # must keep taking one even though the browser form does not send it.
+        response = client.post(
+            "/runs",
+            data={"mode": "all", "no_screenshots": "1", "replay": "1",
+                  "profile": "planner_trial"},
+        )
+        assert response.status_code == 200  # accepted, not a 4xx
 
 
 class TestTheModePanel:
