@@ -10,21 +10,23 @@ Full design: @docs/design.md
 - Max 2 carriers per run.
 - The system spends no money. Dispatch (E1/E3) was removed — design 9. `authority-level`, `authority_ceiling` and the clamp were removed too, once it was clear they gated nothing — design 6.5. An acting stage added later brings its own permission with it; do not reintroduce one ahead of the stage.
 - Every capability in `CAPABILITY_TYPES` is read by a stage: `planner` by B3, `validation` by B2, `verification` by D1. A test pins the set. A capability nothing consults is decorative — that is why `authority` and `memory` are gone.
+- LaunchDarkly is the sole source of truth for the capability flags, evaluated live, each under its own stage context (`planner`→`address_repair`, `validation`→`address_validation`, `verification`→`manifest_verification`). There is no committed capability config — no profiles, no prerequisites, no `resolve` proposal layer. Offline, each falls back to a code default (planner off, validation standard, verification off), which is what `baseline` now means. `profile` survives only as a targeting label sent to LD.
+- The kill switch is `pipeline-kill-switch`, an LD flag evaluated at A1 under `stage: run_init`. It fails **open** (default off) when LD is unreachable, so an outage does not brick an offline run — the system spends no money either way, so stopping is not a safety-critical open call.
 - Ledger is append-only JSONL. DuckDB is derived and rebuildable. Never write DuckDB as source of truth.
 - A ledger line is a partial update, not a row. To change a value, append another record with the same merge key. Never edit or delete a line.
 - Ledger timestamps are UTC. Naive datetimes are rejected, not assumed.
 
 ## Secrets
 - Secrets live in `.env` (gitignored). `.env.example` is the committed template and holds no real values.
-- Never in `config/capabilities.yaml` — that file is committed on purpose so a change to what the pipeline may do shows up in `git log`.
+- On Claude Code on the web / iPad, `.env` is not present — the container is cloned fresh. Set `LD_SDK_KEY`, `SHIPPO_API_KEY` and `ANTHROPIC_API_KEY` as environment variables on the Claude Code environment (env config in the web app), never in chat. See https://code.claude.com/docs/en/claude-code-on-the-web.
 - Never in LD agent instruction text. The run-start snapshot commits that text to the repo.
-- Never in a ledger record, especially `cap_snapshot`. The ledger is committed and append-only, so a secret written there cannot be removed by a later append.
-- `flag_payload` records the *parsed* capability overrides, never the raw LD payload. `resolve` rejects unknown keys and coerces every value through a `StrEnum`, so the recorded dict is structurally incapable of carrying free text. A test pins that: adding a capability whose values are not an enum breaks it rather than silently widening what reaches the ledger.
-- `UV_ENV_FILE` (devcontainer) makes `uv run` load `.env`, and setup.sh seeds `.env` from `.env.example`. So an unconfigured key is present-but-empty, not absent: check `if not os.environ.get("LD_SDK_KEY")`, never `is None`. Treat empty as unconfigured and take the `baseline` offline fallback rather than handing `""` to the LD SDK.
+- Never in a ledger record, especially `cap_snapshot` or a `capability_evaluations` line. The ledger is committed and append-only, so a secret written there cannot be removed by a later append.
+- `flag_payload`, `cap_snapshot` and every `capability_evaluations.value` record the *coerced* capability value, never the raw LD payload. `_coerce` maps every served value through a `StrEnum`, so the recorded dict is structurally incapable of carrying free text — a value that is not an enum member is discarded in favour of the default and only its rejection reason is recorded. A test pins that: adding a capability whose values are not an enum breaks it rather than silently widening what reaches the ledger.
+- `UV_ENV_FILE` (devcontainer) makes `uv run` load `.env`, and setup.sh seeds `.env` from `.env.example`. So an unconfigured key is present-but-empty, not absent: check `if not os.environ.get("LD_SDK_KEY")`, never `is None`. Treat empty as unconfigured and take the offline gate (the per-capability defaults) rather than handing `""` to the LD SDK.
 
 ## Boundaries
-- LD holds agent instruction text and model params. Nothing else.
-- Python holds all control flow, tool definitions, and tool execution.
+- LD holds agent instruction text, model params, the capability flag values, and the kill switch. Nothing else — no control flow.
+- Python holds all control flow, tool definitions, tool execution, and how a served flag value is coerced, defaulted, cached and recorded.
 - If a change would express control flow in LD config, stop and ask.
 
 ## LD-configured stages (4) — not all of them are agents
@@ -61,16 +63,16 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), extraction.py (B1), roster.py (the run input file), validation.py (B2), repair.py (B3), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
-- `src/bbq_shipment_agent/capabilities.py` — config load, ceiling clamp, prerequisites, fingerprint
+- `src/bbq_shipment_agent/capabilities.py` — the capability enums, the `CAPABILITIES` registry (name→flag key→enum→stage→default), the `FlagGate` seam (`LaunchDarklyGate`/`OfflineGate`), `evaluate_capability`/`evaluate_kill_switch`, the value coercion, and `CapabilitySet` (snapshot + fingerprint)
 - `src/bbq_shipment_agent/context.py` — `ContextBuilder`, the only place a LD context is constructed (run / stage / image / user kinds), `ImageIdentity`, reason codes
 - `src/bbq_shipment_agent/operators.py` — `OperatorPool`, the only source of a user/department pair. A key is an input; a department never is.
 - `src/bbq_shipment_agent/agent_configs.py` — AI Config retrieval, instruction hash, snapshot / offline cache
 - `src/bbq_shipment_agent/hashing.py` — the one hashing convention. Everything that hashes routes through it.
-- `src/bbq_shipment_agent/run.py` — A1 initialize_run, `CapabilityProvider` seam, LD client bootstrap
+- `src/bbq_shipment_agent/run.py` — A1 initialize_run, the `Run` (which evaluates capabilities live per stage through its gate and caches them), LD client bootstrap
 - `src/bbq_shipment_agent/wiring.py` — `RunOptions`, `Progress`, and the *only* place a live client is constructed. Both front-ends go through it.
 - `src/bbq_shipment_agent/ui/` — the local web app: app.py (routes), service.py (worker thread + events), view.py (results as plain data), templates/
 - `src/bbq_shipment_agent/drive.py` — `bbq-shipment-agent drive`: an HTTP client that posts runs at a serving `ui` on an interval, varying the screenshot subset and the operator. Live testing, not a pipeline path.
-- `config/capabilities.yaml` — profiles + permission flags. Quote `off`/`on`: YAML 1.1 reads them as booleans.
+- `config/capabilities.yaml` — **removed.** Capability flags and the kill switch live in LaunchDarkly now; there is no committed capability config. Named "profiles" move into LD targeting rules keyed on the `profile` attribute.
 - `config/operators.yaml` — the user/department pool the `user` context kind is keyed on. Committed: who a run claims to be changes what LD serves it. No recipients, ever — these keys go to LD.
 - `config/lanes.yaml` — ambient per destination band + month. Stated assumptions, never measured; an unmapped state takes the *hottest* band on purpose.
 - `config/ld-snapshot.json` — committed AI Config snapshot. Audit trail and offline cache in one file.
@@ -83,7 +85,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - Two: the CLI and `ui`. Neither sequences a stage. Both build a `RunOptions` and call `wiring.open_run` then `wiring.plan_with`, so an offline fallback or a cache path cannot drift between them.
 - `wiring.py` is the only module that constructs something which opens a socket. If a new live client appears anywhere else, that claim is dead and the "no test can open a socket" property goes with it.
 - The UI binds 127.0.0.1 and there is no host flag. It has no authentication because nothing off the machine can reach it, and it serves real home addresses and screenshots of private messages. Adding a host option changes that trade silently.
-- The form configures a run. It does not configure the system: no control for the 4.4C threshold, the carrier cap, the kill switch, or the ledger path. A field for the ledger is a way to append a real run to the wrong file.
+- The form configures a run. It does not configure the system: no control for the 4.4C threshold, the carrier cap, or the ledger path. The kill switch is an LD flag now, not a form field or a repo toggle. A field for the ledger is a way to append a real run to the wrong file.
 - `/screenshots/{name}` serves from a dict built by globbing the resolved directory, keyed by exact filename. Never `dir / name`.
 - One run at a time, refused rather than queued: two would append to the same ledger and quote the same lanes twice.
 - Which images B1 read go on the run row (`evaluation_reasons["screenshots"]`). A seeded sample is reconstructible from its seed; a set picked by hand is reconstructible from nothing.
@@ -95,10 +97,12 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - What `drive` varies is the screenshot subset, because design 6.6 makes the image the only unit a rollout can bucket on. Runs differing only in start time measure nothing. `--every` is a floor on starts: the server refuses a concurrent run, so the driver waits and reports what it was refused.
 
 ## Capability rules
-- A provider proposes; the repo decides. Order is fixed: profile → flag overrides → prerequisites.
-- Unmet prerequisites demote and record why. They never abort the run.
-- LD serves `planner-mode`, `validation-mode`, `verification-enabled` and nothing else — see `CAPABILITY_FLAGS`. A key naming a capability the repo does not have is recorded as `UNKNOWN_CAPABILITY_IGNORED`, not acted on and not fatal; the console may still be serving `authority-level` or `memory-mode`.
-- An absent flag proposes nothing. It is not an instruction to overwrite the profile with a default.
+- LD is the sole source of truth for `planner-mode`, `validation-mode`, `verification-enabled` — see `CAPABILITY_FLAGS`. Each is evaluated live through the `FlagGate` (`LaunchDarklyGate` online, `OfflineGate` offline), under its own stage context, at the point the stage that reads it runs. There is no profile file, no `resolve` proposal layer, no prerequisites.
+- The run caches the first evaluation per capability and appends a `capability_evaluations` ledger line; a second ask returns the cache. So one run folds exactly one value per capability into one `cap_snapshot` and one `cap_fingerprint`, even though evaluation is per stage.
+- Offline (no SDK key, or LD unreachable) the gate serves the code default: planner off, validation standard, verification off. That is what `baseline` means now — a set of defaults, not a committed profile.
+- A served value that is not an enum member is discarded in favour of the default; the reason records `FLAG_VALUE_INVALID:<value>` so a console placeholder gets fixed rather than aborting a shipping run. `_coerce` also maps a JSON boolean onto `on`/`off`.
+- `cap_fingerprint`, `cap_snapshot` and `flag_payload` land on the run row at **planning** time, not A1 — A1 no longer knows the capabilities, since each is evaluated when its stage runs. A1 opens the row with `started_at` and `profile` only. `_record_planning` appends the folded set. Shipment rows carry `cap_fingerprint` pointing at the run.
+- The kill switch is `pipeline-kill-switch`, evaluated at A1 under `run_init` through the same gate, fail-open (default off) offline. An engaged switch aborts before any config fetch or ledger append, so an aborted run writes nothing.
 - B1's config is retrieved once per screenshot, under an `image` context keyed on the file's content hash — the only unit a rollout can mean anything on, since `run.key` is a fresh UUID. Screenshots are therefore resolved before A1, not in `build_roster`. B1 records one invocation per image, carrying `image_key`.
 - The `user` kind is keyed on a username with `department` as its one attribute, and it is on *every* evaluation in the run — a rule targeting it has to reach D2, not just A1. It exists because `run.key` is a fresh UUID and a username is not: it is the second key in the system a rollout can bucket on, and the only other one is the image hash. `department` is an attribute, not a kind, because nothing buckets on a department.
 - A department is looked up in `config/operators.yaml`, never supplied. The CLI, the form and the driver all name a key; an unknown one is an error. Two front-ends posting different departments for one username is how a `department is "kitchen"` rule ends up describing whatever was typed last.

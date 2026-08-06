@@ -7,10 +7,10 @@ the validator and the image cropper are genuinely exercised on every run.
 """
 
 import json
-import textwrap
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
 from bbq_shipment_agent.agents.model import Completion, ModelUnavailable, ToolCall
@@ -31,17 +31,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SHOTS = FIXTURES / "screenshots"
 IMAGES = tuple(sorted(SHOTS.glob("*.png")))
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "strict"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
-
 
 class Scripted:
     """Replays recorded assistant turns, including their tool calls."""
@@ -69,12 +58,9 @@ class Scripted:
 
 @pytest.fixture
 def run(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     return initialize_run(
         ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
+        gate=CapabilityGate(validation="strict"),
         agent_source=SnapshotAgentConfigs(SNAPSHOT),
         snapshot_path=tmp_path / "snap.json",
     )

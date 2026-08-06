@@ -194,8 +194,8 @@ class AgentConfig:
         if stored is not None and stored != config.instruction_hash:
             # The file is committed, so a mismatch means it was hand-edited and
             # the audit trail no longer describes the text beside it. Loud is
-            # right here: this is a repo problem, not a network problem, and it
-            # is the same posture `CapabilityConfig.load` takes.
+            # right here: this is a repo problem, not a network problem, so
+            # unlike a live LD value it raises rather than degrading.
             raise AgentConfigError(
                 f"{agent_key}: snapshot instruction_hash is {stored!r} but the "
                 f"instructions beside it hash to {config.instruction_hash!r}. "
@@ -247,9 +247,9 @@ def _from_variation(
 class AgentConfigSource(Protocol):
     """Where an agent's instructions come from.
 
-    Narrow on purpose, and symmetric with `CapabilityProvider`: a source
-    supplies text, it does not decide whether an agent runs. That is the
-    capability set's job.
+    Narrow on purpose, and symmetric with `FlagGate`: a source supplies text,
+    it does not decide whether an agent runs. That is the capability's job,
+    evaluated live through the gate.
     """
 
     def fetch(self, agent_key: str, context: dict[str, Any]) -> AgentConfig: ...

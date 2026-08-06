@@ -86,7 +86,7 @@ class TestPlanningArguments:
         argv = [command] if command == "ui" else ["run", command]
         args = parser.parse_args(argv + ["--profile", "full"])
         assert args.profile == "full"
-        assert args.config and args.snapshot and args.ledger
+        assert args.snapshot and args.ledger
 
     def test_the_retry_defaults_are_higher_than_the_library(self, parser):
         # A 22-recipient run is ~300 quote calls and UPS rate-limits well
@@ -249,25 +249,9 @@ class TestExtractRecordsWhatItRead:
 
     def _run(self, tmp_path, argv_extra=()):
         import json
-        import textwrap
 
         from bbq_shipment_agent.cli import main
 
-        config = tmp_path / "capabilities.yaml"
-        config.write_text(
-            textwrap.dedent(
-                """
-                profiles:
-                  baseline:
-                    planner: "off"
-                    validation: "off"
-                    verification: "off"
-                default_profile: "baseline"
-                kill_switch: false
-                """
-            ),
-            encoding="utf-8",
-        )
         ledger = tmp_path / "ledger"
         snapshot = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
         code = main([
@@ -276,7 +260,7 @@ class TestExtractRecordsWhatItRead:
             "--screenshot-count", "2", "--screenshot-seed", "5",
             "--extractions", str(Path(__file__).parent / "fixtures" / "b1-extractions.json"),
             "--recipients", str(Path(__file__).parent / "fixtures" / "roster-sf-dc.yaml"),
-            "--ledger", str(ledger), "--config", str(config),
+            "--ledger", str(ledger),
             "--snapshot", str(snapshot), *argv_extra,
         ])
         reasons = {}
@@ -294,7 +278,6 @@ class TestExtractRecordsWhatItRead:
         """
         import json
         import shutil
-        import textwrap
 
         from bbq_shipment_agent.cli import main
 
@@ -317,27 +300,12 @@ class TestExtractRecordsWhatItRead:
         broken = tmp_path / "b1-sibling-objects.json"
         broken.write_text(json.dumps(recording), encoding="utf-8")
 
-        config = tmp_path / "capabilities.yaml"
-        config.write_text(
-            textwrap.dedent(
-                """
-                profiles:
-                  baseline:
-                    planner: "off"
-                    validation: "off"
-                    verification: "off"
-                default_profile: "baseline"
-                kill_switch: false
-                """
-            ),
-            encoding="utf-8",
-        )
         code = main([
             "run", "extract", "--offline",
             "--screenshots", str(shots),
             "--extractions", str(broken),
             "--recipients", str(fixtures / "roster-sf-dc.yaml"),
-            "--ledger", str(tmp_path / "ledger"), "--config", str(config),
+            "--ledger", str(tmp_path / "ledger"),
             "--snapshot", str(Path(__file__).parent.parent / "config" / "ld-snapshot.json"),
         ])
         assert code == 0

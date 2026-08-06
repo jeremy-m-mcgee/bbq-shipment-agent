@@ -7,10 +7,10 @@ images can be re-scored offline as often as you like.
 """
 
 import json
-import textwrap
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
 from bbq_shipment_agent.context import ImageIdentity
@@ -25,15 +25,6 @@ REPLIES = FIXTURES / "b1-extractions.json"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
 IMAGES = tuple(sorted(SHOTS.glob("*.png")))
 
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "off"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
 
 
 class RecordedVision:
@@ -89,12 +80,9 @@ def non_recipients():
 
 @pytest.fixture
 def run(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     return initialize_run(
         ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
+        gate=CapabilityGate(),
         agent_source=SnapshotAgentConfigs(SNAPSHOT),
         snapshot_path=tmp_path / "snap.json",
     )
@@ -290,12 +278,9 @@ class TestPerImageRetrieval:
 
     @pytest.fixture
     def run_with_images(self, tmp_path):
-        (tmp_path / "capabilities.yaml").write_text(
-            textwrap.dedent(CONFIG), encoding="utf-8"
-        )
         return initialize_run(
             ledger_root=tmp_path / "ledger",
-            config_path=tmp_path / "capabilities.yaml",
+            gate=CapabilityGate(),
             agent_source=SnapshotAgentConfigs(SNAPSHOT),
             snapshot_path=tmp_path / "snap.json",
             images=tuple(ImageIdentity.of(p) for p in IMAGES),

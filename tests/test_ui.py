@@ -12,7 +12,6 @@ the HTTP layer, against recorded answers, and reads the manifest off the page.
 """
 
 import json
-import textwrap
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -32,16 +31,6 @@ COMPLETIONS = FIXTURES / "d1-completions.json"
 EXTRACTIONS = FIXTURES / "b1-extractions.json"
 FIXTURE_SHOTS = FIXTURES / "screenshots"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "standard"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
 
 ROSTER = """
 origin:
@@ -64,9 +53,6 @@ recipients:
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
     shots = tmp_path / "shots"
     shots.mkdir()
@@ -81,7 +67,6 @@ def options(workspace):
     # Anthropic exactly never.
     return RunOptions(
         ledger=workspace / "ledger",
-        config=workspace / "capabilities.yaml",
         snapshot=workspace / "snapshot.json",
         lanes=workspace / "lanes.yaml",
         cache=workspace / "cache",
@@ -218,19 +203,20 @@ class TestThePicker:
     @pytest.mark.parametrize(
         "name",
         [
-            "../capabilities.yaml",
-            "..%2Fcapabilities.yaml",
-            "....//capabilities.yaml",
+            "../recipients.yaml",
+            "..%2Frecipients.yaml",
+            "....//recipients.yaml",
             "/etc/passwd",
         ],
     )
     def test_nothing_outside_the_directory_can_be_reached(self, client, name):
         # The name is looked up in a listing of the directory, never joined
         # onto it. There is no reason to be within arm's reach of a traversal
-        # bug to show seven PNGs.
+        # bug to show seven PNGs -- and the sibling `recipients.yaml` holds real
+        # home addresses.
         response = client.get(f"/screenshots/{name}")
         assert response.status_code in {404, 400, 405}
-        assert b"kill_switch" not in response.content
+        assert b"Pennsylvania" not in response.content
 
     def test_a_directory_with_no_images_says_so(self, options, tmp_path):
         empty = tmp_path / "empty"

@@ -6,11 +6,11 @@ whole: a roster file in, a manifest out, no model calls and no invented
 numbers anywhere in between.
 """
 
-import textwrap
 from datetime import date
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
 from bbq_shipment_agent.agents.model import ModelUnavailable
@@ -26,16 +26,6 @@ QUOTES = FIXTURES / "shippo-quotes-sf-dc.json"
 VALIDATIONS = FIXTURES / "shippo-addresses.json"
 COMPLETIONS = FIXTURES / "d1-completions.json"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "{validation}"
-        verification: "{verification}"
-    default_profile: "baseline"
-    kill_switch: false
-"""
 
 # One recipient, because the recorded lane is one lane. The point of these
 # tests is that the stages compose, and a second copy of the same lane would
@@ -61,38 +51,40 @@ recipients:
 
 @pytest.fixture
 def workspace(tmp_path):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG).format(validation="standard", verification="off"),
-        encoding="utf-8",
-    )
     (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
     return tmp_path
+
+
+def _gate(*, planner=None, validation=None, verification=None):
+    caps = {
+        name: value
+        for name, value in {
+            "planner": planner,
+            "validation": validation,
+            "verification": verification,
+        }.items()
+        if value is not None
+    }
+    return CapabilityGate(**caps)
 
 
 def run_plan(
     workspace,
     *,
+    planner=None,
     validation=None,
     verification=None,
     roster_text=None,
     verifier=None,
     agent_source=None,
 ):
-    if validation is not None or verification is not None:
-        (workspace / "capabilities.yaml").write_text(
-            textwrap.dedent(CONFIG).format(
-                validation=validation or "standard",
-                verification=verification or "off",
-            ),
-            encoding="utf-8",
-        )
     if roster_text is not None:
         (workspace / "recipients.yaml").write_text(roster_text, encoding="utf-8")
 
     roster = load_roster(workspace / "recipients.yaml")
     run = initialize_run(
         ledger_root=workspace / "ledger",
-        config_path=workspace / "capabilities.yaml",
+        gate=_gate(planner=planner, validation=validation, verification=verification),
         agent_source=agent_source,
         snapshot_path=workspace / "snapshot.json",
         packet_count=roster.packet_count,
@@ -148,10 +140,12 @@ class TestValidationIsInThePath:
         row = run_plan(workspace, validation="off").manifest.rows[0]
         assert row.address["zip"] == "20500"
 
-    def test_the_mode_comes_off_the_resolved_capabilities(self, workspace):
+    def test_the_mode_comes_off_the_evaluated_capability(self, workspace):
         result = run_plan(workspace, validation="strict")
         assert result.validation.mode is ValidationMode.STRICT
-        assert result.run.capabilities.validation is ValidationMode.STRICT
+        # Cached: validation was evaluated live during planning, under the
+        # address_validation stage context.
+        assert result.run.validation() is ValidationMode.STRICT
 
     def test_a_failed_address_is_escalated_and_never_reaches_planning(self, workspace):
         roster = ROSTER.replace(
@@ -217,7 +211,7 @@ class TestTheLedger:
     def test_the_available_carriers_are_recorded(self, workspace):
         # A carrier silently missing from a run is indistinguishable from one
         # with no service on the lane unless this is written down.
-        result = run_plan(workspace)
+        run_plan(workspace)
         appends = list(iter_records(workspace / "ledger", RunRecord))
         reasons = appends[-1].evaluation_reasons
         assert set(reasons["available_carriers"]) == {"UPS", "USPS"}
@@ -365,7 +359,7 @@ class TestDedupeIsInTheSpine:
     state: DC
     zip: "20500"
 """
-        result = run_plan(workspace, roster_text=roster)
+        run_plan(workspace, roster_text=roster)
         appends = list(iter_records(workspace / "ledger", RunRecord))
         assert appends[-1].suppressed_count == 1
         # The packer needs it the other way round: this parcel covers these
@@ -380,15 +374,6 @@ class TestDedupeIsInTheSpine:
 
 class TestRepairIsInTheSpine:
     """B3 between B2 and B4, gated by `planner-mode`."""
-
-    def _needing_repair_run(self, workspace, planner):
-        (workspace / "capabilities.yaml").write_text(
-            textwrap.dedent(CONFIG)
-            .replace('planner: "off"', f'planner: "{planner}"')
-            .format(validation="strict", verification="off"),
-            encoding="utf-8",
-        )
-        return workspace
 
     def test_planner_off_never_calls_the_repairer(self, workspace):
         called = []
@@ -414,7 +399,6 @@ class TestRepairIsInTheSpine:
 
         from bbq_shipment_agent.agents.model import Completion
 
-        self._needing_repair_run(workspace, "shadow")
         (workspace / "recipients.yaml").write_text(
             ROSTER + """  - key: sloppy
     name: Sloppy Sam
@@ -428,7 +412,7 @@ class TestRepairIsInTheSpine:
         roster = load_roster(workspace / "recipients.yaml")
         run = initialize_run(
             ledger_root=workspace / "ledger",
-            config_path=workspace / "capabilities.yaml",
+            gate=_gate(planner="shadow", validation="strict"),
             agent_source=SnapshotAgentConfigs(SNAPSHOT),
             snapshot_path=workspace / "snapshot.json",
         )
@@ -460,9 +444,6 @@ class TestRepairIsInTheSpine:
         and the exit code was 0. Design 2 says a surprising run is diagnosable
         from the committed JSONL alone, and that one was not.
         """
-        import json as _json
-
-        self._needing_repair_run(workspace, "shadow")
         (workspace / "recipients.yaml").write_text(
             ROSTER + """  - key: sloppy
     name: Sloppy Sam
@@ -476,7 +457,7 @@ class TestRepairIsInTheSpine:
         roster = load_roster(workspace / "recipients.yaml")
         run = initialize_run(
             ledger_root=workspace / "ledger",
-            config_path=workspace / "capabilities.yaml",
+            gate=_gate(planner="shadow", validation="strict"),
             agent_source=SnapshotAgentConfigs(SNAPSHOT),
             snapshot_path=workspace / "snapshot.json",
         )

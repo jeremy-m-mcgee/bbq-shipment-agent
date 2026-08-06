@@ -25,7 +25,6 @@ from pathlib import Path
 from .agent_configs import DEFAULT_SNAPSHOT_PATH
 from .agents import ModelUnavailable
 from .capabilities import (
-    DEFAULT_CONFIG_PATH,
     CapabilityConfigError,
     KillSwitchEngaged,
 )
@@ -193,7 +192,6 @@ def _options(args: argparse.Namespace) -> RunOptions:
         selection = ScreenshotSelection(count=count, seed=seed)
     return RunOptions(
         ledger=args.ledger,
-        config=args.config,
         snapshot=args.snapshot,
         lanes=getattr(args, "lanes", DEFAULT_LANES_PATH),
         cache=getattr(args, "cache", DEFAULT_CACHE_DIR),
@@ -220,16 +218,19 @@ def _options(args: argparse.Namespace) -> RunOptions:
 def _print_run(run, connection: str, snapshot_state: str, ledger_root: Path) -> None:
     print(f"\n{run.run_id}\n")
     print(f"  connection   {connection}")
-    print(f"  profile      {run.resolved.profile}")
+    print(f"  profile      {run.profile}")
 
-    print("\n  capabilities")
-    for name, value in run.capabilities.to_mapping().items():
-        print(f"    {name:<14} {value:<14} {run.resolved.reasons[name]}")
+    if run.kill_switch is not None:
+        kill = run.kill_switch
+        state = "ENGAGED" if kill.value else "off"
+        print(f"  kill switch  {state}  ({kill.source}:{kill.reason})")
 
-    payload = run.payload
-    print(f"\n  flags        {payload.source}")
-    print(f"    proposed     {payload.overrides or '(nothing)'}")
-    print(f"    reason       {payload.reason}")
+    # Capabilities are evaluated live, each under its own stage context, when
+    # that stage runs -- so at A1 there is nothing to show yet. `run plan` and
+    # `run review` reprint them via `_print_capabilities` once planning has
+    # evaluated the set.
+    if not _print_capabilities(run):
+        print("\n  capabilities   evaluated live per stage (once planning runs)")
 
     print("\n  agents")
     for key in sorted(run.agent_configs):
@@ -245,6 +246,23 @@ def _print_run(run, connection: str, snapshot_state: str, ledger_root: Path) -> 
 
     print(f"\n  snapshot     {snapshot_state}")
     print(f"  ledger       {stream_path(ledger_root, RECORD_TYPES[0])}\n")
+
+
+def _print_capabilities(run) -> bool:
+    """Print the capability set the run operated under, if it has one yet.
+
+    Returns whether anything was printed. None until every capability has been
+    evaluated -- a live per-stage value does not exist before its stage runs --
+    so the A1 header prints nothing and the plan output prints the full set.
+    """
+    resolved = run.resolved_capabilities()
+    if resolved is None:
+        return False
+    reasons = run.cap_reasons()
+    print("\n  capabilities")
+    for name, value in resolved.to_mapping().items():
+        print(f"    {name:<14} {value:<14} {reasons.get(name, '')}")
+    return True
 
 
 def _cmd_run_init(args: argparse.Namespace) -> int:
@@ -360,6 +378,7 @@ def _cmd_run_plan(args: argparse.Namespace) -> int:
         # known until extraction has run, and a guess would mis-target every
         # flag.
         plan_with(context, options, PrintProgress())
+        _print_capabilities(context.run)
         print()
         result = context.result
     finally:
@@ -415,6 +434,7 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
     try:
         _print_run(context.run, context.connection, context.snapshot, args.ledger)
         plan_with(context, options, PrintProgress())
+        _print_capabilities(context.run)
         print()
         run, roster, result = context.run, context.roster, context.result
         # Review is the surface where this matters most: the operator is about
@@ -856,10 +876,10 @@ def build_parser() -> argparse.ArgumentParser:
     # Everything A1 needs, which all four commands run.
     for sub in (init, extract, plan, review, ui):
         sub.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER_ROOT)
-        sub.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
         sub.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT_PATH)
         sub.add_argument(
-            "--profile", default=None, help="override default_profile for this run"
+            "--profile", default=None,
+            help="targeting label sent to LaunchDarkly for this run",
         )
         sub.add_argument("--campaign", default=None, help="run context attribute")
         sub.add_argument(

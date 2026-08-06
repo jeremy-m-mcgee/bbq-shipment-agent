@@ -30,23 +30,28 @@ def run_header(context: Any, options: RunOptions) -> dict[str, Any]:
     requires them to be recoverable.
     """
     run = context.run
-    payload = run.payload
+    resolved = run.resolved_capabilities()
+    reasons = run.cap_reasons()
+    kill = run.kill_switch
     return {
         "run_id": run.run_id,
         "connection": context.connection,
-        "profile": run.resolved.profile,
+        "profile": run.profile,
         "fingerprint": run.cap_fingerprint,
         "snapshot": context.snapshot,
         "ledger": str(options.ledger),
+        # Empty until planning has evaluated the set: capabilities are live
+        # per stage now, so a header built at A1 carries none of them. The
+        # worker rebuilds this header after planning for exactly that reason.
         "capabilities": [
-            {"name": name, "value": value, "reason": run.resolved.reasons.get(name, "")}
-            for name, value in run.capabilities.to_mapping().items()
+            {"name": name, "value": value, "reason": reasons.get(name, "")}
+            for name, value in (resolved.to_mapping().items() if resolved else ())
         ],
-        "flags": {
-            "source": payload.source,
-            "overrides": payload.overrides or {},
-            "reason": payload.reason,
-        },
+        "kill_switch": (
+            {"value": kill.value, "source": kill.source, "reason": kill.reason}
+            if kill is not None
+            else None
+        ),
         "agents": [
             {
                 "key": key,

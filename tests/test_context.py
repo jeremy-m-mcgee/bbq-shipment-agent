@@ -69,15 +69,16 @@ def test_one_builder_serves_every_stage_with_the_same_run_identity():
 
 
 def test_a_run_carries_the_builder_it_was_evaluated_under(tmp_path):
-    # Not a fresh one built from its own fields: A1 resolves capabilities
-    # against this object before `Run` exists.
+    # Not a fresh one built from its own fields: A1 evaluates the kill switch
+    # against this object, and every later per-stage capability evaluation
+    # reuses it, before and after `Run` exists.
     from bbq_shipment_agent.run import initialize_run
 
     run = initialize_run(ledger_root=tmp_path, campaign="aug-cook", packet_count=22)
     assert run.context_for_stage(STAGE_ADDRESS_REPAIR) == run.contexts.for_stage(
         STAGE_ADDRESS_REPAIR
     )
-    assert run.contexts.profile == run.resolved.profile
+    assert run.contexts.profile == run.profile
 
 
 class TestTheImageKind:

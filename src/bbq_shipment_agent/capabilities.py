@@ -1,46 +1,58 @@
-"""Capability configuration and prerequisites. Design section 6.
+"""Capability configuration. Design section 6.
 
-The split this module enforces: LaunchDarkly proposes capability values, the
-repo decides what is permitted. `kill_switch` is read only from the committed
-config file, never from a flag payload, an environment variable, or a CLI
-argument -- so stopping the pipeline is always a diff someone can find in
-`git log`.
+LaunchDarkly is the **sole source of truth** for the capability flags, and each
+one is evaluated **live**, under its own `stage` context, at the point the run
+reaches the stage that reads it:
 
-Resolution is a pipeline, and every stage records why it did what it did:
+    planner-mode          -> B3   (stage: address_repair)
+    validation-mode       -> B2   (stage: address_validation)
+    verification-enabled  -> D1   (stage: manifest_verification)
+    pipeline-kill-switch  -> A1   (stage: run_init)
 
-    profile defaults -> flag overrides -> prerequisites
+There is no committed profile file and no repo-side resolution step. A run that
+cannot reach LaunchDarkly falls back to a code-level default per flag -- the
+value the deterministic spine is safe to run on -- rather than to a profile in
+a YAML file. `baseline` behaviour (planner off, validation standard,
+verification off) is exactly that set of defaults.
 
-The reasons land on the run record. A run that behaved surprisingly months ago
-has to be explainable from the ledger alone.
+Every value LaunchDarkly serves is coerced through a `StrEnum` before it
+reaches the ledger. A value that is not a member of the enum is discarded in
+favour of the default and the reason records what was rejected: an unedited
+console variation still holding a placeholder must not stop a shipping run.
+The coercion is also the secrets guarantee -- `flag_payload` and `cap_snapshot`
+are structurally incapable of carrying free text, because the only values that
+survive are enum members (CLAUDE.md).
 
-## `authority` and `memory` were here and have been removed
+## What used to be here
 
-Neither was read by anything. `authority-level` lost its only consumer when
-dispatch was cut (design 9) and was kept for a while on the argument that the
-ceiling clamp was a mechanism worth having proven; `memory-mode` was resolved,
-clamped, fingerprinted and recorded, and no stage ever consulted it -- the
-pre-flagging behaviour design 4 described for B3 was never built.
+`config/capabilities.yaml`, `CapabilityConfig`, named profiles, the
+`resolve()` proposal pipeline, the declarative `Prerequisite` machinery, and
+the kill switch read from a committed file are all gone. LaunchDarkly serves
+the values directly and evaluates them live per stage, so the repo no longer
+holds a proposal layer that LD merely feeds, a named-profile bundle, or a
+shadow-run gate. Named profiles move into LaunchDarkly targeting rules keyed on
+the `profile` attribute -- which the run still carries and records, now purely
+as a targeting label rather than a repo-side bundle.
 
-Both fail the test design 6.5 sets for itself and 6.6 applied to the
-`shipment` context kind: a capability nothing consults is decorative, and a
-reader should not have to grep to find that out. Removing them takes the
-ceiling clamp and the `authority_needs_verification` prerequisite with them.
-What remains -- `planner`, `validation`, `verification` -- each changes what a
-run actually does.
+`authority` and `memory` were removed earlier for gating nothing; see git
+history. The rule that removed them still holds: every capability below is read
+by a stage.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from enum import StrEnum
-from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-import yaml
-
+from .context import (
+    STAGE_ADDRESS_REPAIR,
+    STAGE_ADDRESS_VALIDATION,
+    STAGE_MANIFEST_VERIFICATION,
+    reason_code,
+    to_ld_context,
+)
 from .hashing import canonical_hash
-
-DEFAULT_CONFIG_PATH = Path("config/capabilities.yaml")
 
 
 class PlannerMode(StrEnum):
@@ -73,48 +85,126 @@ class VerificationMode(StrEnum):
     ON = "on"
 
 
-#: Capability name -> the enum that validates it. Drives parsing and the
-#: fingerprint, so a new capability is added in exactly one place.
-#:
-#: Every entry here is read by a stage: `planner` by B3 (`plan.py`),
-#: `validation` by B2, `verification` by D1. That is the bar a capability has
-#: to clear to be in this dict -- see the note on removals in the module
-#: docstring.
-CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
-    "planner": PlannerMode,
-    "validation": ValidationMode,
-    "verification": VerificationMode,
-}
-
-
 class CapabilityConfigError(Exception):
-    """The committed capability config cannot be trusted to be what it says."""
+    """A capability value cannot be trusted to be what it says.
+
+    Raised only by `CapabilitySet.from_mapping`, which is the strict reader
+    used when a full set is reconstructed from stored values (a snapshot, a
+    test fixture). A value served live by LaunchDarkly never raises -- it is
+    coerced and, if invalid, discarded in favour of the default. See `_coerce`.
+    """
 
 
 class KillSwitchEngaged(Exception):
-    """`kill_switch: true` in the repo config. The run must not start."""
+    """`pipeline-kill-switch` is on in LaunchDarkly. The run must not start."""
 
 
-def _coerce_yaml_scalar(name: str, value: Any) -> str:
-    """Undo YAML 1.1's bare `off`/`on` -> bool coercion.
+def _coerce_scalar(name: str, enum_type: type[StrEnum], value: Any) -> StrEnum:
+    """Strictly coerce a stored scalar to an enum member, or raise.
 
-    The config quotes these, but an editor dropping the quotes would otherwise
-    turn `planner` into a bool in some profiles and a string in others. Failing
-    loudly here would punish a cosmetic edit; normalizing keeps the file
-    forgiving while the enums below still reject anything genuinely wrong.
+    Booleans are mapped before the enum lookup: LaunchDarkly can serve a
+    two-state flag as a JSON boolean, and `verification-enabled` in particular
+    reads naturally as one. `on`/`off` is the enum's spelling, so a bare `true`
+    becomes `on` rather than failing the lookup.
     """
     if isinstance(value, bool):
-        return "on" if value else "off"
-    if isinstance(value, str):
-        return value
-    raise CapabilityConfigError(
-        f"{name}: expected a string, got {type(value).__name__} ({value!r})."
-    )
+        value = "on" if value else "off"
+    if not isinstance(value, str):
+        raise CapabilityConfigError(
+            f"{name}: expected a string, got {type(value).__name__} ({value!r})."
+        )
+    try:
+        return enum_type(value)
+    except ValueError as exc:
+        allowed = ", ".join(m.value for m in enum_type)
+        raise CapabilityConfigError(
+            f"{name}: {value!r} is not one of: {allowed}."
+        ) from exc
+
+
+@dataclass(frozen=True)
+class Capability:
+    """One capability: how it is named, served, validated, and staged.
+
+    A single descriptor so a new capability is declared in exactly one place --
+    its ledger name, its LaunchDarkly flag key, the enum that validates what LD
+    serves, the `stage` context it is evaluated under, and the default the
+    spine falls back to offline.
+    """
+
+    #: The name used on the ledger snapshot and the fingerprint: "planner".
+    name: str
+    #: The LaunchDarkly flag key: "planner-mode".
+    flag_key: str
+    #: The enum that validates LD's value and constrains what reaches the ledger.
+    enum: type[StrEnum]
+    #: The `stage` context kind this flag is evaluated under, so a targeting
+    #: rule written against the stage actually fires.
+    stage: str
+    #: The value used when LaunchDarkly is unreachable. The deterministic spine
+    #: is safe on this: it is the `baseline` value.
+    default: StrEnum
+
+
+#: Every capability, keyed by ledger name. The one place a capability is
+#: declared. Each is read by exactly one stage -- that is the bar a capability
+#: has to clear to be here (see the module docstring on removals).
+CAPABILITIES: dict[str, Capability] = {
+    "planner": Capability(
+        "planner", "planner-mode", PlannerMode, STAGE_ADDRESS_REPAIR, PlannerMode.OFF
+    ),
+    "validation": Capability(
+        "validation",
+        "validation-mode",
+        ValidationMode,
+        STAGE_ADDRESS_VALIDATION,
+        ValidationMode.STANDARD,
+    ),
+    "verification": Capability(
+        "verification",
+        "verification-enabled",
+        VerificationMode,
+        STAGE_MANIFEST_VERIFICATION,
+        VerificationMode.OFF,
+    ),
+}
+
+#: Capability name -> the enum that validates it. Derived from `CAPABILITIES`,
+#: kept because a test pins this set: a capability nothing consults is
+#: decorative, and adding one whose values are not a `StrEnum` breaks the
+#: secrets guarantee rather than silently widening what reaches the ledger.
+CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
+    name: cap.enum for name, cap in CAPABILITIES.items()
+}
+
+#: LD flag key -> capability name. Derived, for display and for a caller that
+#: needs to go the other way.
+CAPABILITY_FLAGS: dict[str, str] = {
+    cap.flag_key: name for name, cap in CAPABILITIES.items()
+}
+
+#: The kill switch is a boolean flag, not a capability with an enum, so it is
+#: not in `CAPABILITIES`. It is evaluated at A1 under `stage: run_init` and
+#: defaults to *off* when LaunchDarkly is unreachable: an LD outage must not
+#: brick an offline run, and there is no money to spend and no label to buy, so
+#: fail-open is the safe direction. Design 6.8.
+KILL_SWITCH_FLAG = "pipeline-kill-switch"
+KILL_SWITCH_DEFAULT = False
+
+#: The default targeting label a run carries when none is named. `profile` is
+#: no longer a repo-side bundle of values -- it is just a `run` attribute LD
+#: targets on, so this is only a label, kept as the one operators already know.
+DEFAULT_PROFILE = "baseline"
 
 
 @dataclass(frozen=True)
 class CapabilitySet:
-    """The capability values a run actually operates under."""
+    """The capability values a run actually operated under.
+
+    Assembled from the live per-stage evaluations once all three have run. Its
+    only jobs are the snapshot and the fingerprint: naming the equivalence
+    class "these values" so shipment rows can point at it rather than copy it.
+    """
 
     planner: PlannerMode
     validation: ValidationMode
@@ -122,23 +212,21 @@ class CapabilitySet:
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any], *, source: str) -> CapabilitySet:
+        """Strictly reconstruct a full set from stored values.
+
+        Used when a complete set is read back -- a snapshot or a test fixture --
+        where a missing or malformed value is a real error rather than a live
+        LD value to coerce past. Live evaluation never routes through here.
+        """
         parsed: dict[str, StrEnum] = {}
         for name, enum_type in CAPABILITY_TYPES.items():
             if name not in values:
                 raise CapabilityConfigError(f"{source}: missing capability {name!r}.")
-            raw = _coerce_yaml_scalar(f"{source}.{name}", values[name])
-            try:
-                parsed[name] = enum_type(raw)
-            except ValueError as exc:
-                allowed = ", ".join(m.value for m in enum_type)
-                raise CapabilityConfigError(
-                    f"{source}.{name}: {raw!r} is not one of: {allowed}."
-                ) from exc
+            parsed[name] = _coerce_scalar(f"{source}.{name}", enum_type, values[name])
         unknown = set(values) - set(CAPABILITY_TYPES)
         if unknown:
             raise CapabilityConfigError(
-                f"{source}: unknown capability {sorted(unknown)}. "
-                "Add it to CAPABILITY_TYPES or remove it from the config."
+                f"{source}: unknown capability {sorted(unknown)}."
             )
         return cls(**parsed)  # type: ignore[arg-type]
 
@@ -151,244 +239,111 @@ class CapabilitySet:
     def fingerprint(self) -> str:
         """Stable identity for this exact capability set.
 
-        Names the equivalence class "these values", deliberately ignoring
-        how they were arrived at. `ResolvedCapabilities.reasons` varies
-        independently -- two runs can reach the same capabilities by different
-        routes -- so folding reasons in would split a class that is genuinely
-        one thing.
-
-        This is the join key shipment rows carry in place of a repeated
-        snapshot blob; the run row holds the values themselves.
+        Names the equivalence class "these values", deliberately ignoring how
+        they were arrived at. This is the join key shipment rows carry in place
+        of a repeated snapshot blob; the run row holds the values themselves.
         """
         return f"cap-{canonical_hash(self.to_mapping())}"
 
 
 @dataclass(frozen=True)
-class Prerequisite:
-    """One declarative capability dependency from the config."""
+class FlagEvaluation:
+    """One flag's evaluated value, and where it came from."""
 
-    id: str
-    when: dict[str, Any]
-    requires: dict[str, Any]
-    demote: dict[str, str]
-    description: str = ""
-
-    def applies_to(self, capabilities: CapabilitySet) -> bool:
-        for key, expected in self.when.items():
-            if key in CAPABILITY_TYPES:
-                if getattr(capabilities, key).value != expected:
-                    return False
-            else:
-                raise CapabilityConfigError(
-                    f"prerequisite {self.id}: unknown `when` key {key!r}."
-                )
-        return True
-
-    def is_satisfied(self, capabilities: CapabilitySet, *, shadow_runs: int) -> bool:
-        for key, expected in self.requires.items():
-            if key == "shadow_runs_at_least":
-                if shadow_runs < int(expected):
-                    return False
-            elif key in CAPABILITY_TYPES:
-                if getattr(capabilities, key).value != expected:
-                    return False
-            else:
-                raise CapabilityConfigError(
-                    f"prerequisite {self.id}: unknown `requires` key {key!r}."
-                )
-        return True
+    value: Any
+    #: "launchdarkly" | "offline"
+    source: str
+    reason: str
 
 
-@dataclass(frozen=True)
-class CapabilityConfig:
-    """The parsed, committed `config/capabilities.yaml`."""
+class FlagGate(Protocol):
+    """The live flag-evaluation seam.
 
-    profiles: dict[str, CapabilitySet]
-    default_profile: str
-    kill_switch: bool
-    prerequisites: tuple[Prerequisite, ...] = ()
-
-    @classmethod
-    def load(cls, path: Path | str = DEFAULT_CONFIG_PATH) -> CapabilityConfig:
-        path = Path(path)
-        try:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except FileNotFoundError as exc:
-            raise CapabilityConfigError(
-                f"{path}: not found. The kill switch is only ever read from this "
-                "file, so the run cannot proceed without it."
-            ) from exc
-        except yaml.YAMLError as exc:
-            raise CapabilityConfigError(f"{path}: {exc}") from exc
-
-        profiles_raw = raw.get("profiles") or {}
-        if not profiles_raw:
-            raise CapabilityConfigError(f"{path}: no profiles defined.")
-        profiles = {
-            name: CapabilitySet.from_mapping(values, source=f"{path}:profiles.{name}")
-            for name, values in profiles_raw.items()
-        }
-
-        default_profile = _coerce_yaml_scalar(
-            "default_profile", raw.get("default_profile", "baseline")
-        )
-        if default_profile not in profiles:
-            raise CapabilityConfigError(
-                f"{path}: default_profile {default_profile!r} is not a defined profile."
-            )
-
-        kill_switch = raw.get("kill_switch", False)
-        if not isinstance(kill_switch, bool):
-            raise CapabilityConfigError(
-                f"{path}: kill_switch must be true or false, got {kill_switch!r}."
-            )
-
-        prerequisites = tuple(
-            Prerequisite(
-                id=entry["id"],
-                when=entry.get("when") or {},
-                requires=entry.get("requires") or {},
-                demote=entry.get("demote") or {},
-                description=(entry.get("description") or "").strip(),
-            )
-            for entry in (raw.get("prerequisites") or [])
-        )
-
-        return cls(
-            profiles=profiles,
-            default_profile=default_profile,
-            kill_switch=kill_switch,
-            prerequisites=prerequisites,
-        )
-
-
-@dataclass
-class ResolvedCapabilities:
-    """The outcome of resolution, plus the audit trail that explains it."""
-
-    capabilities: CapabilitySet
-    profile: str
-    #: capability name -> why it holds the value it does.
-    reasons: dict[str, str] = field(default_factory=dict)
-
-    @property
-    def fingerprint(self) -> str:
-        return self.capabilities.fingerprint()
-
-    def to_snapshot(self) -> dict[str, Any]:
-        """Ledger-safe capability snapshot.
-
-        Resolved values and reasons only -- never a raw flag payload, because
-        this is written to a committed, append-only file.
-        """
-        return {
-            "profile": self.profile,
-            "capabilities": self.capabilities.to_mapping(),
-            "reasons": dict(self.reasons),
-        }
-
-
-def resolve(
-    config: CapabilityConfig,
-    *,
-    profile: str | None = None,
-    overrides: dict[str, str] | None = None,
-    shadow_runs: int = 0,
-) -> ResolvedCapabilities:
-    """Resolve the capability set a run will operate under.
-
-    `overrides` is whatever the flag layer proposed (empty on the offline
-    path). It is applied first and the prerequisites run over the result, so
-    a proposal is always subject to the repo's declared dependencies rather
-    than the other way round.
-
-    A proposal the repo cannot use is discarded, not raised on. Everything
-    downstream of the flag layer degrades and explains itself -- unmet
-    prerequisites demote, an unreachable LD falls back to `baseline` -- and a
-    malformed value has no claim to be the exception. An unknown profile name
-    still raises: that comes from the caller, not from the network.
+    Deliberately narrow: it evaluates one flag against one context and returns
+    the raw value plus a reason. Coercion, defaulting and ledger recording are
+    the caller's, so the two implementations below cannot disagree about them.
     """
-    profile_name = profile or config.default_profile
-    if profile_name not in config.profiles:
-        raise CapabilityConfigError(
-            f"unknown profile {profile_name!r}; defined: {sorted(config.profiles)}."
+
+    def evaluate(
+        self, flag_key: str, context: dict[str, Any], default: Any
+    ) -> FlagEvaluation: ...
+
+
+class OfflineGate:
+    """Serves the default for every flag, so the run operates on the spine's
+    safe values alone.
+
+    Used when there is no SDK key and no reachable client. Section 6.10 makes
+    unreachable a normal path for a CLI that cold-starts every run.
+    """
+
+    def __init__(self, reason: str = "OFFLINE") -> None:
+        self._reason = reason
+
+    def evaluate(
+        self, flag_key: str, context: dict[str, Any], default: Any
+    ) -> FlagEvaluation:
+        return FlagEvaluation(value=default, source="offline", reason=self._reason)
+
+
+class LaunchDarklyGate:
+    """Evaluates a flag live against LaunchDarkly, under the caller's context.
+
+    A thin wrapper over `variation_detail`: it passes the code default as the
+    SDK fallback, so an unreachable flag or a null variation comes back as the
+    default and the reason names why. Coercion is the caller's -- whatever LD
+    returns is still validated against the capability's enum.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def evaluate(
+        self, flag_key: str, context: dict[str, Any], default: Any
+    ) -> FlagEvaluation:
+        ld_context = to_ld_context(context)
+        detail = self._client.variation_detail(flag_key, ld_context, default)
+        return FlagEvaluation(
+            value=detail.value,
+            source="launchdarkly",
+            reason=reason_code(detail.reason),
         )
 
-    capabilities = config.profiles[profile_name]
-    reasons = {name: f"PROFILE:{profile_name}" for name in CAPABILITY_TYPES}
 
-    for name, raw in (overrides or {}).items():
-        if name not in CAPABILITY_TYPES:
-            # Nothing to enforce: there is no field for it, so it cannot change
-            # what the run does. Recorded rather than dropped, because a
-            # provider proposing a capability the repo has never heard of has
-            # drifted from the code and that is worth seeing in the ledger.
-            reasons[name] = "UNKNOWN_CAPABILITY_IGNORED"
-            continue
+def _coerce(capability: Capability, raw: Any) -> tuple[StrEnum, str | None]:
+    """Coerce a served value through the capability's enum.
 
-        enum_type = CAPABILITY_TYPES[name]
-        try:
-            value = enum_type(_coerce_yaml_scalar(f"override.{name}", raw))
-        except (ValueError, CapabilityConfigError):
-            # Discarded, never fatal. `CapabilityConfig.load` still raises on a
-            # bad value in the committed YAML, where it is a repo problem
-            # someone can fix in a commit. This is a value LaunchDarkly handed
-            # over at runtime: an unedited variation still holding its console
-            # placeholder is likelier than LD being unreachable, and it must
-            # not be the one failure mode that stops a shipping run.
-            #
-            # The profile's value stands and the reason names the value that
-            # was rejected, so the console gets fixed rather than guessed at.
-            reasons[name] = f"FLAG_VALUE_INVALID:{raw!r}"
-            continue
-
-        if value != getattr(capabilities, name):
-            capabilities = capabilities.replace(**{name: value})
-            reasons[name] = "FLAG_OVERRIDE"
-
-    capabilities, reasons = _apply_prerequisites(
-        capabilities, reasons, config, shadow_runs=shadow_runs
-    )
-    return ResolvedCapabilities(
-        capabilities=capabilities, profile=profile_name, reasons=reasons
-    )
-
-
-def _apply_prerequisites(
-    capabilities: CapabilitySet,
-    reasons: dict[str, str],
-    config: CapabilityConfig,
-    *,
-    shadow_runs: int,
-) -> tuple[CapabilitySet, dict[str, str]]:
-    """Demote capabilities whose declared dependencies are unmet.
-
-    Re-checked until stable, because one demotion can make another
-    prerequisite apply. Bounded by the rule count so a config whose rules
-    demote in a cycle fails loudly instead of hanging a shipping run.
+    Returns the value to use and, when the served value was rejected, the
+    reason naming what it was. A rejected value degrades to the default rather
+    than raising: a live LD value holding a console placeholder must not be the
+    one failure mode that stops a shipping run, and the profile is gone, so the
+    default is the only thing left to stand on.
     """
-    for _ in range(len(config.prerequisites) + 1):
-        for rule in config.prerequisites:
-            if not rule.applies_to(capabilities):
-                continue
-            if rule.is_satisfied(capabilities, shadow_runs=shadow_runs):
-                continue
-            demoted = {
-                name: CAPABILITY_TYPES[name](value) for name, value in rule.demote.items()
-            }
-            if not demoted:
-                raise CapabilityConfigError(
-                    f"prerequisite {rule.id}: unmet with no `demote` block, so "
-                    "there is no defined way to degrade. Add one."
-                )
-            capabilities = capabilities.replace(**demoted)
-            reasons = {
-                **reasons,
-                **{name: f"PREREQUISITE_UNMET:{rule.id}" for name in demoted},
-            }
-            break
-        else:
-            return capabilities, reasons
-    raise CapabilityConfigError(
-        "prerequisites did not converge; check for rules that demote in a cycle."
-    )
+    if isinstance(raw, bool):
+        raw = "on" if raw else "off"
+    try:
+        return capability.enum(str(raw)), None
+    except ValueError:
+        return capability.default, f"FLAG_VALUE_INVALID:{raw!r}"
+
+
+def evaluate_capability(
+    capability: Capability, gate: FlagGate, context: dict[str, Any]
+) -> tuple[StrEnum, str, str]:
+    """Evaluate one capability live and coerce the result.
+
+    Returns `(value, source, reason)`. `source` is the gate's ("launchdarkly"
+    or "offline"); `reason` is either the coercion rejection or the gate's
+    reason qualified by source, so the ledger records both why LD said what it
+    said and whether the repo could use it.
+    """
+    ev = gate.evaluate(capability.flag_key, context, capability.default.value)
+    value, rejected = _coerce(capability, ev.value)
+    reason = rejected if rejected is not None else f"{ev.source}:{ev.reason}"
+    return value, ev.source, reason
+
+
+def evaluate_kill_switch(gate: FlagGate, context: dict[str, Any]) -> FlagEvaluation:
+    """Evaluate the kill switch live. `True` means stop the run."""
+    ev = gate.evaluate(KILL_SWITCH_FLAG, context, KILL_SWITCH_DEFAULT)
+    return FlagEvaluation(value=bool(ev.value), source=ev.source, reason=ev.reason)

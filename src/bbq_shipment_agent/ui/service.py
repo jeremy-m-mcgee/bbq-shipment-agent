@@ -186,6 +186,10 @@ def _execute(job: RunJob) -> None:
         # same place. Only the rendering differs, because an extract-only run
         # has no manifest to show and that is not a failure.
         run_with(context, job.options, progress)
+        # Refreshed after planning: capabilities are evaluated live per stage,
+        # so the header built at A1 held none of them and no fingerprint. By
+        # here the set is resolved, which is what the page needs to show.
+        job.header = run_header(context, job.options)
         job.view = (
             extract_view(context, job.options)
             if job.options.depth is RunDepth.EXTRACT

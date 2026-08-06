@@ -1,9 +1,9 @@
 """Design 6.4 mitigation 1: the tool contract, asserted at run start."""
 
-import textwrap
 from pathlib import Path
 
 import pytest
+from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.agents.tools import (
@@ -13,23 +13,11 @@ from bbq_shipment_agent.agents.tools import (
     build_tools,
 )
 from bbq_shipment_agent.ledger import RunRecord, iter_records
-from bbq_shipment_agent.planning import Address
 from bbq_shipment_agent.recipients import RecordedAddressValidator
 from bbq_shipment_agent.run import initialize_run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 VALIDATIONS = FIXTURES / "shippo-addresses.json"
-
-CONFIG = """
-    profiles:
-      baseline:
-        planner: "off"
-        validation: "standard"
-        verification: "off"
-    default_profile: "baseline"
-    kill_switch: false
-"""
-
 
 def config(agent_key, *, tools=(), available=True):
     return AgentConfig(
@@ -52,12 +40,9 @@ class Source:
 
 
 def run_a1(tmp_path, configs):
-    (tmp_path / "capabilities.yaml").write_text(
-        textwrap.dedent(CONFIG), encoding="utf-8"
-    )
     return initialize_run(
         ledger_root=tmp_path / "ledger",
-        config_path=tmp_path / "capabilities.yaml",
+        gate=CapabilityGate(),
         agent_source=Source(configs),
         snapshot_path=tmp_path / "snap.json",
     )
