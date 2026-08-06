@@ -18,8 +18,9 @@ The system is not an agent that acts on the world unattended. It is a determinis
 
 | Dimension | Value |
 |---|---|
-| Packets per run | ~22 |
-| Runs per year | 3 to 5 |
+| Packets per run | ~15–20 |
+| Runs per year | ~50 (weekly) |
+| Packets per year | ~750–1,000 |
 | Product weight | 1.5 lb |
 | Box sizes | 2 |
 | Gel pack counts | 0 to 6 |
@@ -27,7 +28,9 @@ The system is not an agent that acts on the world unattended. It is a determinis
 | Carriers available | 4 |
 | Carriers usable per run | 2 |
 
-The candidate configuration space per shipment is small enough to enumerate exhaustively. No solver or heuristic search is required anywhere in the planning stage.
+This is a small business shipping a weekly batch, not the few-times-a-year project earlier drafts assumed. The per-run size is similar — a weekly batch is ~15–20 packets — so the enumeration argument below is unchanged. What changed is *cadence*: ~50 runs and ~800 packets a year, which is enough that per-variant metrics accumulate a real sample over a quarter rather than staying anecdotes (see the recalibrated caveat in section 8).
+
+The candidate configuration space per shipment is small enough to enumerate exhaustively. No solver or heuristic search is required anywhere in the planning stage — that is a fact about the per-shipment space and holds at any cadence.
 
 ---
 
@@ -329,7 +332,7 @@ Separating them is justified independently of LD ergonomics: they differ on tool
 
 `screenshot-extraction` is in it and **is not an agent** — 6.3 still says so, and it is offered no tools. It is here because this table conflated two things: *which stages have an AI Config* and *which stages are agents*. Those separate at B1. Design 6.1 puts "model, temperature, token ceiling" in LaunchDarkly unconditionally, and its dividing test — could this differ between two runs of identical code with both still correct, and do you want to attribute an outcome to the difference — is emphatically yes for which vision model reads a screenshot.
 
-There is a stronger reason than symmetry. Section 8 warns that at 22 packets across a few runs a year nothing here reaches significance. B1 is the sole exception: it is the only stage with a **ground-truth answer key**, so extraction accuracy per variation is a number that can be computed offline as often as you like, against `tests/fixtures/screenshots/`. Every other flag's metric is an anecdote. This one is a measurement, which makes B1 the best candidate for a served config in the system rather than a marginal one.
+There is a stronger reason than symmetry. Section 8's recalibrated caveat is that per-variant metrics do accumulate at weekly cadence, but slowly, and only per-*unit* metrics reach significance within months. B1 clears that bar the most cleanly: it is the only stage with a **ground-truth answer key**, so extraction accuracy per variation can be computed offline as often as you like, against `tests/fixtures/screenshots/`, without waiting for any production sample at all. Other flags' metrics now accumulate a real sample over a quarter rather than staying anecdotes, but they still lack an oracle — you learn *what happened*, not *what was correct*. B1 gives you both, which makes it the best candidate for a served config in the system rather than a marginal one.
 
 The registry in code is named `LD_CONFIGURED_STAGES` for exactly this reason. It means "gets its model and instructions from LaunchDarkly", which is not the same claim as "is an agent".
 
@@ -399,7 +402,7 @@ Section 7 still holds, and this is the subtle part: each capability is evaluated
 
 **The `image` kind, and why it is the only unit worth having.** Its key is the content hash of one screenshot, and it carries no attributes at all. B1's config is retrieved once per image at A1, so a targeting rule or a percentage rollout can serve different instructions or a different vision model to different images inside one run.
 
-That is not symmetry with the other kinds, it is the only kind a rollout can be *scored* on. The `user` kind added later is the second stable key, and the distinction is worth keeping sharp: a username buckets consistently, so a rollout on it serves a variation coherently, and nothing then measures the result. Only B1 has an answer key. `run.key` is a fresh UUID, so bucketing on it re-rolls every run and an experiment accumulates three to five samples a year; section 8's caveat applies to that with full force. An image is stable across runs, appears seven-odd times within one, and — uniquely in this system — has an answer key to be scored against. A rollout on the `image` kind splits *within a single run* and is measurable offline against `tests/fixtures/screenshots/ground_truth.json` as often as you like.
+That is not symmetry with the other kinds, it is the only kind a rollout can be *scored* on. The `user` kind added later is the second stable key, and the distinction is worth keeping sharp: a username buckets consistently, so a rollout on it serves a variation coherently, and at weekly cadence it now accumulates a real sample — but nothing then measures whether the served variation was *correct*. Only B1 has an answer key. `run.key` is a fresh UUID, so bucketing on it re-rolls every run and never splits a stable population — that failure is independent of volume, and no amount of weekly cadence fixes it. An image is stable across runs, appears several times within one (a screenshot holds three or four recipients, so a weekly batch is a handful of images), and — uniquely in this system — has an answer key to be scored against. A rollout on the `image` kind splits *within a single run* and is measurable offline against `tests/fixtures/screenshots/ground_truth.json` as often as you like.
 
 The key is a content hash rather than a filename for two reasons, and the privacy one is the load-bearing one: these are screenshots of private message threads, and a context is sent to LaunchDarkly's servers. Nothing about the file leaves this machine — not the name, not the directory. What the hash refers to goes on the run row as `evaluation_reasons["screenshot_keys"]`, committed but local, which is what keeps section 2's "diagnosable from the committed JSONL" true for the one stage whose variation is worth diagnosing. The second reason is that the same bytes are the same unit: a renamed or re-sorted directory is not a new population to bucket, which is also why `RecordedVision` matches replays on content.
 
@@ -411,7 +414,7 @@ It is set immediately before extraction, which in this pipeline means *before A1
 
 **The `user` kind, and why the department is not one.** Its key is a username and it carries `department` as its one attribute. Both come from `config/operators.yaml`, and a run that names nobody carries no `user` kind at all rather than one keyed "unknown" — absent and present-but-unset should not be two states, which is the same rule that drops a `None` attribute rather than sending it.
 
-The justification is the key, not the person. This system has exactly two identifiers a rollout can bucket on and `run.key` is not one of them: it is a fresh UUID, so bucketing on the run kind re-rolls every run and an experiment accumulates three to five samples a year. The `image` kind was the first stable one. A username is the second — stable across runs, and present on *every* evaluation within one, so a rule targeting it reaches `review_narrator` as well as `run_init` rather than firing once at A1 and then going quiet.
+The justification is the key, not the person. This system has exactly two identifiers a rollout can bucket on and `run.key` is not one of them: it is a fresh UUID, so bucketing on the run kind re-rolls every run and never splits a stable population — a flaw independent of volume, so weekly cadence does not rescue it. The `image` kind was the first stable one. A username is the second — stable across runs, and present on *every* evaluation within one, so a rule targeting it reaches `review_narrator` as well as `run_init` rather than firing once at A1 and then going quiet. At weekly cadence a rollout bucketed on it now accumulates enough runs to be worth reading.
 
 Department is an attribute rather than a fourth kind on this section's own test: nothing buckets on a department as a unit, a rule can read the attribute, and LaunchDarkly can bucket by it inside the `user` kind if that day comes. A `department` kind nothing evaluated against would be the decorative kind that took `shipment`, `authority-level` and `memory-mode` with it.
 
@@ -454,7 +457,7 @@ The dependency is not enforced any more. Promoting the planner from `shadow` to 
 
 ### 6.10 Offline behavior
 
-The SDK assumes a long-running process with a streaming connection. This is a CLI that runs three to five times a year and will hit cold start every time, and will hard-fail mid-run if LD is unreachable.
+The SDK assumes a long-running process with a streaming connection. This is a CLI invoked about once a week, and a week between runs is far longer than any streaming connection survives, so it hits cold start every time all the same — and it will hard-fail mid-run if LD is unreachable. (If the `ui` server is left running continuously the picture changes, but the pipeline itself still opens a fresh client per run — see 6.1 — so the cold-start path is the one to design for.)
 
 The medium split raises the stakes here, because the cached payload now contains instruction text rather than just variant keys. No cache means no instructions, which means no agents.
 
@@ -538,11 +541,12 @@ the paragraph below anticipated, built the moment per-stage evaluation made it
 real.
 
 The snapshot lives on the run row only. A shipment row carries
-`cap_fingerprint` and reads the values off the run it points at. At ~22
-shipments per run the alternative is 22 identical copies of one blob in a
+`cap_fingerprint` and reads the values off the run it points at. At ~15–20
+shipments per run the alternative is ~15–20 identical copies of one blob in a
 committed append-only file, which answers no question the run row does not and
-makes the diff unreadable. Naming the equivalence class is the fingerprint's
-whole job; storing a hash beside the values it hashes is not.
+makes the diff unreadable — and at ~50 runs a year that is a difference the
+weekly `git` history would feel. Naming the equivalence class is the
+fingerprint's whole job; storing a hash beside the values it hashes is not.
 
 **Removing a capability re-partitions that equivalence class, and old rows
 keep their old names.** `cap_fingerprint` hashes the resolved mapping, so runs
@@ -633,7 +637,12 @@ Two rows are gone, and the way they went is the rule working rather than failing
 
 `verification-enabled` is the one to watch closest. It is supposed to reduce the number of problems that reach the human. If the operator's edit count during review does not drop, it is generating self-congratulatory checks rather than finding real issues. This is a common failure and easy to miss.
 
-**Statistical caveat.** At 22 packets across a few runs a year, nothing here will reach significance. Treat the tracking as a structured event log to query later, not as an experiment platform that will declare a winner.
+**Statistical caveat — recalibrated for weekly operation.** Earlier drafts said nothing here would ever reach significance, on the few-runs-a-year premise section 1 has since corrected. At ~50 runs and ~800 packets a year the picture is more nuanced, and the unit matters:
+
+- **Per-run flags** (`planner-mode`, `validation-mode`, `verification-enabled` evaluated once per run) accumulate ~50 samples a year, ~25 an arm in a two-way split. Coarse effects are visible over a quarter or two; small ones still are not. Do not expect a fast winner.
+- **Per-unit metrics** — anything scored per packet or per address — accumulate ~800 a year, which is a genuinely powered population within months.
+
+So treat this as a real but *slow* event log: query it, let coarse effects declare themselves over months, and be skeptical of any winner called from a few weeks. It is no longer true that significance is unreachable in principle; it is true that patience is required, and that per-unit metrics reach it far sooner than per-run ones.
 
 ### Per-invocation metrics
 
@@ -661,7 +670,7 @@ Two consequences follow from 6.10 making offline a normal path. A replayed compl
 
 ## 9. Non-goals
 
-**Cooperating multi-agent decomposition.** At 22 packets, splitting one task across specialists that hand off to each other adds coordination overhead and failure modes and buys nothing. Sub-agents pay off when context genuinely does not fit in one window or when a specialist needs a tool the others must not have mid-task. Neither applies.
+**Cooperating multi-agent decomposition.** At ~15–20 packets a run, splitting one task across specialists that hand off to each other adds coordination overhead and failure modes and buys nothing. This argument is about the per-run task size, which weekly operation does not change — a weekly batch is still small. Sub-agents pay off when context genuinely does not fit in one window or when a specialist needs a tool the others must not have mid-task. Neither applies.
 
 This is not in tension with the four agent configs in section 6.2. Those are four sequential stages, each invoked by the Python spine, none of which knows the others exist. There is no handoff, no shared context, and no coordination protocol. The distinction is between decomposing a task and configuring separate stages, and only the former is ruled out here.
 
@@ -673,13 +682,17 @@ This entry read "raising the authority ceiling" while a ceiling existed. It no l
 
 **Time-based suppression.** Rejected. The original design excluded anyone already served inside a configurable window, checked against the ledger.
 
-The recipient list is an explicit instruction. It is hand-written by the operator, or extracted from screenshots of people actually asking, and either way a name on it is a deliberate act. Excluding someone because a previous run served them overrides that instruction on the strength of a date, and at three to five runs a year a repeat is far more likely to be intentional — a second cook, a second occasion — than an accident. The window default was never set, which was the tell: nobody had an intuition for a number because the rule had no natural value.
+The recipient list is an explicit instruction. It is hand-written by the operator, or extracted from screenshots of people actually asking, and either way a name on it is a deliberate act. Excluding someone because a previous run served them overrides that instruction on the strength of a date. The window default was never set, which was the tell: nobody had an intuition for a number because the rule had no natural value.
+
+**The cadence half of this argument no longer holds, and it is worth being honest about that.** An earlier draft added that "at three to five runs a year a repeat is far more likely intentional than an accident." At ~50 runs a year against a recurring customer base that reasoning is gone: a weekly shipper has both genuine repeat orders *and* a real chance of the same name landing in two consecutive weeks by mistake. The decision stands on the surviving half — the list is an explicit instruction and within-run dedupe already catches mistakes in the list in front of the operator — but cross-run suppression is now a more plausible feature than it was, and if it is ever wanted it belongs in the roster/CRM layer that owns "who did we already serve," not as a date window bolted onto the spine (which would reintroduce the prior-state dependency section 9 is otherwise careful to keep out of B4).
 
 Within-run deduplication and same-address consolidation are not rejected on the same grounds — those catch mistakes the operator actually made, in the list they are looking at right now, rather than second-guessing one they made deliberately months ago. They stay, and are built. What matters here is that dropping the cross-run check removes the only prior-state dependency from the deterministic spine: B4 reads no ledger and no clock, so the same recipient list always produces the same eligible set.
 
 **Dispatch.** Removed, having been designed and specified but never built. E1 bought labels, E2 wrote the shipment rows, E3 backfilled actual arrival times some days later.
 
-Section 1 already drew the line here: the purpose is "a reviewable work package that a human approves *before any money is spent or any label is purchased*". Dispatch was the only part of the pipeline that went past that sentence. Cutting it removes the one component that could spend money, the one that made an irreversible external call, and the one that needed a live Shippo token rather than a test one — for an experimental project at three to five runs a year, buying three to five sets of labels by hand from an approved manifest is not the bottleneck worth automating.
+Section 1 already drew the line here: the purpose is "a reviewable work package that a human approves *before any money is spent or any label is purchased*". Dispatch was the only part of the pipeline that went past that sentence. Cutting it removes the one component that could spend money, the one that made an irreversible external call, and the one that needed a live Shippo token rather than a test one.
+
+**The scale correction weakens the cost half of this argument, and that should be said plainly.** The original justification was that at three to five runs a year, buying three to five sets of labels by hand was not a bottleneck worth automating. At ~15–20 labels a week — ~800 a year — hand-buying is real, repetitive operational work, and "not worth automating" no longer follows from volume. What still holds is the *safety* half: dispatch is the only thing that spends money or makes an irreversible external call, and "the human stays in the send loop" is currently guaranteed structurally by there being no send. So dispatch stays cut **as the current design**, but at this cadence it is a genuine open question rather than a settled non-goal — and if it comes back it must arrive with its own permission and ceiling (6.5), because the acting stage is exactly what that machinery was kept in reserve for. This is the one place the scale change should prompt a real product decision, not just an edited number.
 
 E2 survives in reduced form: approval still writes the shipment rows, because a plan that was approved and then not recorded would leave the ledger unable to answer what any run actually decided.
 
@@ -760,7 +773,7 @@ An earlier version of this system read only the raw variation and reimplemented 
 
 `AnthropicModel` now drops a refused parameter, retries once, and reports the drop on `Completion.dropped_parameters`, because failing a shipping run over an advisory setting is the wrong trade. Only parameters we actually sent and that appear in `PASSTHROUGH_PARAMETERS` are ever dropped — an error naming `model` or `messages` is a real failure and is raised.
 
-What is not solved is catching it at startup, the way the tool contract does. There is no way to know which parameters a model accepts without calling it, so this surfaces at invocation by construction. The open question is whether a run-start smoke call per configured stage is worth its cost, given three to five runs a year: it would turn a mid-run 400 into a startup error, which is exactly mitigation 1's argument, applied to a different kind of drift.
+What is not solved is catching it at startup, the way the tool contract does. There is no way to know which parameters a model accepts without calling it, so this surfaces at invocation by construction. The open question is whether a run-start smoke call per configured stage is worth its cost: it would turn a mid-run 400 into a startup error, which is exactly mitigation 1's argument applied to a different kind of drift. At weekly cadence the case is a little stronger than it was — ~50 runs a year is ~50 chances to hit a bad parameter mid-batch, and a batch that dies partway is more disruptive than a rare hobby run — but it is still a per-run cost on the cold-start path, so it remains a judgement call rather than an obvious yes.
 
 **Validator advisories — resolved: shown on the manifest.** B2 classifies an address by comparing material fields, normalised — so ZIP+4 enrichment is CLEAN, which is correct and is what stops every run routing to a human. But the validator also returns free-text messages, and those are kept on the result and then never surfaced when the outcome is clean.
 
@@ -797,12 +810,12 @@ The question was never whether judges are available but where one answers someth
 
 D2 is the exception because its correctness is a property of *reading*: does every claim trace to a field in the payload it was given? Section 6.3 states that rule and nothing enforces it. The evidence is on the record — asked which constraint bound hardest, `review-narrator` named the wrong recipient and reasoned from it for two turns. The fix then was to add the missing field, and that was right, but it only closed the one case. A judge scoring "is every claim in this narration supported by the payload" would catch the class.
 
-Note what such a judge is *not*: a source of statistics. Section 8's caveat still applies and a judge's aggregate score would reach significance no sooner than any other metric here. Its value is per-instance — catching a faithless claim before the operator reads it, the same shape as D1 catching a bad manifest before review. That also keeps it on the right side of section 2: read-only, strictly downstream, unable to alter what it judges.
+Note what such a judge is *not*: a source of statistics. Its aggregate score accumulates no faster than any other per-run metric — ~50 narrations a year — and section 8's recalibrated caveat applies: readable over a quarter, not a fast winner. Its value is per-instance — catching a faithless claim before the operator reads it, the same shape as D1 catching a bad manifest before review. That also keeps it on the right side of section 2: read-only, strictly downstream, unable to alter what it judges.
 
 **What is left to do**, in order:
 
 1. **Create the judge AI Config in LaunchDarkly**, keyed `narration-faithfulness`. A judge config needs a model, instructions, and an `evaluationMetricKey` — `Judge.evaluate` logs a warning and returns an empty result without the last one, so it is not optional. Instructions receive the reserved variables `message_history` and `response_to_evaluate`; the judge's job is to answer whether every claim in the narration is supported by the payload, and to name the ones that are not.
-2. **Attach it to `review-narrator`** with a sampling rate. At three to five runs a year, sample at 1.0: sampling exists for volume this system does not have, and a missed evaluation is a missed catch rather than a rounding error.
+2. **Attach it to `review-narrator`** with a sampling rate. Sample at 1.0: even at weekly cadence this is ~50 narrations a year, still far below the volume sampling exists to manage, and a missed evaluation is a missed catch rather than a rounding error.
 3. **Call it after a narration turn.** `Judge.evaluate(input_text, output_text)` is `async`, and `Narrator.say` is not, so this needs a decision about where the await happens — most likely alongside the ledger write at the end of a turn, with the result recorded on the invocation. `ManagedAgent.run` would dispatch judges automatically, but 6.1 keeps the agent loop in Python and that trade is argued above.
 4. **Feed it the payload, not the manifest.** The judge must score against exactly what the narrator was given, or it will mark a claim unsupported that the narrator could not have known was unsupported.
 
