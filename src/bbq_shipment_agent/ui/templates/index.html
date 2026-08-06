@@ -107,7 +107,7 @@
   <div>
     <h2>Run</h2>
     <div class="panel">
-      <label class="field">profile <span class="dim">(blank uses the config default)</span>
+      <label class="field">profile <span class="dim">(a LaunchDarkly targeting label)</span>
         <select name="profile">
           <option value="">default</option>
           <option value="baseline">baseline</option>
@@ -115,6 +115,11 @@
           <option value="full">full</option>
         </select>
       </label>
+      <p class="dim" style="font-size:12px;margin:0 0 14px">
+        The profile is a label sent to LaunchDarkly for targeting; it does not
+        set the modes here. LaunchDarkly decides what planner, validation and
+        verification resolve to, and the run page shows the result.
+      </p>
       <label class="field">depth <span class="dim">(where the run stops)</span>
         <select name="depth" id="depth">
           <option value="plan">full plan &mdash; A1 through D1</option>

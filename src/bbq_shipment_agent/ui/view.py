@@ -19,6 +19,7 @@ from typing import Any
 
 from ..planning import render
 from ..wiring import RunOptions
+from .modes import describe as describe_mode
 
 
 def run_header(context: Any, options: RunOptions) -> dict[str, Any]:
@@ -43,8 +44,13 @@ def run_header(context: Any, options: RunOptions) -> dict[str, Any]:
         # Empty until planning has evaluated the set: capabilities are live
         # per stage now, so a header built at A1 carries none of them. The
         # worker rebuilds this header after planning for exactly that reason.
+        # Each mode carries the stage it gates and a plain-English effect from
+        # `modes.py`, so the page can say what `validation: strict` *does*
+        # rather than printing the word. The `if resolved else ()` guard keeps
+        # the list empty until planning has evaluated the set, which is what
+        # the template's empty-state renders.
         "capabilities": [
-            {"name": name, "value": value, "reason": reasons.get(name, "")}
+            {**describe_mode(name, value), "reason": reasons.get(name, "")}
             for name, value in (resolved.to_mapping().items() if resolved else ())
         ],
         "kill_switch": (

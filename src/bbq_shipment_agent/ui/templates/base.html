@@ -78,6 +78,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
        border: 1px solid var(--line); color: var(--dim); }
 .tag.on { border-color: var(--accent); color: var(--accent); }
+.tag.warn { border-color: var(--warn); color: var(--warn); }
+.modes { display: grid; gap: 10px; }
+.mode { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+        background: var(--bg); }
+.mode-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mode-head b { font-weight: 600; }
+.stage-badge { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+               border: 1px solid var(--line); color: var(--accent); letter-spacing: .04em; }
 pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
       padding: 12px; overflow-x: auto; font-size: 12px; margin: 0; }
 .log { max-height: 320px; overflow-y: auto; }
