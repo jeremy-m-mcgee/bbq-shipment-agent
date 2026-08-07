@@ -107,14 +107,11 @@
   <div>
     <h2>Run</h2>
     <div class="panel">
-      <label class="field">profile <span class="dim">(blank uses the config default)</span>
-        <select name="profile">
-          <option value="">default</option>
-          <option value="baseline">baseline</option>
-          <option value="planner_trial">planner_trial</option>
-          <option value="full">full</option>
-        </select>
-      </label>
+      {# No profile control on purpose. The profile is only a LaunchDarkly
+         targeting label, and LaunchDarkly decides what planner, validation and
+         verification resolve to -- shown on the run page once the run has gone.
+         A browser run carries whatever profile the server was launched with;
+         `drive` still posts one per run as its rollout axis. #}
       <label class="field">depth <span class="dim">(where the run stops)</span>
         <select name="depth" id="depth">
           <option value="plan">full plan &mdash; A1 through D1</option>

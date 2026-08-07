@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from bbq_shipment_agent.ui import RunService, create_app
 from bbq_shipment_agent.ui.app import _options_for
+from bbq_shipment_agent.ui.modes import describe
 from bbq_shipment_agent.ui.view import screenshot_catalogue
 from bbq_shipment_agent.wiring import RunDepth, RunOptions
 
@@ -722,3 +723,85 @@ class TestTheMissingKeyBanner:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
         body = client.get("/").text
         assert "B1 extraction" in body
+
+
+class TestModeDescriptor:
+    """`modes.describe` is the one place the effect of a mode value is written.
+
+    A pure function, so it is pinned without a browser or a run -- the same
+    reason the view layer is plain data.
+    """
+
+    def test_it_names_the_stage_a_mode_gates(self):
+        assert describe("validation", "standard")["stage"] == "B2"
+        assert describe("planner", "off")["stage"] == "B3"
+        assert describe("verification", "on")["stage"] == "D1"
+
+    def test_it_says_what_the_value_does(self):
+        assert "Escalates" in describe("validation", "strict")["effect"]
+        assert "not applied" in describe("planner", "shadow")["effect"]
+
+    def test_a_partial_state_reads_as_a_warning_not_an_on(self):
+        # `shadow` runs but changes nothing, so it is neither off nor on.
+        assert describe("planner", "shadow")["tone"] == "warn"
+        assert describe("planner", "off")["tone"] == ""
+        assert describe("validation", "standard")["tone"] == "on"
+
+    def test_a_value_with_no_line_still_renders(self):
+        # A capability added to the repo without an entry here is visible and
+        # obviously undescribed, rather than dropping off the page.
+        described = describe("planner", "experimental")
+        assert described["value"] == "experimental"
+        assert "default" in described["effect"]
+
+
+class TestThereIsNoProfileControl:
+    """The profile is only a LaunchDarkly targeting label, so the human form
+    does not offer it. The modes it targets are shown on the run page, not
+    chosen here."""
+
+    def test_the_form_has_no_profile_control(self, client):
+        body = client.get("/").text
+        assert 'name="profile"' not in body
+        # And none of the old option labels linger as dead markup.
+        assert 'value="baseline"' not in body
+        assert 'value="planner_trial"' not in body
+
+    def test_the_post_still_accepts_a_profile_for_the_driver(self, client):
+        # `drive` posts a profile per run as its rollout axis, so the endpoint
+        # must keep taking one even though the browser form does not send it.
+        response = client.post(
+            "/runs",
+            data={"mode": "all", "no_screenshots": "1", "replay": "1",
+                  "profile": "planner_trial"},
+        )
+        assert response.status_code == 200  # accepted, not a 4xx
+
+
+class TestTheModePanel:
+    """The run page says what each mode did, not just its name."""
+
+    @pytest.fixture
+    def finished(self, client):
+        response = client.post(
+            "/runs", data={"mode": "all", "no_screenshots": "1", "replay": "1"}
+        )
+        assert response.status_code == 200
+        job_id = response.url.path.rsplit("/", 1)[-1]
+        finish(client, job_id)
+        return client.get(f"/runs/{job_id}")
+
+    def test_each_mode_is_labelled_with_the_stage_it_gates(self, finished):
+        text = finished.text
+        assert ">B2<" in text and ">B3<" in text and ">D1<" in text
+
+    def test_it_spells_out_what_the_resolved_value_does(self, finished):
+        # Offline resolves planner off, validation standard, verification off.
+        # Substrings that dodge the apostrophe Jinja escapes to `&#39;`.
+        text = finished.text
+        assert "Applies the validator" in text  # validation standard
+        assert "Never runs" in text  # planner off
+        assert "reviewed by a human" in text  # verification off
+
+    def test_it_says_the_values_belong_to_launchdarkly(self, finished):
+        assert "decided by LaunchDarkly" in finished.text

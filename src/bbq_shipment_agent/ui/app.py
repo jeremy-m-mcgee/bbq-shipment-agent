@@ -64,10 +64,15 @@ def create_app(
     """Build the app around one set of launch options.
 
     The options are the floor, not the form: the browser chooses which
-    screenshots to read, the profile and whether to replay, and everything
-    else -- ledger root, cache directory, snapshot path, retry budget -- is
+    screenshots to read and whether to replay, and everything else -- ledger
+    root, cache directory, snapshot path, retry budget, and the profile -- is
     fixed at launch. That split is deliberate. A form field for the ledger
     path is a way to append a real run to the wrong file by mistake.
+
+    The profile is not on the browser form: it is only a LaunchDarkly targeting
+    label, and the modes it targets are shown on the run page once resolved.
+    The POST still accepts a `profile` field so `drive` can vary it per run,
+    but a human run carries the launch profile.
     """
     app = FastAPI(title="bbq-shipment-agent", docs_url=None, redoc_url=None)
     templates = Jinja2Templates(directory=str(TEMPLATES))

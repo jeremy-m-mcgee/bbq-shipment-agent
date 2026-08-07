@@ -76,29 +76,44 @@
 {% endif %}
 
 {% if header %}
-<h2>Capabilities &mdash; A1 resolved these once, for the whole run</h2>
+<h2>Modes for this run &mdash; each one gates a single stage</h2>
 <div class="grid2">
   <div class="panel">
-    <table>
-      <tr><th>capability</th><th>value</th><th>why</th></tr>
+    <div class="modes">
       {% for cap in header.capabilities %}
-      <tr>
-        <td class="mono">{{ cap.name }}</td>
-        <td class="mono">{{ cap.value }}</td>
-        <td class="dim">{{ cap.reason }}</td>
-      </tr>
+      <div class="mode">
+        <div class="mode-head">
+          <span class="stage-badge">{{ cap.stage }}</span>
+          <b>{{ cap.title }}</b>
+          <span class="dim mono" style="font-size:12px">{{ cap.name }}</span>
+          <span class="tag {{ cap.tone }}">{{ cap.value }}</span>
+        </div>
+        <div class="dim" style="font-size:13px;margin-top:5px">{{ cap.effect }}</div>
+        {# Validation's effect on *this* run, not just its name: standard and
+           strict differ only in how many addresses they send to a human, and
+           that count is the point of picking one. #}
+        {% if cap.name == 'validation' and view and view.validation and cap.value != 'off' %}
+        <div class="dim" style="font-size:12px;margin-top:4px">
+          this run: {{ view.validation.corrected }} corrected,
+          {{ view.validation.escalated }} escalated.
+        </div>
+        {% endif %}
+        {% if cap.name == 'verification' and view and view.verification and view.verification.ran %}
+        <div class="dim" style="font-size:12px;margin-top:4px">D1 ran &mdash; see the verification panel below.</div>
+        {% endif %}
+        {% if cap.reason %}<div class="dim mono" style="font-size:11px;margin-top:5px">{{ cap.reason }}</div>{% endif %}
+      </div>
       {% else %}
-      <tr>
-        <td class="dim" colspan="3">evaluated live per stage &mdash; values
-          land once planning runs</td>
-      </tr>
+      <div class="dim">Evaluated live per stage &mdash; the values land once
+        planning runs. An extract-only run stops after B1 and never resolves them.</div>
       {% endfor %}
-    </table>
+    </div>
     <p class="dim" style="font-size:12px;margin:12px 0 0">
       {% if header.fingerprint %}
       fingerprint <code>{{ header.fingerprint }}</code> &mdash; every row that
       depends on these carries it.
       {% endif %}
+      The values are decided by LaunchDarkly targeting, not this page.
       {% if header.kill_switch %}
       Kill switch: {{ 'ENGAGED' if header.kill_switch.value else 'off' }}
       ({{ header.kill_switch.source }}:{{ header.kill_switch.reason }}).
