@@ -12,10 +12,10 @@ kind design 6.5 removed capabilities for, so each stage's real path is driven
 here with a fake tracker attached to the config it was served.
 """
 
-from dataclasses import replace
-from pathlib import Path
 import json
 import time
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from conftest import CapabilityGate

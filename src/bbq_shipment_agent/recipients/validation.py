@@ -200,7 +200,8 @@ class ShippoAddressValidator:
             "zip": answer.zip or address.zip,
             "country": answer.country or address.country,
             "messages": [
-                str(getattr(m, "text", "") or "") for m in (getattr(results, "messages", None) or [])
+                str(getattr(m, "text", "") or "")
+                for m in (getattr(results, "messages", None) or [])
             ],
         }
         self._cache[key] = row

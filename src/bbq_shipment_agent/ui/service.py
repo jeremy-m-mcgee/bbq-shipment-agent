@@ -22,14 +22,15 @@ background thread and a leaked one keeps the server alive after ctrl-c.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from ..wiring import Progress, RunDepth, RunOptions, open_run, run_with
+from ..wiring import RunDepth, RunOptions, open_run, run_with
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,7 @@ class RunJob:
     def __init__(self, job_id: str, options: RunOptions) -> None:
         self.id = job_id
         self.options = options
-        self.started_at = datetime.now(timezone.utc)
+        self.started_at = datetime.now(UTC)
         self.state = "running"  # running | finished | failed
         self.error: str | None = None
         self.traceback: str | None = None
@@ -211,10 +212,8 @@ def _execute(job: RunJob) -> None:
         # The SDK runs a background thread. Leaving it open keeps the server
         # alive after ctrl-c, which looks like a hung process.
         if context is not None and context.client is not None:
-            try:
+            with contextlib.suppress(Exception):  # closing must not mask a result
                 context.client.close()
-            except Exception:  # pragma: no cover - closing must not mask a result
-                pass
 
 
 def _outcome_message(context: Any) -> str:

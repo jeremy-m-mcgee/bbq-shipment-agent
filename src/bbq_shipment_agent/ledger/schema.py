@@ -25,7 +25,7 @@ same shipment are two facts, not a correction.
 from __future__ import annotations
 
 from dataclasses import Field, dataclass, field, fields
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any, ClassVar
 
 # Bump when a field changes meaning or is removed. Adding a nullable field does
@@ -38,7 +38,7 @@ DUCKDB_TYPE = "duckdb_type"
 
 def utc_now() -> str:
     """Wall-clock stamp for a ledger line. UTC, microseconds, ISO 8601."""
-    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
 def _normalize_timestamp(field_name: str, value: Any) -> str:
@@ -72,7 +72,7 @@ def _normalize_timestamp(field_name: str, value: Any) -> str:
             f"{field_name}: {value!r} carries no UTC offset. Pass an "
             "offset-aware value; the ledger will not guess a time zone."
         )
-    return moment.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    return moment.astimezone(UTC).isoformat(timespec="microseconds")
 
 
 def _normalize_date(field_name: str, value: Any) -> str:

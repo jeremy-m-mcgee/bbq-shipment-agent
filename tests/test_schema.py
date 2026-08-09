@@ -1,5 +1,5 @@
 from dataclasses import fields
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -90,7 +90,7 @@ class TestTemporalNormalization:
             ShipmentRecord(
                 run_id="r1",
                 recipient_key="k1",
-                ship_date=datetime(2026, 8, 8, tzinfo=timezone.utc),
+                ship_date=datetime(2026, 8, 8, tzinfo=UTC),
             )
 
     def test_garbage_timestamps_are_refused(self):

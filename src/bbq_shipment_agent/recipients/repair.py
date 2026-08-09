@@ -135,7 +135,7 @@ def repair_addresses(
     parsed: dict[str, Any] | None = None
     iterations = 0
 
-    for iterations in range(1, MAX_ITERATIONS + 1):
+    for iterations in range(1, MAX_ITERATIONS + 1):  # noqa: B007 — count read after the loop
         try:
             completion = model.converse(invocation, messages, tools)
         except ModelUnavailable as exc:

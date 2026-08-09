@@ -60,7 +60,7 @@ class Load:
         """
         return all(
             item <= cavity
-            for item, cavity in zip(sorted(self.dimensions_m), sorted(box.inner_m))
+            for item, cavity in zip(sorted(self.dimensions_m), sorted(box.inner_m), strict=True)
         )
 
 

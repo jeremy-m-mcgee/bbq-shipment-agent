@@ -76,8 +76,10 @@ offline. This is the console view on top of that, not a substitute for it.
 
 from __future__ import annotations
 
+import contextlib
 import time
-from typing import Any, Iterable, Protocol
+from collections.abc import Iterable
+from typing import Any, Protocol
 
 from ..agent_configs import AgentConfig
 
@@ -183,10 +185,8 @@ class SdkMetrics:
 
     @staticmethod
     def _safely(call: Any) -> None:
-        try:
+        with contextlib.suppress(Exception):  # see the module docstring
             call()
-        except Exception:  # noqa: BLE001 - see the module docstring
-            pass
 
 
 def metrics_for(config: AgentConfig | None) -> InvocationMetrics:

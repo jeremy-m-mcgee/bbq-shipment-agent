@@ -250,8 +250,8 @@ class TestTheAgentBoundary:
         # Design 10 settles the read-only contradiction this way: the agent
         # reports, the spine acts. The same plan with and without the critique
         # pass must be byte-identical.
-        from bbq_shipment_agent.agents import RecordedModel
         from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
+        from bbq_shipment_agent.agents import RecordedModel
 
         without = run_plan(workspace)
         with_d1 = run_plan(
