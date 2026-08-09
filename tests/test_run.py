@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.capabilities import (
     CAPABILITY_FLAGS,
     KILL_SWITCH_FLAG,
@@ -12,7 +13,6 @@ from bbq_shipment_agent.capabilities import (
     ValidationMode,
     VerificationMode,
 )
-from bbq_shipment_agent.agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 from bbq_shipment_agent.context import STAGE_MANIFEST_VERIFICATION
 from bbq_shipment_agent.ledger import (
     AgentInvocationRecord,

@@ -34,6 +34,7 @@ from .agent_configs import (
     fetch_extraction_configs,
     write_snapshot,
 )
+from .agents.tools import assert_tool_contract
 from .capabilities import (
     CAPABILITIES,
     DEFAULT_PROFILE,
@@ -49,7 +50,6 @@ from .capabilities import (
     evaluate_capability,
     evaluate_kill_switch,
 )
-from .agents.tools import assert_tool_contract
 from .context import (
     STAGE_RUN_INIT,
     ContextBuilder,

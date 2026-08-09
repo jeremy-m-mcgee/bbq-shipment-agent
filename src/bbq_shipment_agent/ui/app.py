@@ -42,6 +42,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from starlette.responses import FileResponse
 
+from ..operators import OperatorError, OperatorPool
 from ..wiring import (
     RunDepth,
     RunOptions,
@@ -49,7 +50,6 @@ from ..wiring import (
     available_screenshots,
     missing_credentials,
 )
-from ..operators import OperatorError, OperatorPool
 from .service import RunInProgress, RunService
 from .view import screenshot_catalogue
 

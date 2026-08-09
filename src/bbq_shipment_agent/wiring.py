@@ -48,7 +48,6 @@ from .agents import (
     RecordedModel,
     RecordedVision,
 )
-from .context import ImageIdentity
 from .capabilities import (
     LaunchDarklyGate,
     OfflineGate,
@@ -56,6 +55,7 @@ from .capabilities import (
     ValidationMode,
     VerificationMode,
 )
+from .context import ImageIdentity
 from .operators import DEFAULT_OPERATORS_PATH, OperatorPool
 from .planning import (
     DEFAULT_LANE,

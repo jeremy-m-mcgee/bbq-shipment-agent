@@ -11,13 +11,12 @@ import pytest
 from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
-from bbq_shipment_agent.agents.model import Completion, ToolCall
+from bbq_shipment_agent.agents.model import Completion, ModelUnavailable, ToolCall
 from bbq_shipment_agent.agents.narrator import (
     MAX_TOOL_ITERATIONS,
     Narrator,
     NarratorUnavailable,
 )
-from bbq_shipment_agent.agents.model import ModelUnavailable
 from bbq_shipment_agent.ledger import AgentInvocationRecord, iter_records
 from bbq_shipment_agent.planning import RecordedQuoter
 from bbq_shipment_agent.recipients import load_roster, to_shipments

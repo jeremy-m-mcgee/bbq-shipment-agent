@@ -28,8 +28,8 @@ from bbq_shipment_agent.planning import (
     evaluate_configurations,
     heaviest_variant,
     parcel_variants,
-    smallest_fitting_box,
     ship_day_for,
+    smallest_fitting_box,
     thermal_gate,
 )
 
@@ -357,7 +357,6 @@ class TestSplittingDoesNotHelp:
     """
 
     def _arrival(self, load, gel, days, ambient):
-        from dataclasses import replace as _replace
 
         from bbq_shipment_agent.planning import ParcelSpec, Quote
         from bbq_shipment_agent.planning.configurations import Configuration
