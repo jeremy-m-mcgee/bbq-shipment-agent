@@ -1,0 +1,169 @@
+{# D2 review. Rendered inside <div id="review-pane"> on the run page, and
+   returned on its own by every /review/* route so the page swaps this fragment
+   in place. Uses `job` (for the action URLs) and `review` (view.review_view).
+
+   Forms carry data-review so the page's delegated handler POSTs them by fetch
+   and swaps the reply back here. Control flow is the server's: these are the
+   moves ReviewSession allows, never the classification of them. #}
+
+{% set r = review %}
+
+{% if r.terminal %}
+<div class="notice{% if r.terminal == 'rejected' %} bad{% endif %}"
+     data-review-terminal="{{ r.terminal }}"
+     style="padding:14px{% if r.terminal != 'rejected' %};border-left-color:var(--good){% endif %}">
+  {% if r.terminal == 'approved' %}
+    <b>Approved.</b> The manifest was written to the ledger. The operator buys
+    the labels from it by hand.
+  {% elif r.terminal == 'approved_with_exclusions' %}
+    <b>Approved with exclusions.</b> The manifest was written to the ledger;
+    the excluded recipients below were not shipped.
+  {% elif r.terminal == 'abandoned' %}
+    <b>Review abandoned.</b> Nothing was recorded. Start a new run to plan again.
+  {% else %}
+    <b>Rejected.</b> No shipment rows were written.
+  {% endif %}
+</div>
+{% else %}
+
+<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+  <h2 style="margin:0">Review</h2>
+  <span class="dim" style="font-size:13px">
+    D2 &mdash; questions, edits, and approval. Edits re-enter the pipeline.
+  </span>
+</div>
+
+{% if r.narrator_available %}
+  {# A traditional chat: the operator's messages on the right, the narrator's on
+     the left. The streaming JS appends the same bubbles live as a reply arrives,
+     then this canonical render replaces them on the pane swap. #}
+  <div class="chat">
+    {% if r.opening %}
+    <div class="msg bot"><div class="who">narrator</div>{{ r.opening | md }}</div>
+    {% endif %}
+    {% for turn in r.transcript %}
+    <div class="msg user">{{ turn.prompt }}</div>
+    <div class="msg bot">
+      <div class="who">narrator{% if turn.tools_called %} &middot; ran {{ turn.tools_called|join(', ') }}{% endif %}</div>
+      {{ turn.reply | md }}
+    </div>
+    {% endfor %}
+  </div>
+  {# data-stream: the page POSTs to the SSE variant and renders the reply as it
+     arrives, falling back to the sync /review/say on any error. #}
+  <form data-review data-stream action="/runs/{{ job.id }}/review/say" style="margin:10px 0">
+    <textarea name="message" rows="2" required
+      style="width:100%;box-sizing:border-box"
+      placeholder="Ask about the tradeoff, or describe a change in words…"></textarea>
+    <button type="submit" style="margin-top:6px">Send</button>
+  </form>
+{% else %}
+  <div class="notice" style="padding:10px">
+    <span class="dim">review-narrator unavailable &mdash; reading the manifest
+    directly. Offline or without a model key the conversation is off; the edit
+    and approval controls below still work.</span>
+  </div>
+{% endif %}
+
+{# Feedback for the most recent edit: a refusal with the way forward, or a plain
+   applied-delta line. A pending pair-move is handled by its own banner below. #}
+{% if r.last_action and r.last_action.outcome == 'refused' %}
+<div class="notice bad" style="padding:12px">
+  <b>Refused.</b> {{ r.last_action.refusal }}
+  {% if r.last_action.alternatives %}
+  <div style="margin-top:8px">Feasible ship dates for that recipient:
+    {% for d in r.last_action.alternatives %}<code>{{ d }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+  </div>
+  {% endif %}
+</div>
+{% elif r.last_action and r.last_action.outcome == 'unchanged' %}
+<div class="notice" style="padding:10px">
+  <span class="good">Applied.</span> {{ r.last_action.describe }}
+</div>
+{% endif %}
+
+{% if r.pending %}
+<div class="notice" style="padding:12px">
+  <b>Confirm this change.</b> {{ r.pending.edit }} moves the carrier set for the
+  whole run: {{ r.pending.carriers_before|join(' + ') or '(none)' }} &rarr;
+  {{ r.pending.carriers_after|join(' + ') or '(none)' }},
+  {% if r.pending.cost_delta is not none %}{{ '%+.2f'|format(r.pending.cost_delta) }} overall{% else %}no covering plan after this{% endif %}.
+  {% if r.pending.newly_stranded %}
+  <div class="dim" style="margin-top:6px">Newly stranded:
+    {{ r.pending.newly_stranded|join(', ') }}.</div>
+  {% endif %}
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <form data-review action="/runs/{{ job.id }}/review/confirm"><button type="submit">Confirm</button></form>
+    <form data-review action="/runs/{{ job.id }}/review/discard"><button type="submit" class="ghost">Discard</button></form>
+  </div>
+</div>
+{% endif %}
+
+{% if r.manifest %}
+{% set m = r.manifest %}
+<h3 style="font-size:15px;margin-bottom:6px">Manifest as it stands</h3>
+{% include "_manifest.html" %}
+{% else %}
+<div class="notice bad" style="padding:12px">
+  <b>No covering plan.</b> The edits so far leave no carrier subset that covers
+  the run. Edit back toward a plan, or reject.
+</div>
+{% endif %}
+
+{# Edit controls. Pin re-enters at C2's enumeration; exclude at C1's load. An
+   address change is not offered -- it re-enters at B2 and re-quotes a lane
+   nothing has priced (design 4). #}
+<h3 style="font-size:15px;margin:16px 0 6px">Edit</h3>
+<div class="panel">
+  <table class="rows">
+    <tr><th>recipient</th><th>pin to a ship date</th><th></th></tr>
+    {% for rec in r.recipients %}
+    <tr>
+      <td><b>{{ rec.name }}</b> <span class="mono dim" style="font-size:12px">{{ rec.key }}</span></td>
+      <td>
+        <form data-review action="/runs/{{ job.id }}/review/edit"
+              style="display:flex;gap:6px;align-items:center">
+          <input type="hidden" name="kind" value="ship_date">
+          <input type="hidden" name="recipient_key" value="{{ rec.key }}">
+          <select name="ship_date" required>
+            <option value="" disabled selected>date…</option>
+            {% for d in r.ship_dates %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="ghost">Pin</button>
+        </form>
+      </td>
+      <td>
+        <form data-review action="/runs/{{ job.id }}/review/edit">
+          <input type="hidden" name="kind" value="exclude">
+          <input type="hidden" name="recipient_key" value="{{ rec.key }}">
+          <button type="submit" class="ghost">Exclude</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if r.excluded %}
+<p style="margin:14px 0 4px"><b>Excluded during review</b></p>
+<table>{% for e in r.excluded %}
+  <tr><td><b>{{ e.name }}</b></td><td class="dim">{{ e.reason }}</td></tr>
+{% endfor %}</table>
+{% endif %}
+
+<h3 style="font-size:15px;margin:16px 0 6px">Finish</h3>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <form data-review action="/runs/{{ job.id }}/review/approve">
+    <button type="submit" {% if not r.manifest or r.pending %}disabled{% endif %}>Approve</button>
+  </form>
+  <form data-review action="/runs/{{ job.id }}/review/reject" style="display:flex;gap:6px">
+    <input name="reason" placeholder="reason (optional)" style="width:200px">
+    <button type="submit" class="ghost">Reject</button>
+  </form>
+  <form data-review action="/runs/{{ job.id }}/review/abandon">
+    <button type="submit" class="ghost">Abandon (record nothing)</button>
+  </form>
+  {% if r.pending %}<span class="dim" style="font-size:12px">Confirm or discard the pending change before approving.</span>{% endif %}
+</div>
+
+{% endif %}

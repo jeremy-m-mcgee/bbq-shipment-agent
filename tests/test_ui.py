@@ -19,11 +19,63 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from bbq_shipment_agent.agents.model import Completion
+from bbq_shipment_agent.ledger import (
+    AgentInvocationRecord,
+    RunRecord,
+    ShipmentRecord,
+    iter_records,
+)
 from bbq_shipment_agent.ui import RunService, create_app
 from bbq_shipment_agent.ui.app import _options_for
 from bbq_shipment_agent.ui.modes import describe
 from bbq_shipment_agent.ui.view import screenshot_catalogue
 from bbq_shipment_agent.wiring import RunDepth, RunOptions
+
+
+class ScriptedModel:
+    """A `ConversingModel` that replays canned completions, for driving the D2
+    review offline. Injected as the `conversing_model` factory so a review can
+    hold a real conversation with no socket and no key -- the same shape as
+    test_narrator.py's, kept here so the UI suite stands alone."""
+
+    def __init__(self, *completions: object) -> None:
+        self.completions = list(completions)
+        self.calls = 0
+
+    def converse(
+        self,
+        invocation: object,
+        messages: object,
+        tools: object = (),
+        on_delta: object = None,
+    ) -> object:
+        self.calls += 1
+        nxt = self.completions.pop(0) if self.completions else Completion(text="done")
+        if isinstance(nxt, Exception):
+            raise nxt
+        # Emulate streaming: hand the reply back through the delta channel in a
+        # couple of chunks, the way `AnthropicModel` forwards content deltas.
+        if on_delta is not None and nxt.text:
+            middle = max(1, len(nxt.text) // 2)
+            on_delta(nxt.text[:middle])
+            on_delta(nxt.text[middle:])
+        return nxt
+
+
+def _park(client: TestClient) -> str:
+    """Start a whole roster run through HTTP and wait for it to park in review.
+
+    The roster is one recipient, so the plan covers and the run reaches D2
+    rather than finishing -- which is the state every review test starts from."""
+    response = client.post(
+        "/runs", data={"mode": "all", "no_screenshots": "1", "replay": "1"}
+    )
+    assert response.status_code == 200
+    job_id = response.url.path.rsplit("/", 1)[-1]
+    state = finish(client, job_id)
+    assert state["state"] == "awaiting_review", state
+    return job_id
 
 FIXTURES = Path(__file__).parent / "fixtures"
 QUOTES = FIXTURES / "shippo-quotes-sf-dc.json"
@@ -584,9 +636,21 @@ class TestAWholeRun:
         finish(client, job_id)
         return job_id, client.get(f"/runs/{job_id}")
 
-    def test_the_run_finishes(self, client, finished):
+    def test_the_run_parks_in_review(self, client, finished):
+        # A covering plan does not finish -- it parks in D2. Design 4 makes the
+        # review the pipeline's last stage, and design 10 puts it in the browser
+        # as a pane beside the manifest rather than a second manifest.
         job_id, _ = finished
-        assert client.get(f"/runs/{job_id}/state").json()["state"] == "finished"
+        assert client.get(f"/runs/{job_id}/state").json()["state"] == "awaiting_review"
+
+    def test_the_review_pane_is_on_the_page(self, finished):
+        _, page = finished
+        assert 'id="review-pane"' in page.text
+        # Offline: no model, so the review is button-driven, and the page says so.
+        assert "button-driven" in page.text
+        # The approval and edit controls are present.
+        assert "/review/approve" in page.text
+        assert "/review/edit" in page.text
 
     def test_the_manifest_reaches_the_page(self, finished):
         _, page = finished
@@ -635,14 +699,21 @@ class TestOneRunAtATime:
         app = create_app(options, screenshot_dir=workspace / "shots", service=service)
         client = TestClient(app)
 
-        class Never:
-            """A job that never finishes, so the second POST always collides."""
+        class Parked:
+            """A job parked in review, so the second POST always collides.
+
+            `awaiting_review` is the case that matters: a parked review still
+            holds the slot (`occupies_slot`) even though the worker thread is
+            done, because until it reaches a terminal state the ledger and the
+            lanes are still that run's. A fake keyed on `running` would have
+            let a second run through the moment planning finished."""
 
             id = "held"
-            running = True
-            state = "running"
+            review = None
+            state = "awaiting_review"
+            occupies_slot = True
 
-        service._jobs["held"] = Never()
+        service._jobs["held"] = Parked()
         service._order.append("held")
 
         response = client.post(
@@ -723,6 +794,323 @@ class TestTheMissingKeyBanner:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")
         body = client.get("/").text
         assert "B1 extraction" in body
+
+
+class TestTheReviewIsButtonDrivenOffline:
+    """D2 in the browser with no model: edits and approval through buttons.
+
+    Offline there is no `ConversingModel`, so `conversing_model` raises and the
+    review parks with no narrator -- the same fallback the CLI takes. Every
+    decision is still `ReviewSession`'s; these drive it through the routes."""
+
+    def test_a_pin_to_the_only_candidate_date_applies(self, client):
+        job_id = _park(client)
+        response = client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "ship_date", "recipient_key": "ana", "ship_date": "2026-08-17"},
+        )
+        assert response.status_code == 200
+        # The only ship date, so the plan does not move: applied, not pending.
+        assert "Applied" in response.text
+
+    def test_a_date_that_is_not_a_candidate_is_a_400_not_a_dead_review(self, client):
+        # A bad edit comes back as a message, not a crash -- the review survives.
+        job_id = _park(client)
+        response = client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "ship_date", "recipient_key": "ana", "ship_date": "2020-01-01"},
+        )
+        assert response.status_code == 400
+        assert "candidate ship date" in response.json()["detail"]
+
+    def test_an_edit_on_someone_not_in_the_run_is_a_400(self, client):
+        job_id = _park(client)
+        response = client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "exclude", "recipient_key": "nobody"},
+        )
+        assert response.status_code == 400
+
+    def test_excluding_the_only_recipient_empties_the_plan_without_a_500(self, client):
+        # Regression: an exclusion that removes the last shipment leaves no
+        # covering plan, so the re-solve's cost delta is None. `describe` used to
+        # format None into a float and 500 -- found by clicking Exclude in a real
+        # browser. The route must re-render the pane, not crash.
+        job_id = _park(client)
+        response = client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "exclude", "recipient_key": "ana"},
+        )
+        assert response.status_code == 200
+        # Emptying the run moves the carrier set to none, so it is proposed for
+        # confirmation, and the banner says there is no plan left rather than
+        # formatting a None cost.
+        assert "Confirm this change" in response.text
+        assert "no covering plan after this" in response.text
+
+    def test_say_is_refused_when_the_review_is_button_driven(self, client):
+        # There is no narrator to ask; the route says so rather than 500ing.
+        job_id = _park(client)
+        response = client.post(f"/runs/{job_id}/review/say", data={"message": "hi"})
+        assert response.status_code == 409
+
+    def test_approve_writes_the_shipments_and_frees_the_slot(self, client, workspace):
+        job_id = _park(client)
+        response = client.post(f"/runs/{job_id}/review/approve")
+        assert response.status_code == 200
+        assert "Approved" in response.text
+        assert client.get(f"/runs/{job_id}/state").json()["state"] in {
+            "approved",
+            "approved_with_exclusions",
+        }
+        # E2: one shipment row per assignment reaches the ledger.
+        ships = list(iter_records(workspace / "ledger", ShipmentRecord))
+        assert any(s.recipient_key == "ana" for s in ships)
+        # The slot is freed only now, at the terminal state -- a new run is taken.
+        again = client.post(
+            "/runs",
+            data={"mode": "all", "no_screenshots": "1", "replay": "1"},
+            follow_redirects=False,
+        )
+        assert again.status_code == 303
+
+    def test_reject_records_the_run_but_writes_no_shipments(self, client, workspace):
+        job_id = _park(client)
+        response = client.post(f"/runs/{job_id}/review/reject", data={"reason": "nope"})
+        assert response.status_code == 200
+        assert "Rejected" in response.text
+        assert list(iter_records(workspace / "ledger", ShipmentRecord)) == []
+        # The run was closed: a run record carries completed_at.
+        assert any(
+            r.completed_at for r in iter_records(workspace / "ledger", RunRecord)
+        )
+
+    def test_abandon_records_nothing_and_frees_the_slot(self, client, workspace):
+        job_id = _park(client)
+        before = len(list(iter_records(workspace / "ledger", RunRecord)))
+        response = client.post(f"/runs/{job_id}/review/abandon")
+        assert response.status_code == 200
+        assert "abandoned" in response.text.lower()
+        assert len(list(iter_records(workspace / "ledger", RunRecord))) == before
+        assert list(iter_records(workspace / "ledger", ShipmentRecord)) == []
+        again = client.post(
+            "/runs",
+            data={"mode": "all", "no_screenshots": "1", "replay": "1"},
+            follow_redirects=False,
+        )
+        assert again.status_code == 303
+
+    def test_a_parked_review_still_refuses_a_second_run(self, client):
+        # `occupies_slot`, end to end: the worker thread is done but the review
+        # is open, so the run still holds the ledger and the lanes.
+        _park(client)
+        again = client.post(
+            "/runs",
+            data={"mode": "all", "no_screenshots": "1", "replay": "1"},
+            follow_redirects=False,
+        )
+        assert again.status_code == 409
+        assert "one at a time" in again.json()["detail"].lower()
+
+    def test_the_routes_refuse_once_the_review_has_ended(self, client):
+        job_id = _park(client)
+        client.post(f"/runs/{job_id}/review/reject")
+        # A stale tab POSTing into a finished review is told, not crashed.
+        response = client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "exclude", "recipient_key": "ana"},
+        )
+        assert response.status_code == 409
+
+
+class TestOneReviewTurnAtATime:
+    @pytest.fixture
+    def service(self):
+        return RunService()
+
+    @pytest.fixture
+    def client(self, options, workspace, service):
+        return TestClient(
+            create_app(options, screenshot_dir=workspace / "shots", service=service)
+        )
+
+    def test_an_overlapping_turn_is_refused_not_interleaved(self, client, service):
+        # Held lock stands in for a turn already running: a double-submit gets a
+        # 409, not a second copy of the edit interleaved with the first.
+        job_id = _park(client)
+        controller = service._jobs[job_id].review
+        assert controller.turn_lock.acquire(blocking=False)
+        try:
+            response = client.post(
+                f"/runs/{job_id}/review/edit",
+                data={"kind": "exclude", "recipient_key": "ana"},
+            )
+            assert response.status_code == 409
+            assert "already in progress" in response.json()["detail"]
+        finally:
+            controller.turn_lock.release()
+
+
+class TestTheConversationalReview:
+    """D2 with a narrator, driven by an injected scripted model -- no socket."""
+
+    @pytest.fixture
+    def conv(self, options, workspace):
+        # The narrator's config comes from the snapshot offline; the model is
+        # injected. Together they give a real conversation with no network.
+        (workspace / "snapshot.json").write_bytes(SNAPSHOT.read_bytes())
+        model = ScriptedModel(
+            Completion(text="USPS wins; the runners-up cost more."),
+            Completion(text="The run costs about $55."),
+        )
+        service = RunService(conversing_model=lambda options: model)
+        client = TestClient(
+            create_app(options, screenshot_dir=workspace / "shots", service=service)
+        )
+        return client, model
+
+    def test_the_opening_narration_is_on_the_first_render(self, conv):
+        client, _ = conv
+        job_id = _park(client)
+        page = client.get(f"/runs/{job_id}").text
+        # `narrator.open()` ran on the worker thread, so the pane already has it.
+        assert "USPS wins" in page
+        # And the chat box is offered, because a narrator is available.
+        assert 'name="message"' in page
+
+    def test_a_turn_shows_the_prompt_and_the_reply(self, conv):
+        client, _ = conv
+        job_id = _park(client)
+        response = client.post(
+            f"/runs/{job_id}/review/say", data={"message": "what does it cost?"}
+        )
+        assert response.status_code == 200
+        assert "what does it cost?" in response.text  # the prompt, echoed
+        assert "The run costs about $55." in response.text  # the reply
+
+    def test_every_turn_is_one_narrator_invocation_in_the_ledger(self, conv, workspace):
+        # Design 8's operator-edit metric needs a line per turn. `open` is one,
+        # the say is a second.
+        client, _ = conv
+        job_id = _park(client)
+        client.post(f"/runs/{job_id}/review/say", data={"message": "cost?"})
+        records = [
+            r
+            for r in iter_records(workspace / "ledger", AgentInvocationRecord)
+            if r.agent_key == "review-narrator"
+        ]
+        assert len(records) == 2
+
+    def test_a_streamed_turn_delivers_deltas_then_the_final_pane(self, conv):
+        # The SSE variant: the reply arrives as `delta` events, then a `done`
+        # event carrying the re-rendered pane the client swaps in.
+        client, _ = conv
+        job_id = _park(client)
+        body = client.post(
+            f"/runs/{job_id}/review/say-stream", data={"message": "what does it cost?"}
+        ).text
+        assert '"delta"' in body  # streamed as it arrived
+        assert '"done": true' in body  # final event
+        # The reply text streamed, and the final pane carries the exchange.
+        assert "The run costs about $55." in body
+        assert "what does it cost?" in body
+
+    def test_a_streamed_turn_is_still_one_ledger_invocation(self, conv, workspace):
+        # Streaming is a side channel: the turn records exactly as the sync one
+        # does. open() + one streamed say = two review-narrator invocations.
+        client, _ = conv
+        job_id = _park(client)
+        client.post(
+            f"/runs/{job_id}/review/say-stream", data={"message": "cost?"}
+        ).read()
+        records = [
+            r
+            for r in iter_records(workspace / "ledger", AgentInvocationRecord)
+            if r.agent_key == "review-narrator"
+        ]
+        assert len(records) == 2
+
+
+class TestALaunchDarklyModelSwap:
+    """Changing which model `review-narrator` runs on is a console edit, not a
+    redeploy or a restart. Two sequential runs against the same live server pick
+    up a snapshot the swap edited between them -- design 6.1, model.py."""
+
+    def test_the_next_run_picks_up_the_new_model_with_no_restart(
+        self, options, workspace
+    ):
+        snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+        snap_path = workspace / "snapshot.json"
+
+        def serve_model(name):
+            snapshot["agents"]["review-narrator"]["model"] = name
+            snap_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+        serve_model("claude-before-swap")
+        service = RunService(
+            conversing_model=lambda options: ScriptedModel(Completion(text="ok"))
+        )
+        # One server, started once. Everything below happens without touching it.
+        client = TestClient(
+            create_app(options, screenshot_dir=workspace / "shots", service=service)
+        )
+
+        def narrator_models():
+            return {
+                r.model
+                for r in iter_records(workspace / "ledger", AgentInvocationRecord)
+                if r.agent_key == "review-narrator"
+            }
+
+        job1 = _park(client)
+        assert narrator_models() == {"claude-before-swap"}
+        client.post(f"/runs/{job1}/review/approve")  # free the slot
+
+        # The swap: a different model served, mid-session, no redeploy.
+        serve_model("claude-after-swap")
+        _park(client)
+        assert "claude-after-swap" in narrator_models()
+
+
+class TestNarrationMarkdown:
+    """The narrator emits light markdown; the review pane renders it safely."""
+
+    def test_bold_italic_and_code_render(self):
+        from bbq_shipment_agent.ui.view import render_markdown
+
+        out = str(render_markdown("**UPS** at **$55.56**, not *cheaper* — `extra_cost`"))
+        assert "<strong>UPS</strong>" in out
+        assert "<strong>$55.56</strong>" in out
+        assert "<em>cheaper</em>" in out
+        assert "<code>extra_cost</code>" in out
+
+    def test_html_in_a_reply_is_escaped_not_executed(self):
+        from bbq_shipment_agent.ui.view import render_markdown
+
+        out = str(render_markdown("<script>alert(1)</script> **x**"))
+        assert "<script>" not in out
+        assert "&lt;script&gt;" in out
+        assert "<strong>x</strong>" in out  # the real markdown still renders
+
+
+class TestTheReviewControllerClosesItsClientOnce:
+    def test_close_and_abandon_are_idempotent(self):
+        from bbq_shipment_agent.ui import ReviewController
+
+        class Context:
+            def __init__(self) -> None:
+                self.client = self
+                self.closes = 0
+
+            def close(self) -> None:
+                self.closes += 1
+
+        context = Context()
+        controller = ReviewController(context, session=None, narrator=None)
+        controller.close()
+        controller.close()
+        controller.abandon()
+        assert context.closes == 1
 
 
 class TestModeDescriptor:
