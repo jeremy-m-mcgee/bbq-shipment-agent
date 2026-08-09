@@ -37,9 +37,10 @@ from __future__ import annotations
 
 import base64
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ..agent_configs import LD_CONFIGURED_KEYS, AgentConfig
 

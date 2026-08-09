@@ -152,13 +152,22 @@ class EditResult:
                 else " No ship date in this run works for that shipment."
             )
             return f"Refused. {self.refusal}{offer}"
+        # The cost delta is None when the edit leaves no covering plan -- an
+        # exclusion that empties the run is the clear case, and `cost_after` is
+        # then None. Say so rather than formatting None into a float.
+        cost = (
+            f"{self.cost_delta:+.2f} overall"
+            if self.cost_delta is not None
+            else "no covering plan after this"
+        )
         if self.outcome is EditOutcome.PAIR_MOVED:
+            after = "+".join(self.carriers_after) or "(none)"
             return (
                 f"This changes the carrier set for the whole run: "
-                f"{'+'.join(self.carriers_before)} -> {'+'.join(self.carriers_after)}, "
-                f"{self.cost_delta:+.2f} overall. Confirm before it is applied."
+                f"{'+'.join(self.carriers_before)} -> {after}, "
+                f"{cost}. Confirm before it is applied."
             )
-        return f"Applied. {self.cost_delta:+.2f} overall."
+        return f"Applied. {cost}."
 
 
 class TerminalState(StrEnum):

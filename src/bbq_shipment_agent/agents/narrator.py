@@ -121,8 +121,14 @@ class Narrator:
         """The opening narration. Design 4 requires it before any table."""
         return self.say(OPENING_PROMPT)
 
-    def say(self, text: str) -> Turn:
-        """One operator turn, including any tools the model runs for it."""
+    def say(self, text: str, on_delta: Any = None) -> Turn:
+        """One operator turn, including any tools the model runs for it.
+
+        `on_delta`, when given, is called with each text fragment as the reply
+        streams -- the D2 review pane's live rendering. It is a side channel: the
+        `Turn` returned, the metrics and the ledger line are identical with or
+        without it, because the assembled completion is what everything reads.
+        """
         turn = Turn(prompt=text)
         self.messages.append({"role": "user", "content": text})
         # One tracker per operator turn. A turn may span several model calls
@@ -133,8 +139,18 @@ class Narrator:
         for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
             turn.iterations = iteration
             try:
-                completion = self._model.converse(
-                    self.invocation, self.messages, self._tools
+                # `on_delta` is passed only when a caller asked to stream, so a
+                # non-streaming turn's call is byte-for-byte the one it always
+                # was -- a `ConversingModel` that predates the delta channel is
+                # never handed a keyword it does not accept.
+                completion = (
+                    self._model.converse(
+                        self.invocation, self.messages, self._tools, on_delta=on_delta
+                    )
+                    if on_delta is not None
+                    else self._model.converse(
+                        self.invocation, self.messages, self._tools
+                    )
                 )
             except ModelUnavailable as exc:
                 metrics.track_duration()

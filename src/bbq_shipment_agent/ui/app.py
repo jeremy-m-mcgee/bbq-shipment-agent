@@ -11,8 +11,19 @@ The controls are the ones a run is *configured* by, and stop there. There is
 no field for the 4.4C arrival threshold, none for the carrier cap, and none
 for the kill switch -- the first two are Python constants and the third is a
 repo config file, and a form control implying otherwise would be wrong even
-if the POST handler ignored it. The manifest is read-only: this
-front-end stops at the same place `run plan` does.
+if the POST handler ignored it.
+
+## D2 review lives here now
+
+Planning used to be where this front-end stopped -- the manifest was read-only,
+the same place `run plan` does. It no longer stops there: a run that produces a
+covering manifest parks in `awaiting_review` and the `/runs/{id}/review/*` routes
+drive D2 as a pane beside the manifest (design 4, design 10's "a pane beside the
+manifest rather than a second manifest"). What does *not* move is the boundary
+design 4 draws inside D2: every decision is `ReviewSession`'s, the routes only
+carry the operator's move to it, and the narrator only narrates the
+classification it is handed. Approval writes the ledger from the browser, which
+is the same trust as the CLI -- loopback only, no auth, one operator.
 
 ## Loopback only
 
@@ -27,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -42,6 +54,9 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from starlette.responses import FileResponse
 
+from ..agents import NarratorUnavailable
+from ..operators import OperatorError, OperatorPool
+from ..review import Edit, EditKind, ReviewError
 from ..wiring import (
     RunDepth,
     RunOptions,
@@ -49,9 +64,8 @@ from ..wiring import (
     available_screenshots,
     missing_credentials,
 )
-from ..operators import OperatorError, OperatorPool
 from .service import RunInProgress, RunService
-from .view import screenshot_catalogue
+from .view import render_markdown, review_view, screenshot_catalogue
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -69,9 +83,22 @@ def create_app(
     fixed at launch. That split is deliberate. A form field for the ledger
     path is a way to append a real run to the wrong file by mistake.
     """
-    app = FastAPI(title="bbq-shipment-agent", docs_url=None, redoc_url=None)
-    templates = Jinja2Templates(directory=str(TEMPLATES))
     runs = service or RunService()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> Any:
+        yield
+        # A review left open holds the LaunchDarkly client. Close them on
+        # shutdown so ctrl-c does not hang on the SDK's background thread
+        # (service.py). Harmless when nothing is parked.
+        runs.close_all()
+
+    app = FastAPI(
+        title="bbq-shipment-agent", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
+    templates = Jinja2Templates(directory=str(TEMPLATES))
+    # The narrator's replies carry light markdown; `| md` renders it safely.
+    templates.env.filters["md"] = render_markdown
 
     directory = Path(screenshot_dir) if screenshot_dir else options.screenshots
     resolved_dir = Path(directory).resolve() if directory else None
@@ -186,6 +213,10 @@ def create_app(
                 "events": job.events,
                 "header": job.header,
                 "view": job.view,
+                # Present whenever a review parked, terminal or not: the pane
+                # renders the live (edited) manifest and shows the outcome after
+                # approval, so a reload after approving still reads correctly.
+                "review": review_view(job.review) if job.review is not None else None,
             },
         )
 
@@ -243,6 +274,213 @@ def create_app(
                 "outcome": (job.view or {}).get("outcome"),
             }
         )
+
+    # -- D2 review -------------------------------------------------------------
+    #
+    # Every route takes an operator move to `ReviewSession`, which owns the
+    # decision, and returns the re-rendered pane so the page swaps it in place.
+    # The routes carry no control flow of their own: they classify nothing, and
+    # the narrator only narrates what the session already decided (design 4).
+
+    def _open_review(job_id: str) -> Any:
+        """The parked controller for an open review, or the right HTTP error.
+
+        404 for no such run; 409 once the review has ended or never opened, so a
+        stale tab POSTing into a finished review is told rather than crashing."""
+        job = runs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="no such run")
+        controller = job.review
+        if controller is None or job.state != "awaiting_review":
+            raise HTTPException(
+                status_code=409,
+                detail="this run has no open review (it never started one, or "
+                "it has already ended).",
+            )
+        return job, controller
+
+    def _pane(request: Request, job: Any) -> Any:
+        return templates.TemplateResponse(
+            request,
+            "_review_pane.html",
+            {"job": job, "review": review_view(job.review)},
+        )
+
+    def _turn(request: Request, job_id: str, action: Any) -> Any:
+        """One serialized review turn: acquire the lock, act, re-render.
+
+        The lock is non-blocking, so an overlapping request (a double-submit, an
+        impatient retry while a narration turn is still running) is refused with
+        409 rather than queued into a second identical edit. `ReviewError` and
+        the value errors an edit raises come back as 400 in the conversation;
+        the review does not die on a bad argument."""
+        job, controller = _open_review(job_id)
+        if not controller.turn_lock.acquire(blocking=False):
+            raise HTTPException(
+                status_code=409,
+                detail="a review turn is already in progress; wait for it to finish.",
+            )
+        try:
+            action(job, controller)
+        except (ReviewError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except NarratorUnavailable:
+            # The model died mid-turn. Drop the narrator and fall back to the
+            # button-driven review rather than killing it (cli._review does the
+            # same). The pane re-renders without the chat box, so the operator
+            # keeps their edit and approval controls.
+            controller.narrator = None
+        finally:
+            controller.turn_lock.release()
+        return _pane(request, job)
+
+    @app.post("/runs/{job_id}/review/say", response_class=HTMLResponse)
+    def review_say(request: Request, job_id: str, message: str = Form(...)) -> Any:
+        def act(job: Any, controller: Any) -> None:
+            if controller.narrator is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="this review is button-driven; there is no narrator "
+                    "to ask (offline, or no model key).",
+                )
+            controller.narrator.say(message)
+
+        return _turn(request, job_id, act)
+
+    @app.post("/runs/{job_id}/review/say-stream")
+    async def review_say_stream(job_id: str, message: str = Form(...)) -> Any:
+        """The same narration turn as `/review/say`, streamed token by token.
+
+        The reply renders as it arrives instead of after it finishes. The turn
+        runs on a worker thread (the model call blocks) and pushes text deltas
+        onto a queue the async generator drains as SSE; when the turn ends it
+        sends the re-rendered pane as the final event, which the client swaps in.
+        The client falls back to the synchronous endpoint if this fails, so the
+        sync route stays the source of truth for what a turn does."""
+        import queue as _queue
+        import threading as _threading
+
+        job, controller = _open_review(job_id)
+        if controller.narrator is None:
+            raise HTTPException(
+                status_code=409,
+                detail="this review is button-driven; there is no narrator to ask.",
+            )
+        # Same non-blocking turn lock as the sync route: an overlapping turn is
+        # refused, not interleaved. Released in the generator's `finally`, so a
+        # client that disconnects mid-stream still frees it.
+        if not controller.turn_lock.acquire(blocking=False):
+            raise HTTPException(
+                status_code=409,
+                detail="a review turn is already in progress; wait for it to finish.",
+            )
+
+        events: Any = _queue.Queue()
+        done = object()
+
+        def run_turn() -> None:
+            try:
+                controller.narrator.say(
+                    message, on_delta=lambda d: events.put(("delta", d))
+                )
+            except NarratorUnavailable:
+                # The model died mid-turn: drop it and fall back to buttons, the
+                # same as the sync route. The final fragment re-renders without
+                # the chat box.
+                controller.narrator = None
+            except Exception as exc:  # noqa: BLE001 - surfaced to the client
+                events.put(("error", str(exc)))
+            finally:
+                events.put((done, None))
+
+        _threading.Thread(target=run_turn, daemon=True).start()
+
+        async def stream() -> Any:
+            try:
+                while True:
+                    try:
+                        kind, value = events.get_nowait()
+                    except _queue.Empty:
+                        await asyncio.sleep(0.03)
+                        continue
+                    if kind is done:
+                        break
+                    yield f"data: {json.dumps({kind: value})}\n\n"
+                # The turn has fully returned (recording included), so the pane
+                # renders its final state. `_review_pane.html` uses no request.
+                html = templates.env.get_template("_review_pane.html").render(
+                    job=job, review=review_view(job.review)
+                )
+                yield f"data: {json.dumps({'done': True, 'html': html})}\n\n"
+            finally:
+                controller.turn_lock.release()
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/runs/{job_id}/review/edit", response_class=HTMLResponse)
+    def review_edit(
+        request: Request,
+        job_id: str,
+        kind: str = Form(...),
+        recipient_key: str = Form(...),
+        ship_date: str = Form(""),
+        reason: str = Form(""),
+    ) -> Any:
+        from datetime import date
+
+        def act(job: Any, controller: Any) -> None:
+            try:
+                edit = Edit(
+                    kind=EditKind(kind),
+                    recipient_key=recipient_key,
+                    ship_date=date.fromisoformat(ship_date) if ship_date else None,
+                    reason=reason,
+                )
+            except ValueError as exc:
+                # A bad enum member or an unparseable date: a 400 the operator
+                # sees, not a 500. `propose` raises `ReviewError` for the rest.
+                raise ReviewError(str(exc)) from exc
+            controller.session.propose(edit)
+
+        return _turn(request, job_id, act)
+
+    @app.post("/runs/{job_id}/review/confirm", response_class=HTMLResponse)
+    def review_confirm(request: Request, job_id: str) -> Any:
+        return _turn(request, job_id, lambda job, c: c.session.confirm())
+
+    @app.post("/runs/{job_id}/review/discard", response_class=HTMLResponse)
+    def review_discard(request: Request, job_id: str) -> Any:
+        return _turn(request, job_id, lambda job, c: c.session.discard())
+
+    @app.post("/runs/{job_id}/review/approve", response_class=HTMLResponse)
+    def review_approve(request: Request, job_id: str) -> Any:
+        def act(job: Any, controller: Any) -> None:
+            state = controller.session.approve()  # writes E2, may raise
+            job.state = state.value
+            controller.close()
+
+        return _turn(request, job_id, act)
+
+    @app.post("/runs/{job_id}/review/reject", response_class=HTMLResponse)
+    def review_reject(request: Request, job_id: str, reason: str = Form("")) -> Any:
+        def act(job: Any, controller: Any) -> None:
+            state = controller.session.reject(reason)
+            job.state = state.value
+            controller.close()
+
+        return _turn(request, job_id, act)
+
+    @app.post("/runs/{job_id}/review/abandon", response_class=HTMLResponse)
+    def review_abandon(request: Request, job_id: str) -> Any:
+        def act(job: Any, controller: Any) -> None:
+            controller.abandon()
+            job.state = "abandoned"
+
+        return _turn(request, job_id, act)
 
     return app
 

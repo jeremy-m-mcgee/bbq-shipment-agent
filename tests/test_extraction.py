@@ -13,8 +13,8 @@ import pytest
 from conftest import CapabilityGate
 
 from bbq_shipment_agent.agent_configs import SnapshotAgentConfigs
-from bbq_shipment_agent.context import ImageIdentity
 from bbq_shipment_agent.agents.model import Completion, ModelUnavailable
+from bbq_shipment_agent.context import ImageIdentity
 from bbq_shipment_agent.recipients import ExtractionError, extract_from_images
 from bbq_shipment_agent.recipients.extraction import CONFIG_KEY
 from bbq_shipment_agent.run import initialize_run
@@ -342,7 +342,9 @@ class TestRefusals:
                 Prose.calls += 1
                 return Completion(text="I could not read that screenshot, sorry.")
 
-        result = extract_from_images(run, IMAGES[:1], model=Prose(), ledger_root=tmp_path / "ledger")
+        result = extract_from_images(
+            run, IMAGES[:1], model=Prose(), ledger_root=tmp_path / "ledger"
+        )
         assert [u.name for u in result.unreadable] == [IMAGES[0].name]
         assert Prose.calls == 2
         assert result.recipients == ()

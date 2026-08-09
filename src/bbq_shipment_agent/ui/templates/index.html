@@ -107,73 +107,77 @@
   <div>
     <h2>Run</h2>
     <div class="panel">
-      <label class="field">profile <span class="dim">(blank uses the config default)</span>
-        <select name="profile">
-          <option value="">default</option>
-          <option value="baseline">baseline</option>
-          <option value="planner_trial">planner_trial</option>
-          <option value="full">full</option>
-        </select>
-      </label>
-      <label class="field">depth <span class="dim">(where the run stops)</span>
-        <select name="depth" id="depth">
-          <option value="plan">full plan &mdash; A1 through D1</option>
-          <option value="extract" {% if not screenshots %}disabled{% endif %}>
-            screenshots only &mdash; A1 and B1, then stop
-          </option>
-        </select>
-      </label>
-      <p class="dim" style="font-size:12px;margin:0 0 14px">
-        Extraction is the stage worth iterating on alone: it is the only one with
-        an answer key, and its config is served per image. Stopping after B1 skips
-        every Shippo quote, so it costs one vision call per screenshot and
-        needs no other key.
-      </p>
-      {% if operators %}
-      {# Each option carries `data-operator` as well as `value`, which is the
-         same shape the screenshot checkboxes have: a machine-readable name on
-         every element, so `drive` can read the population off this page
-         rather than being told the config file twice. #}
-      <label class="field">operator <span class="dim">(the user context kind)</span>
-        <select name="operator">
-          <option value="">none &mdash; no user context</option>
-          {% for person in operators %}
-          <option value="{{ person.key }}" data-operator="{{ person.key }}"
-                  {% if options.operator == person.key %}selected{% endif %}>
-            {{ person.key }} &mdash; {{ person.department }}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-      <p class="dim" style="font-size:12px;margin:0 0 14px">
-        Who the run claims to be. The department comes from
-        <code>config/operators.yaml</code>, never from this form, so a rule
-        targeting a department is reading the committed pool.
-      </p>
-      {% endif %}
-      <label class="field">campaign <span class="dim">(run context attribute)</span>
-        <input type="text" name="campaign" value="{{ options.campaign or '' }}"
-               placeholder="aug-cook">
-      </label>
+      {# profile is a LaunchDarkly targeting label, not an operator choice, so it
+         is not a control. It rides along as the launch value, so `--profile`
+         still reaches the run; blank means the config default. #}
+      <input type="hidden" name="profile" value="{{ options.profile or '' }}">
+
+      {% if has_recordings %}
+      {# The cost switch, and only meaningful when recordings exist. On a live
+         server there is nothing to replay, so the control is omitted rather than
+         shown disabled -- one fewer knob for the common case. #}
       <label class="check">
-        <input type="checkbox" name="offline" {% if options.offline %}checked{% endif %}>
-        offline &mdash; skip LaunchDarkly, use the snapshot
-      </label>
-      <label class="check">
-        <input type="checkbox" name="replay" {% if has_recordings %}checked{% else %}disabled{% endif %}>
+        <input type="checkbox" name="replay" checked>
         replay recordings
-        {% if not has_recordings %}<span class="dim">(none configured)</span>{% endif %}
       </label>
-      <p class="dim" style="font-size:12px;margin:0 0 14px">
-        {% if has_recordings %}
+      <p class="dim" style="font-size:12px;margin:4px 0 14px">
         Unchecked means live calls to Shippo and the model, which cost money and
         time. Checked replays what was captured.
-        {% else %}
-        Launch with <code>--quotes</code>, <code>--validations</code>,
-        <code>--completions</code>, <code>--extractions</code> and
-        <code>--repairs</code> to enable replay.
-        {% endif %}
       </p>
+      {% endif %}
+
+      {# Everything below is a developer / experiment control, not an operator's
+         per-run choice (design 10). Collapsed so the common path is just: pick
+         screenshots, generate. The fields stay in the DOM, so `drive` -- which
+         reads the operator pool off this page and posts its own field values --
+         is unaffected. #}
+      <details style="margin:0 0 16px">
+        <summary class="dim" style="cursor:pointer;font-size:13px;user-select:none">Advanced</summary>
+        <div style="margin-top:14px">
+          <label class="field">depth <span class="dim">(where the run stops)</span>
+            <select name="depth" id="depth">
+              <option value="plan">full plan &mdash; A1 through D1</option>
+              <option value="extract" {% if not screenshots %}disabled{% endif %}>
+                screenshots only &mdash; A1 and B1, then stop
+              </option>
+            </select>
+          </label>
+          <p class="dim" style="font-size:12px;margin:0 0 14px">
+            Extraction is the only stage with an answer key. Stopping after B1
+            skips every Shippo quote &mdash; one vision call per screenshot, no
+            other key.
+          </p>
+          {% if operators %}
+          {# Each option carries `data-operator` as well as `value`, the same
+             shape the screenshot checkboxes have, so `drive` reads the pool off
+             this page rather than being told the config file twice. #}
+          <label class="field">operator <span class="dim">(the user context kind)</span>
+            <select name="operator">
+              <option value="">none &mdash; no user context</option>
+              {% for person in operators %}
+              <option value="{{ person.key }}" data-operator="{{ person.key }}"
+                      {% if options.operator == person.key %}selected{% endif %}>
+                {{ person.key }} &mdash; {{ person.department }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="dim" style="font-size:12px;margin:0 0 14px">
+            Who the run claims to be. The department comes from
+            <code>config/operators.yaml</code>, never from this form.
+          </p>
+          {% endif %}
+          <label class="field">campaign <span class="dim">(run context attribute)</span>
+            <input type="text" name="campaign" value="{{ options.campaign or '' }}"
+                   placeholder="aug-cook">
+          </label>
+          <label class="check">
+            <input type="checkbox" name="offline" {% if options.offline %}checked{% endif %}>
+            offline &mdash; skip LaunchDarkly, use the snapshot
+          </label>
+        </div>
+      </details>
+
       <button type="submit" id="go" {% if active %}disabled data-locked="1"{% endif %}>
         Generate manifest
       </button>

@@ -524,13 +524,13 @@ def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) 
 
     narrator = None
     try:
-        from .agents import AnthropicModel
+        from .wiring import conversing_model
 
         narrator = Narrator(
             run,
             session,
             ledger_root=args.ledger,
-            model=AnthropicModel(),
+            model=conversing_model(options),
         )
     except (NarratorUnavailable, ModelUnavailable) as exc:
         print(f"\nreview-narrator unavailable ({exc}). Reading the manifest directly.")

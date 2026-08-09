@@ -52,13 +52,6 @@ from .manifest import (
     assemble_manifest,
     render,
 )
-from .remediation import (
-    DEFAULT_HORIZON_MONTHS,
-    Remediation,
-    RemediationMove,
-    remediate,
-    remediate_all,
-)
 from .rates import (
     SATURDAY_CARRIERS,
     Address,
@@ -71,6 +64,13 @@ from .rates import (
     RecordedQuoter,
     ShippoQuoter,
     pin_carriers,
+)
+from .remediation import (
+    DEFAULT_HORIZON_MONTHS,
+    Remediation,
+    RemediationMove,
+    remediate,
+    remediate_all,
 )
 from .shipment import Shipment
 from .solve import (

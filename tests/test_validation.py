@@ -9,10 +9,10 @@ from bbq_shipment_agent.capabilities import ValidationMode
 from bbq_shipment_agent.planning import Address
 from bbq_shipment_agent.recipients import (
     AddressValidationUnavailable,
+    Recipient,
     RecordedAddressValidator,
     ValidationOutcome,
     classify,
-    Recipient,
     validate_recipients,
 )
 

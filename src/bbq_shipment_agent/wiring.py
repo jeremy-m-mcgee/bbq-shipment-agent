@@ -44,11 +44,11 @@ from .agent_configs import (
 )
 from .agents import (
     AnthropicModel,
+    ModelUnavailable,
     RecordedConversation,
     RecordedModel,
     RecordedVision,
 )
-from .context import ImageIdentity
 from .capabilities import (
     LaunchDarklyGate,
     OfflineGate,
@@ -56,6 +56,7 @@ from .capabilities import (
     ValidationMode,
     VerificationMode,
 )
+from .context import ImageIdentity
 from .operators import DEFAULT_OPERATORS_PATH, OperatorPool
 from .planning import (
     DEFAULT_LANE,
@@ -590,6 +591,32 @@ def verifier(options: RunOptions, mode: VerificationMode) -> Any:
         return None
     if options.completions:
         return RecordedModel.from_file(options.completions)
+    return AnthropicModel()
+
+
+def conversing_model(options: RunOptions) -> Any:
+    """D2's `review-narrator` model. Live-only, and this is the only seam.
+
+    Every other agent has a recording to replay -- B1 `extractions`, B3
+    `repairs`, D1 `completions` -- but the review conversation has none: a
+    narration is open-ended and answers a human typing, so there is nothing to
+    record it against. So an offline run has no narrator, and D2 degrades to the
+    button-driven review, which is the same fallback the CLI takes when
+    `review-narrator` is unavailable.
+
+    Raising `ModelUnavailable` is how a front-end asks for that fallback rather
+    than a special case: the service and `cli._review` both catch it. Routing
+    the construction through here (rather than `AnthropicModel()` at the call
+    site, as the CLI once did) keeps the module docstring's promise that this is
+    the only place a socket-opening object is built -- so importing `service.py`
+    in a test cannot open one.
+    """
+    if options.offline or not os.environ.get("ANTHROPIC_API_KEY"):
+        raise ModelUnavailable(
+            "review-narrator needs a live model and there is no recording to "
+            "replay it from; this run is offline or has no ANTHROPIC_API_KEY, so "
+            "the review is button-driven rather than conversational."
+        )
     return AnthropicModel()
 
 
