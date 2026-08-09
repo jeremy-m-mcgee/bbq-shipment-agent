@@ -175,7 +175,13 @@ class ConversingModel(Protocol):
         invocation: Invocation,
         messages: list[dict[str, Any]],
         tools: tuple[Any, ...] = (),
-    ) -> Completion: ...
+        on_delta: Any = None,
+    ) -> Completion:
+        """`on_delta`, when given, is called with each text fragment as it
+        streams -- the seam the D2 review uses to render a reply live. It is a
+        side channel: the returned `Completion` is identical with or without it,
+        so a caller that ignores it sees no difference."""
+        ...
 
 
 class AnthropicModel:
@@ -224,6 +230,7 @@ class AnthropicModel:
         invocation: Invocation,
         messages: list[dict[str, Any]],
         tools: tuple[Any, ...] = (),
+        on_delta: Any = None,
     ) -> Completion:
         from anthropic import APIError
 
@@ -239,7 +246,7 @@ class AnthropicModel:
         dropped: list[str] = []
         while True:
             try:
-                message, first_token_ms = self._stream(request)
+                message, first_token_ms = self._stream(request, on_delta)
                 break
             except APIError as exc:
                 unusable = _refused_parameter(exc, request)
@@ -276,7 +283,9 @@ class AnthropicModel:
             time_to_first_token_ms=first_token_ms,
         )
 
-    def _stream(self, request: dict[str, Any]) -> tuple[Any, float | None]:
+    def _stream(
+        self, request: dict[str, Any], on_delta: Any = None
+    ) -> tuple[Any, float | None]:
         """One request, streamed, returning the assembled message and TTFT.
 
         Streaming buys exactly one thing here and it is the reason for it:
@@ -302,8 +311,18 @@ class AnthropicModel:
         first_token_at: float | None = None
         with self._sdk().messages.stream(**request) as stream:
             for event in stream:
-                if first_token_at is None and getattr(event, "type", "") == "content_block_delta":
-                    first_token_at = time.perf_counter()
+                if getattr(event, "type", "") == "content_block_delta":
+                    if first_token_at is None:
+                        first_token_at = time.perf_counter()
+                    # Forward text deltas to a caller that wants to render the
+                    # answer as it arrives (the D2 review's SSE turn). Optional
+                    # and side-channel: the assembled message below is unchanged,
+                    # so nothing about parsing, tools, metrics or fixtures moves.
+                    if on_delta is not None:
+                        delta = getattr(event, "delta", None)
+                        text = getattr(delta, "text", "") if delta is not None else ""
+                        if text:
+                            on_delta(text)
             message = stream.get_final_message()
         if first_token_at is None:
             # A reply with no content blocks at all. Rare, and not a latency
@@ -403,7 +422,7 @@ class RecordedVision:
         return hashlib.sha256(raw).hexdigest()
 
     def converse(
-        self, invocation: Invocation, messages: Any, tools: Any = ()
+        self, invocation: Invocation, messages: Any, tools: Any = (), on_delta: Any = None
     ) -> Completion:
         self.calls += 1
         name = self._name_of(messages)
@@ -464,7 +483,7 @@ class RecordedConversation:
         return cls(json.loads(Path(path).read_text(encoding="utf-8")))
 
     def converse(
-        self, invocation: Invocation, messages: Any, tools: Any = ()
+        self, invocation: Invocation, messages: Any, tools: Any = (), on_delta: Any = None
     ) -> Completion:
         self.calls += 1
         self.tools_offered = tools

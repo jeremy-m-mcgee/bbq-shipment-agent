@@ -18,6 +18,7 @@ from bbq_shipment_agent.review import (
     Edit,
     EditKind,
     EditOutcome,
+    EditResult,
     ReviewError,
     ReviewSession,
     TerminalState,
@@ -289,3 +290,26 @@ class TestTerminalStates:
         assert result.needs_confirmation
         with pytest.raises(ReviewError, match="confirm or discard"):
             session.approve()
+
+
+class TestDescribeSurvivesAnEmptiedPlan:
+    """An exclusion that removes the last covering shipment leaves no plan, so
+    the re-solve's `cost_after` -- and thus `cost_delta` -- is None. `describe`
+    must say so rather than formatting None into a float (a 500 in the UI)."""
+
+    def test_a_pair_moved_result_with_no_cost_after_describes_cleanly(self):
+        result = EditResult(
+            edit=Edit(EditKind.EXCLUDE, "ana"),
+            outcome=EditOutcome.PAIR_MOVED,
+            carriers_before=("UPS",),
+            carriers_after=(),
+            cost_before=55.56,
+            cost_after=None,
+        )
+        assert "no covering plan after this" in result.describe()  # must not raise
+
+    def test_excluding_the_last_shipment_does_not_raise(self, session):
+        # Down to nothing, one at a time. The final exclusion is the one that
+        # empties the plan; describing its result must not blow up.
+        for key in ("ana", "bea"):
+            session.propose(Edit(EditKind.EXCLUDE, key)).describe()

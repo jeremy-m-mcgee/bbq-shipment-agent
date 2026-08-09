@@ -4,7 +4,7 @@
 
 <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px">
   <h1 style="font-size:18px;margin:0" class="mono">{{ header.run_id if header else job.id }}</h1>
-  <span class="tag {% if job.state == 'finished' %}on{% endif %}">{{ job.state }}</span>
+  <span id="state-chip" class="tag {% if job.state in ('finished', 'approved', 'approved_with_exclusions') %}on{% endif %}">{{ job.state }}</span>
   {% if header %}<span class="dim">{{ header.connection }} &middot; profile {{ header.profile }}</span>{% endif %}
   <span style="flex:1"></span>
   <a href="/" class="dim" style="font-size:13px">new run</a>
@@ -154,90 +154,11 @@
 </div>
 {% endif %}
 
-{% if m %}
+{% if review %}
+<div id="review-pane">{% include "_review_pane.html" %}</div>
+{% elif m %}
 <h2>Manifest</h2>
-<div class="panel">
-  <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:6px">
-    <div><div class="dim" style="font-size:12px">carriers</div>
-      <div style="font-size:18px">{{ m.carriers|join(' + ') or '(none)' }}</div></div>
-    <div><div class="dim" style="font-size:12px">packets</div>
-      <div style="font-size:18px">{{ m.packet_count }}</div></div>
-    <div><div class="dim" style="font-size:12px">total cost</div>
-      <div style="font-size:18px">${{ '%.2f'|format(m.total_cost) }}</div></div>
-    <div><div class="dim" style="font-size:12px">min thermal margin</div>
-      <div style="font-size:18px"
-           class="{% if m.min_margin is not none and m.min_margin < 1 %}warn{% endif %}">
-        {{ '%.2f'|format(m.min_margin) if m.min_margin is not none else '—' }}C</div></div>
-  </div>
-  {% if m.forced_by_saturday %}
-  <p class="warn" style="font-size:13px;margin:10px 0 0">
-    A Saturday-capable carrier was forced into the pair by
-    <b>{{ m.saturday_only|join(', ') or 'a Saturday requirement' }}</b>.
-    That is the highest-leverage interaction in the plan: one Saturday shipment
-    leaves exactly one free carrier slot for everyone else.
-  </p>
-  {% endif %}
-</div>
-
-{% for day in m.dates %}
-<div class="panel">
-  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-    <b>{{ day.date }}</b>
-    <span class="dim">{{ day.rows|length }} packet(s) &middot; ${{ '%.2f'|format(day.cost) }}</span>
-  </div>
-  <table class="rows">
-    <tr>
-      <th>recipient</th><th>carrier</th><th>service</th><th>box</th>
-      <th class="num">gel</th><th class="num">cost</th><th>arrives</th>
-      <th class="num">temp</th><th class="num">margin</th>
-    </tr>
-    {% for row in day.rows %}
-    <tr>
-      <td><b>{{ row.name }}</b><div class="dim" style="font-size:12px">{{ row.address }}</div>
-        {% if m.advisories.get(row.name) %}
-        <div class="warn" style="font-size:12px">validator notes:
-          {{ m.advisories[row.name]|join(' ') }}</div>
-        {% endif %}
-      </td>
-      <td>{{ row.carrier }}</td>
-      <td class="dim">{{ row.service }}</td>
-      <td>{{ row.box_size }}</td>
-      <td class="num">{{ row.gel_packs }}</td>
-      <td class="num">${{ '%.2f'|format(row.cost) }}</td>
-      <td>{{ row.arrival }}</td>
-      <td class="num">{{ '%.2f'|format(row.temp) }}C</td>
-      <td class="num {% if row.margin < 1 %}warn{% endif %}">{{ '%.2f'|format(row.margin) }}C</td>
-    </tr>
-    {% endfor %}
-  </table>
-</div>
-{% endfor %}
-
-{% if m.runners_up %}
-<h2>What the other carrier pairs would have cost</h2>
-<div class="panel">
-  <table>
-    <tr><th>pair</th><th class="num">total</th><th class="num">extra</th>
-        <th class="num">covers</th><th>strands</th><th class="num">min margin</th></tr>
-    {% for r in m.runners_up %}
-    <tr>
-      <td class="mono">{{ r.carriers|join(' + ') }}</td>
-      <td class="num">${{ '%.2f'|format(r.total_cost) }}</td>
-      <td class="num {% if r.extra_cost > 0 %}dim{% endif %}">
-        {{ '+$%.2f'|format(r.extra_cost) if r.extra_cost >= 0 else '-$%.2f'|format(-r.extra_cost) }}</td>
-      <td class="num">{{ r.coverage }}</td>
-      <td class="dim">{{ r.stranded|join(', ') or '—' }}</td>
-      <td class="num">{{ '%.2f'|format(r.min_margin) if r.min_margin is not none else '—' }}C</td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="dim" style="font-size:12px;margin:12px 0 0">
-    Kept visible on purpose: the pairs differ across cost, coverage, stranded
-    shipments and thermal margin at once, and that comparison is the one humans
-    do badly at the end of a review.
-  </p>
-</div>
-{% endif %}
+{% include "_manifest.html" %}
 
 <p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
   <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes</span></p>
@@ -401,4 +322,160 @@ source.onmessage = (message) => {
 };
 </script>
 {% endif %}
+
+<script>
+// D2 review. One delegated handler on the stable #review-pane wrapper: every
+// /review/* form POSTs by fetch and the returned fragment is swapped back in,
+// so an edit or a narration turn updates in place without a full reload. The
+// listener lives on the wrapper, whose children are what get replaced, so it
+// survives every swap without re-binding.
+(() => {
+  const pane = document.getElementById('review-pane');
+  if (!pane) return;
+
+  const flash = (text) => {
+    const banner = document.createElement('div');
+    banner.className = 'notice bad';
+    banner.style.padding = '10px';
+    banner.style.marginBottom = '10px';
+    banner.textContent = text;
+    pane.prepend(banner);
+  };
+
+  const busy = (form, on) => {
+    form.querySelectorAll('button').forEach((b) => { b.disabled = on; });
+  };
+
+  // The narrator's light markdown, rendered the same way the server's `md`
+  // filter does. HTML is escaped first, so only these three tags are ever
+  // introduced -- the rest stays inert text.
+  const renderMd = (text) => text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/`([^`\n]+?)`/g, '<code>$1</code>')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(?!\s)([^*\n]+?)\*/g, '<em>$1</em>');
+
+  // The header status chip is rendered outside #review-pane, so a terminal
+  // action (approve / reject / abandon) has to update it by hand once the new
+  // pane says the review has ended -- otherwise it lags on the old state until
+  // a reload.
+  const syncHeader = () => {
+    const marker = pane.querySelector('[data-review-terminal]');
+    const chip = document.getElementById('state-chip');
+    if (!marker || !chip) return;
+    const state = marker.getAttribute('data-review-terminal');
+    chip.textContent = state;
+    chip.classList.toggle('on', state.indexOf('approved') === 0);
+  };
+
+  const swapPane = (html) => { pane.innerHTML = html; syncHeader(); };
+
+  // A narration turn, streamed: POST to the SSE variant and grow the reply as
+  // deltas arrive, then swap the final pane. Any failure falls back to the
+  // synchronous submit below, so the sync route stays the source of truth.
+  const streamTurn = async (form) => {
+    const textarea = form.querySelector('[name="message"]');
+    const message = textarea ? textarea.value : '';
+    const formData = new FormData(form);          // capture before clearing
+    // Optimistic chat: the operator's message on the right, an empty narrator
+    // bubble on the left that fills as the reply streams. The pane swap at the
+    // end replaces these with the server's canonical render.
+    let chat = pane.querySelector('.chat');
+    if (!chat) {
+      chat = document.createElement('div');
+      chat.className = 'chat';
+      form.parentNode.insertBefore(chat, form);
+    }
+    const userMsg = document.createElement('div');
+    userMsg.className = 'msg user';
+    userMsg.textContent = message;
+    chat.appendChild(userMsg);
+    const botMsg = document.createElement('div');
+    botMsg.className = 'msg bot';
+    chat.appendChild(botMsg);
+    if (textarea) textarea.value = '';
+    botMsg.scrollIntoView({ block: 'nearest' });
+
+    let response;
+    try {
+      response = await fetch(form.action + '-stream', { method: 'POST', body: formData });
+    } catch (err) {
+      userMsg.remove(); botMsg.remove();
+      if (textarea) textarea.value = message;
+      throw err;
+    }
+    if (!response.ok || !response.body) {
+      userMsg.remove(); botMsg.remove();
+      if (textarea) textarea.value = message;     // let the sync fallback resend
+      throw new Error('stream unavailable');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let reply = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const line = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        if (!line.startsWith('data: ')) continue;
+        const event = JSON.parse(line.slice(6));
+        if (event.delta) {
+          reply += event.delta;
+          botMsg.innerHTML = renderMd(reply);
+          botMsg.scrollIntoView({ block: 'nearest' });
+        } else if (event.error) {
+          flash(event.error);
+        } else if (event.done) {
+          swapPane(event.html);
+          return;
+        }
+      }
+    }
+  };
+
+  const submitSync = async (form) => {
+    const response = await fetch(form.action, {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'Accept': 'text/html' },
+    });
+    const body = await response.text();
+    if (response.ok) {
+      swapPane(body);                        // the re-rendered pane
+    } else {
+      busy(form, false);
+      let detail = body;
+      try { detail = JSON.parse(body).detail || body; } catch (e) {}
+      // 409 = a turn is already running; 400 = the edit was rejected. Both are
+      // shown without replacing the pane, so nothing already typed is lost.
+      flash(detail);
+    }
+  };
+
+  pane.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form[data-review]');
+    if (!form) return;
+    event.preventDefault();
+    busy(form, true);
+    try {
+      if (form.hasAttribute('data-stream')) {
+        try {
+          await streamTurn(form);
+          return;
+        } catch (streamErr) {
+          // Fall through to the synchronous turn.
+        }
+      }
+      await submitSync(form);
+    } catch (err) {
+      busy(form, false);
+      flash('the review request could not be sent: ' + err);
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -94,6 +94,15 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
 .notice { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--panel);
           margin-bottom: 12px; font-size: 14px; }
 .notice.bad { border-left-color: var(--bad); }
+.chat { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.msg { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap;
+       font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.msg .who { font-size: 11px; color: var(--dim); margin-bottom: 3px; }
+.msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--line);
+           border-bottom-left-radius: 4px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: #16120c;
+            border-bottom-right-radius: 4px; }
+.msg.user .who { color: #4d3c1c; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; }
 .kv dt { color: var(--dim); } .kv dd { margin: 0; }
 </style>

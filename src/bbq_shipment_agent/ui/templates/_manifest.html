@@ -1,0 +1,86 @@
+{# The manifest, given a manifest dict `m` (from view._manifest). Shared by the
+   read-only plan page and the D2 review pane, so an edited plan renders exactly
+   like a planned one -- design 4's "a pane beside the manifest, not a second
+   manifest." References only `m`; the caller supplies the heading. #}
+<div class="panel">
+  <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:6px">
+    <div><div class="dim" style="font-size:12px">carriers</div>
+      <div style="font-size:18px">{{ m.carriers|join(' + ') or '(none)' }}</div></div>
+    <div><div class="dim" style="font-size:12px">packets</div>
+      <div style="font-size:18px">{{ m.packet_count }}</div></div>
+    <div><div class="dim" style="font-size:12px">total cost</div>
+      <div style="font-size:18px">${{ '%.2f'|format(m.total_cost) }}</div></div>
+    <div><div class="dim" style="font-size:12px">min thermal margin</div>
+      <div style="font-size:18px"
+           class="{% if m.min_margin is not none and m.min_margin < 1 %}warn{% endif %}">
+        {{ '%.2f'|format(m.min_margin) if m.min_margin is not none else '—' }}C</div></div>
+  </div>
+  {% if m.forced_by_saturday %}
+  <p class="warn" style="font-size:13px;margin:10px 0 0">
+    A Saturday-capable carrier was forced into the pair by
+    <b>{{ m.saturday_only|join(', ') or 'a Saturday requirement' }}</b>.
+    That is the highest-leverage interaction in the plan: one Saturday shipment
+    leaves exactly one free carrier slot for everyone else.
+  </p>
+  {% endif %}
+</div>
+
+{% for day in m.dates %}
+<div class="panel">
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+    <b>{{ day.date }}</b>
+    <span class="dim">{{ day.rows|length }} packet(s) &middot; ${{ '%.2f'|format(day.cost) }}</span>
+  </div>
+  <table class="rows">
+    <tr>
+      <th>recipient</th><th>carrier</th><th>service</th><th>box</th>
+      <th class="num">gel</th><th class="num">cost</th><th>arrives</th>
+      <th class="num">temp</th><th class="num">margin</th>
+    </tr>
+    {% for row in day.rows %}
+    <tr>
+      <td><b>{{ row.name }}</b><div class="dim" style="font-size:12px">{{ row.address }}</div>
+        {% if m.advisories.get(row.name) %}
+        <div class="warn" style="font-size:12px">validator notes:
+          {{ m.advisories[row.name]|join(' ') }}</div>
+        {% endif %}
+      </td>
+      <td>{{ row.carrier }}</td>
+      <td class="dim">{{ row.service }}</td>
+      <td>{{ row.box_size }}</td>
+      <td class="num">{{ row.gel_packs }}</td>
+      <td class="num">${{ '%.2f'|format(row.cost) }}</td>
+      <td>{{ row.arrival }}</td>
+      <td class="num">{{ '%.2f'|format(row.temp) }}C</td>
+      <td class="num {% if row.margin < 1 %}warn{% endif %}">{{ '%.2f'|format(row.margin) }}C</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+{% if m.runners_up %}
+<h3 style="font-size:15px">What the other carrier pairs would have cost</h3>
+<div class="panel">
+  <table>
+    <tr><th>pair</th><th class="num">total</th><th class="num">extra</th>
+        <th class="num">covers</th><th>strands</th><th class="num">min margin</th></tr>
+    {% for r in m.runners_up %}
+    <tr>
+      <td class="mono">{{ r.carriers|join(' + ') }}</td>
+      <td class="num">${{ '%.2f'|format(r.total_cost) }}</td>
+      <td class="num {% if r.extra_cost > 0 %}dim{% endif %}">
+        {{ '+$%.2f'|format(r.extra_cost) if r.extra_cost >= 0 else '-$%.2f'|format(-r.extra_cost) }}</td>
+      <td class="num">{{ r.coverage }}</td>
+      <td class="dim">{{ r.stranded|join(', ') or '—' }}</td>
+      <td class="num">{{ '%.2f'|format(r.min_margin) if r.min_margin is not none else '—' }}C</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="dim" style="font-size:12px;margin:12px 0 0">
+    Kept visible on purpose: the pairs differ across cost, coverage, stranded
+    shipments and thermal margin at once, and that comparison is the one humans
+    do badly at the end of a review.
+  </p>
+</div>
+{% endif %}

@@ -15,11 +15,38 @@ second implementation of the thing being reviewed.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+from markupsafe import Markup, escape
 
 from ..planning import render
 from ..wiring import RunOptions
 from .modes import describe as describe_mode
+
+#: The narrator emits light markdown. These render bold, italic and inline code
+#: and nothing else -- see `render_markdown`.
+_MD_CODE = re.compile(r"`([^`\n]+?)`")
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
+_MD_ITALIC = re.compile(r"\*(?!\s)([^*\n]+?)(?<!\s)\*")
+
+
+def render_markdown(text: str | None) -> Markup:
+    """Render the narrator's light markdown to safe HTML.
+
+    HTML is escaped *first*, so the only tags ever introduced are the three this
+    adds; the content between them stays escaped. That is what keeps a model
+    reply from injecting markup -- the same reason design 6.6 escapes anything
+    sent to LaunchDarkly. Newlines are left to the bubble's `white-space:
+    pre-wrap` rather than turned into `<br>`.
+    """
+    if not text:
+        return Markup("")
+    s = str(escape(text))
+    s = _MD_CODE.sub(r"<code>\1</code>", s)
+    s = _MD_BOLD.sub(r"<strong>\1</strong>", s)
+    s = _MD_ITALIC.sub(r"<em>\1</em>", s)
+    return Markup(s)
 
 
 def run_header(context: Any, options: RunOptions) -> dict[str, Any]:
@@ -190,6 +217,96 @@ def extract_view(context: Any, options: RunOptions) -> dict[str, Any]:
         "partial": {"infeasible": [], "plans": []},
         "manifest": None,
         "manifest_text": "",
+    }
+
+
+def review_view(controller: Any) -> dict[str, Any]:
+    """The D2 review pane as plain data. Design section 4, Phase D.
+
+    Same rule as every other view function: nothing here computes or decides.
+    The manifest is `session.manifest` through the *same* `_manifest` the read-
+    only page uses, so an edited plan renders identically to a planned one --
+    design 4's "a pane beside the manifest, not a second manifest." Every edit
+    outcome, the pending confirmation and the terminal state are read off fields
+    `ReviewSession` already produced; the classification is Python's and this is
+    a window onto it.
+
+    The narrator's opening narration is `turns[0]` (design 4 requires it before
+    any table) and is surfaced separately from the operator exchange in
+    `turns[1:]`, so the internal opening prompt is never shown as if the
+    operator typed it. A button-driven review has no narrator and no turns.
+    """
+    from ..review import EditOutcome
+
+    session = controller.session
+    narrator = controller.narrator
+    turns = list(narrator.turns) if narrator is not None else []
+
+    pending = None
+    if session.pending is not None:
+        # The held-back result is the most recent pair-moved edit; its own
+        # `describe` is the sentence design 4 wants shown before confirming.
+        for r in reversed(session.history):
+            if r.outcome is EditOutcome.PAIR_MOVED:
+                pending = {
+                    "edit": r.edit.describe(),
+                    "describe": r.describe(),
+                    "carriers_before": list(r.carriers_before),
+                    "carriers_after": list(r.carriers_after),
+                    "cost_delta": r.cost_delta,
+                    "newly_stranded": list(r.newly_stranded),
+                }
+                break
+
+    last = session.history[-1] if session.history else None
+    last_action = None
+    if last is not None:
+        last_action = {
+            "outcome": last.outcome.value,
+            "describe": last.describe(),
+            "edit": last.edit.describe(),
+            # Only a refusal carries these; empty otherwise. The gate is not the
+            # operator's to override, so the alternatives are the way forward.
+            "refusal": last.refusal,
+            "alternatives": [d.isoformat() for d in last.alternatives],
+        }
+
+    return {
+        "manifest": _manifest(session.manifest) if session.manifest is not None else None,
+        # None when the operator has edited away every covering subset. The pane
+        # stays usable so they can edit back to a plan or reject.
+        "no_coverage": session.manifest is None,
+        "narrator_available": controller.narrator_available,
+        "opening": turns[0].reply if turns else "",
+        "transcript": [
+            {"prompt": t.prompt, "reply": t.reply, "tools_called": list(t.tools_called)}
+            for t in turns[1:]
+        ],
+        "history": [
+            {"edit": r.edit.describe(), "outcome": r.outcome.value, "describe": r.describe()}
+            for r in session.history
+        ],
+        "pending": pending,
+        "last_action": last_action,
+        # A recorded ending (approved / approved_with_exclusions / rejected), or
+        # `abandoned` when the operator left without one -- both close the pane.
+        "terminal": (
+            session.terminal.value
+            if session.terminal is not None
+            else ("abandoned" if controller.abandoned else None)
+        ),
+        "carriers": list(session.carriers),
+        "total_cost": session.total_cost,
+        "excluded": [
+            {"key": e.recipient_key, "name": e.name, "reason": e.reason}
+            for e in session.excluded
+        ],
+        # The edit controls: who is still on the plan, and the run's candidate
+        # ship dates for a pin. Both come straight off the session.
+        "recipients": [
+            {"key": s.recipient_key, "name": s.name} for s in session.shipments
+        ],
+        "ship_dates": [d.isoformat() for d in session.ship_dates],
     }
 
 

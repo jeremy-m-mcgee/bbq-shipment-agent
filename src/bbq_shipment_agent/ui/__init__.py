@@ -7,6 +7,13 @@ Python, and this is a window onto it rather than a second copy.
 """
 
 from .app import create_app
-from .service import Event, RunInProgress, RunJob, RunService
+from .service import Event, ReviewController, RunInProgress, RunJob, RunService
 
-__all__ = ["create_app", "Event", "RunInProgress", "RunJob", "RunService"]
+__all__ = [
+    "create_app",
+    "Event",
+    "ReviewController",
+    "RunInProgress",
+    "RunJob",
+    "RunService",
+]
