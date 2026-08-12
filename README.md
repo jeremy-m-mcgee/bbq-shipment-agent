@@ -21,9 +21,6 @@ it is the only path that installs the exact versions this project is tested
 against. The other two resolve their own and are documented because they work,
 not because they are equivalent.
 
-<details open>
-<summary><b>uv</b> — recommended, and the only one that uses the committed lock</summary>
-
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), which
 also fetches Python 3.12 for you if you do not have it.
 
@@ -41,61 +38,25 @@ uv run bbq-shipment-agent run plan --offline \
   --ledger /tmp/scratch
 ```
 
-</details>
+On pip or poetry the two commands above are the same; what changes is how you
+get there and what you type in front of them — here and everywhere else in this
+README.
 
-<details>
-<summary><b>pip + venv</b></summary>
+| installer | install step | prefix |
+|---|---|---|
+| **uv** — supported | none, `uv run` installs from `uv.lock` on first use | `uv run` |
+| pip + venv | `python3.12 -m venv .venv`, activate it, then `pip install -e . pytest httpx` | none, once the venv is active |
+| poetry 2.0+ | `poetry install`, which installs the dev group too | `poetry run` |
 
-Needs a Python 3.12 interpreter already on the machine — pip will not fetch one.
-
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
-
-# `pytest httpx` is the dev group; pip only reads it as `--group dev` on 25.1+.
-pip install -e . pytest httpx
-
-pytest
-
-bbq-shipment-agent run plan --offline \
-  --recipients tests/fixtures/roster-sf-dc.yaml \
-  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
-  --validations tests/fixtures/shippo-addresses.json \
-  --completions tests/fixtures/d1-completions.json \
-  --ledger /tmp/scratch
-```
-
-Drop the `uv run` prefix from every command elsewhere in this README, and see
-the note under [Load the keys](#load-the-keys--do-this-once-per-shell) —
-`UV_ENV_FILE` does nothing here.
-
-</details>
-
-<details>
-<summary><b>poetry</b></summary>
-
-Poetry 2.0 or newer, which reads the PEP 621 `[project]` table this repo uses.
-
-```bash
-poetry install                      # installs the dev group too
-poetry run pytest
-
-poetry run bbq-shipment-agent run plan --offline \
-  --recipients tests/fixtures/roster-sf-dc.yaml \
-  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
-  --validations tests/fixtures/shippo-addresses.json \
-  --completions tests/fixtures/d1-completions.json \
-  --ledger /tmp/scratch
-```
-
-`poetry install` writes a `poetry.lock` of its own resolution. It is gitignored
-deliberately: `uv.lock` is this project's lock, and a second one in the tree
-would be a second answer to the same question. Substitute `poetry run` for
-`uv run` elsewhere in this README, and see the note under
-[Load the keys](#load-the-keys--do-this-once-per-shell) — `UV_ENV_FILE` does
-nothing here.
-
-</details>
+Three things the table cannot hold. **pip** needs a Python 3.12 interpreter
+already on the machine — it will not fetch one — the Windows activate path is
+`.venv\Scripts\activate`, and `pytest httpx` is the dev group spelled out
+because pip only reads it as `--group dev` on 25.1+. **Poetry** must be 2.0 or
+newer to read the PEP 621 `[project]` table this repo uses, and `poetry install`
+writes a `poetry.lock` of its own resolution, gitignored deliberately: `uv.lock`
+is this project's lock, and a second one in the tree would be a second answer to
+the same question. And on **both**, `UV_ENV_FILE` does nothing — see the note
+under [Load the keys](#load-the-keys--do-this-once-per-shell).
 
 Whichever you picked, that plan is the whole system on recorded inputs:
 LaunchDarkly served from `config/ld-snapshot.json`, Shippo and the model from
