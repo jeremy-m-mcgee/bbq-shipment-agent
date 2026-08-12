@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}bbq-shipment-agent{% endblock %}</title>
+{# The tile variant, as a data URI rather than a route. It has a solid ground,
+   which is the one that survives 16px -- the badge's orbit ring goes thin, as
+   docs/logos/README.md notes. `#` is percent-encoded; unencoded it terminates
+   the URL at the first colour and the icon silently does not load. #}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='2' y='2' width='60' height='60' rx='16' fill='%23c67139'/><g transform='rotate(-18 32 34)'><ellipse cx='32' cy='34' rx='25' ry='9.5' fill='none' stroke='%237a8a5e' stroke-width='2.5'/><rect x='52.5' y='31.5' width='7' height='5' rx='2.5' fill='%23201e1d'/></g><rect x='16' y='21' width='32' height='26' rx='7' fill='none' stroke='%23f5ead8' stroke-width='3'/><circle cx='26' cy='30' r='2.6' fill='%23f5ead8'/><circle cx='38' cy='30' r='2.6' fill='%23f5ead8'/><rect x='22' y='38' width='20' height='3' rx='1.5' fill='%23f5ead8'/></svg>">
 <style>
 :root {
   --bg: #12100e; --panel: #1b1815; --line: #322c26; --ink: #ece6df;
@@ -30,6 +35,14 @@ header.top {
 }
 header.top h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
 header.top .sub { color: var(--dim); font-size: 13px; }
+/* The mark is the one item in a baseline-aligned row that has no baseline, so
+   it is nudged rather than stretched. `color` is what the inlined SVG reads
+   through currentColor, which is how one file serves both palettes. */
+header.top .mark {
+  width: 26px; height: 26px; flex: none;
+  align-self: center; margin-right: -6px;
+  color: var(--accent);
+}
 main { max-width: 1180px; margin: 0 auto; padding: 24px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
      color: var(--dim); margin: 28px 0 10px; font-weight: 600; }
@@ -109,6 +122,7 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
 </head>
 <body>
 <header class="top">
+  {% include "_logo.svg" %}
   <h1><a href="/" style="text-decoration:none;color:inherit">bbq-shipment-agent</a></h1>
   <span class="sub">plan a run — no money is spent, no label is bought</span>
 </header>
