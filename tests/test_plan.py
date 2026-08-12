@@ -77,6 +77,7 @@ def run_plan(
     roster_text=None,
     verifier=None,
     agent_source=None,
+    extraction_escalations=(),
 ):
     if roster_text is not None:
         (workspace / "recipients.yaml").write_text(roster_text, encoding="utf-8")
@@ -96,6 +97,7 @@ def run_plan(
         quoter=RecordedQuoter.from_file(QUOTES),
         validator=RecordedAddressValidator.from_file(VALIDATIONS),
         verifier=verifier,
+        extraction_escalations=extraction_escalations,
     )
 
 
@@ -216,6 +218,62 @@ class TestTheLedger:
         reasons = appends[-1].evaluation_reasons
         assert set(reasons["available_carriers"]) == {"UPS", "USPS"}
         assert reasons["validation_mode"] == "standard"
+
+
+class TestB1sUnresolvedPeopleAreAccountedFor:
+    """Someone a screenshot named who gave no usable address.
+
+    They never reach B2, so before this they existed only in a panel on the
+    results page: absent from the manifest, from D1's payload, from the
+    narrator's, and from the run row's count. Asked directly where two of them
+    had gone, `review-narrator` answered — correctly — that it had no record of
+    them, while D1 reported every completeness check clean.
+    """
+
+    def _escalation(self):
+        from bbq_shipment_agent.planning import Excluded
+
+        return Excluded(
+            recipient_key="jules_g",
+            name="jules_g",
+            reason="no usable address in the source image: said 'my place'",
+        )
+
+    def test_they_reach_the_manifest_as_escalations(self, workspace):
+        result = run_plan(workspace, extraction_escalations=(self._escalation(),))
+        assert "jules_g" in [e.recipient_key for e in result.manifest.escalated]
+
+    def test_they_are_in_the_runs_one_escalation_list(self, workspace):
+        result = run_plan(workspace, extraction_escalations=(self._escalation(),))
+        assert "jules_g" in [e.recipient_key for e in result.escalated]
+
+    def test_the_completeness_check_can_see_them(self, workspace):
+        """D1's first check is that every input recipient lands in exactly one
+        bucket. With B1's people missing from both sides it compared the
+        survivors against themselves and reported clean."""
+        from bbq_shipment_agent.agents.verification import manifest_payload
+
+        result = run_plan(workspace, extraction_escalations=(self._escalation(),))
+        payload = manifest_payload(
+            result.manifest,
+            tuple(r.key for r in result.roster.recipients) + ("jules_g",),
+        )
+        assert "jules_g" in payload["input_recipients"]
+        assert "jules_g" in [e["recipient_key"] for e in payload["escalated"]]
+
+    def test_the_run_row_counts_them(self, workspace):
+        result = run_plan(workspace, extraction_escalations=(self._escalation(),))
+        appends = [
+            r
+            for r in iter_records(workspace / "ledger", RunRecord)
+            if r.run_id == result.run.run_id and r.escalated_count is not None
+        ]
+        assert appends[-1].escalated_count == 1
+
+    def test_a_run_without_any_is_unchanged(self, workspace):
+        result = run_plan(workspace)
+        assert result.escalated == ()
+        assert result.manifest.escalated == ()
 
 
 class TestTheAgentBoundary:
