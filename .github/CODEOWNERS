@@ -1,0 +1,9 @@
+# Every change routes a review request here. One maintainer, so a single
+# catch-all rather than per-directory ownership that would all resolve to the
+# same person anyway.
+#
+# The branch ruleset does not require code-owner review today -- it requires a
+# pull request and a green CI run. This file is what makes that a cheap switch
+# to flip later, and what gets a review request attached in the meantime.
+
+* @jeremy-m-mcgee
