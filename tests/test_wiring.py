@@ -43,6 +43,62 @@ def options(directory, **selection):
     return RunOptions(screenshots=directory, selection=chosen)
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+class TestB1sUnresolvedPeopleReachThePipeline:
+    """The one line that joins B1's escalations to the run.
+
+    `ExtractionResult.escalations` existed from the start and had no caller,
+    which is precisely how people a screenshot named ended up in a panel on the
+    results page and nowhere else -- not in the manifest, not in D1's payload,
+    not in the run row's count. A method with no caller is the shape of this
+    bug, so the call is pinned rather than assumed.
+    """
+
+    def _options(self, tmp_path):
+        return RunOptions(
+            ledger=tmp_path / "ledger",
+            snapshot=tmp_path / "snap.json",
+            recipients=FIXTURES / "roster-sf-dc.yaml",
+            quotes=FIXTURES / "shippo-quotes-sf-dc.json",
+            validations=FIXTURES / "shippo-addresses.json",
+            offline=True,
+        )
+
+    def test_plan_with_carries_them_into_the_result(self, tmp_path, monkeypatch):
+        from bbq_shipment_agent.recipients import ExtractionResult, Unresolved
+        from bbq_shipment_agent.recipients.record import Provenance
+
+        jules = Unresolved(
+            name="jules_g",
+            provenance=Provenance(source_image="07-whatsapp-group.png"),
+            note="said 'my place' and never gave an address",
+        )
+        real = wiring.build_roster
+
+        def with_an_unresolved_person(options, run, images, progress):
+            roster, _ = real(options, run, images, progress)
+            return roster, ExtractionResult(
+                recipients=roster.recipients, unresolved=(jules,)
+            )
+
+        monkeypatch.setattr(wiring, "build_roster", with_an_unresolved_person)
+        chosen = self._options(tmp_path)
+        context = wiring.plan_with(open_run(chosen), chosen)
+
+        # The key is slugified from the name, the same convention the roster
+        # uses, so an escalation joins to a person rather than to a display
+        # string.
+        assert "jules-g" in [e.recipient_key for e in context.result.escalated]
+        assert "jules-g" in [e.recipient_key for e in context.result.manifest.escalated]
+        # And the note travels, because chasing them needs what B1 read.
+        reason = next(
+            e.reason for e in context.result.escalated if e.recipient_key == "jules-g"
+        )
+        assert "my place" in reason
+
+
 class TestReadingTheWholeDirectory:
     def test_no_selection_reads_everything(self, images):
         assert len(resolve_screenshots(options(images))) == 7

@@ -519,7 +519,9 @@ def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) 
         roster.ship_dates,
         ledger_root=args.ledger,
         quoter=quoter(options),
-        escalated=result.validation.escalated,
+        # The run's whole escalation list, the same one the planned manifest
+        # carried -- B2's, B3's where it repaired, and B1's unresolved people.
+        escalated=result.escalated,
         suppressed=result.suppression.suppressed,
         advisories=result.validation.advisories(),
     )

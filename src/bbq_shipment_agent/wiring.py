@@ -790,5 +790,12 @@ def plan_with(
         screenshots=options.screenshots,
         verifier=verifier(options, verification),
         extra_reasons=context.extra_reasons,
+        # B1's unresolved people, carried into the run's one escalation list.
+        # `ExtractionResult.escalations` was written for this and had no
+        # caller, which is exactly how they went missing from D1's payload,
+        # the narration and the run row's count.
+        extraction_escalations=(
+            extraction.escalations() if extraction is not None else ()
+        ),
     )
     return context

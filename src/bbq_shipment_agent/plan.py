@@ -149,15 +149,23 @@ class PlanResult:
     #: it ran and when it was never asked -- the two cases are told apart by
     #: `repair`, and neither is a failure. See the handler in `plan_run`.
     repair_unavailable: str | None = None
+    #: B1's: named in a screenshot, no usable address, so they never reached
+    #: B2 at all. Held separately because they are produced before phase B and
+    #: neither `validation` nor `repair` can account for them.
+    extraction_escalated: tuple[Excluded, ...] = ()
 
     @property
     def escalated(self) -> tuple[Excluded, ...]:
         """Who needs a human. B3's list when it ran and was applied, B2's
         otherwise -- including in shadow, where the repairs were computed and
-        deliberately not used."""
+        deliberately not used -- plus B1's, who never reached either.
+
+        One list, because "who did not get a packet, and why" is one question.
+        It used to be answerable only by reading two panels on the results page
+        and knowing that the higher one was not counted anywhere."""
         if self.repair is not None and self.applied_repairs:
-            return self.repair.escalated
-        return self.validation.escalated
+            return self.repair.escalated + self.extraction_escalated
+        return self.validation.escalated + self.extraction_escalated
 
     @property
     def applied_repairs(self) -> bool:
@@ -180,6 +188,7 @@ def plan_run(
     screenshots: Path | str | None = None,
     verifier: ModelClient | None = None,
     extra_reasons: dict[str, Any] | None = None,
+    extraction_escalations: tuple[Excluded, ...] = (),
 ) -> PlanResult:
     """B2 through C6 against an already-initialized run.
 
@@ -191,6 +200,14 @@ def plan_run(
     The validator is only constructed by the caller when it will be used --
     `validation-mode` decides that, and it is evaluated off the run rather than
     passed in, so the flag cannot be bypassed here.
+
+    `extraction_escalations` is B1's: people a screenshot named who gave no
+    usable address. They never reach B2, so nothing downstream knew about them
+    -- D1's completeness check compared the people who got *past* extraction
+    against themselves, and the narrator, asked where they had gone, correctly
+    answered that it had no record of them. They are escalations by design 4's
+    own definition (a human chases them, the run does not drop them), so they
+    join B2's and B3's rather than living in a panel of their own.
     """
     # Capabilities are evaluated live here, each under its own stage context.
     # All three up front so the fingerprint the manifest and the run row carry
@@ -284,6 +301,10 @@ def plan_run(
         model=model,
     )
 
+    # One escalation list, whoever produced it. B1's people are added last so
+    # the order reads B2, B3, then the ones who never reached either.
+    escalated = tuple(escalated) + tuple(extraction_escalations)
+
     manifest: Manifest | None = None
     reason: str | None = None
     try:
@@ -311,6 +332,7 @@ def plan_run(
         mode,
         extra_reasons,
         repair_unavailable=repair_unavailable,
+        escalated=escalated,
     )
 
     # D1 runs only when there is something to verify. A missing manifest is
@@ -323,7 +345,13 @@ def plan_run(
             manifest,
             ledger_root=ledger_root,
             model=verifier or _NoModel(),
-            input_recipients=tuple(r.key for r in roster.recipients),
+            # Everyone the run was asked about, not everyone who survived B1.
+            # Design 4's first check is that each input recipient lands in
+            # exactly one bucket; with B1's unresolved people missing from
+            # both sides it was checking the survivors against themselves and
+            # reporting clean.
+            input_recipients=tuple(r.key for r in roster.recipients)
+            + tuple(e.recipient_key for e in extraction_escalations),
         )
 
     return PlanResult(
@@ -338,6 +366,7 @@ def plan_run(
         reason=reason,
         verification=verification,
         repair_unavailable=repair_unavailable,
+        extraction_escalated=tuple(extraction_escalations),
     )
 
 
@@ -353,6 +382,11 @@ def _record_planning(
     extra_reasons: dict[str, Any] | None = None,
     *,
     repair_unavailable: str | None = None,
+    #: The list that reached the manifest -- B2's, or B3's where it repaired,
+    #: plus B1's unresolved people. The row used to count `validation.escalated`
+    #: alone, which is neither what the manifest says nor what a human has to
+    #: chase.
+    escalated: tuple[Excluded, ...] = (),
 ) -> None:
     """Append what planning learned to the run row opened at A1.
 
@@ -409,7 +443,7 @@ def _record_planning(
             carrier_pair=list(manifest.carriers) if manifest else None,
             total_cost=manifest.total_cost if manifest else None,
             suppressed_count=len(suppression.suppressed),
-            escalated_count=len(validation.escalated),
+            escalated_count=len(escalated),
             stranded_count=len(manifest.stranded) if manifest else None,
             evaluation_reasons=reasons,
         )

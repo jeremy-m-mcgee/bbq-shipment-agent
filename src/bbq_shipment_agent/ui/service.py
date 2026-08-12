@@ -404,7 +404,10 @@ def _park_for_review(job: RunJob, context: Any) -> None:
         context.roster.ship_dates,
         ledger_root=job.options.ledger,
         quoter=quoter(job.options),
-        escalated=result.validation.escalated,
+        # `result.escalated`, not B2's alone: the review re-assembles the
+        # manifest on every edit, so anything the planned manifest carried and
+        # this does not disappears the moment the operator touches anything.
+        escalated=result.escalated,
         suppressed=result.suppression.suppressed,
         advisories=result.validation.advisories(),
     )
