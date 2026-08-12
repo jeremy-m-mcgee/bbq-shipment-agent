@@ -253,6 +253,19 @@ _CREDENTIALS = (
 )
 
 
+#: How to get `.env` into the process, per install. Both are named rather than
+#: detected: `UV_ENV_FILE` is a uv setting and nothing in this package reads
+#: `.env` for itself, so on a pip or poetry install the uv line changes nothing
+#: -- the operator follows it, sees the same warning, and has no next step.
+#: `VIRTUAL_ENV` cannot tell you which tool built the venv, so a guess here
+#: would be wrong more often than saying both. Used by the launch banner and the
+#: page banner, which are one operator's journey and must not drift apart.
+ENV_FILE_REMEDIES: tuple[tuple[str, str], ...] = (
+    ("uv", "UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui"),
+    ("pip / poetry", "set -a; source .env; set +a   # then start the server again"),
+)
+
+
 def missing_credentials(options: RunOptions) -> dict[str, tuple[str, ...]]:
     """Live paths this run may take that have no key to take them with.
 
