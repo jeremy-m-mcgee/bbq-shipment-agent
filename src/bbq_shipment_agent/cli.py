@@ -520,6 +520,7 @@ def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) 
         quoter=quoter(options),
         escalated=result.validation.escalated,
         suppressed=result.suppression.suppressed,
+        advisories=result.validation.advisories(),
     )
 
     narrator = None

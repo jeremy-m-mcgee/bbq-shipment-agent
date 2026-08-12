@@ -13,17 +13,39 @@
      data-review-terminal="{{ r.terminal }}"
      style="padding:14px{% if r.terminal != 'rejected' %};border-left-color:var(--good){% endif %}">
   {% if r.terminal == 'approved' %}
-    <b>Approved.</b> The manifest was written to the ledger. The operator buys
-    the labels from it by hand.
+    <b>Approved.</b> The manifest below was written to the ledger. The operator
+    buys the labels from it by hand.
   {% elif r.terminal == 'approved_with_exclusions' %}
-    <b>Approved with exclusions.</b> The manifest was written to the ledger;
-    the excluded recipients below were not shipped.
+    <b>Approved with exclusions.</b> The manifest below was written to the
+    ledger; the excluded recipients were not shipped.
   {% elif r.terminal == 'abandoned' %}
     <b>Review abandoned.</b> Nothing was recorded. Start a new run to plan again.
   {% else %}
-    <b>Rejected.</b> No shipment rows were written.
+    <b>Rejected.</b> No shipment rows were written. The plan is kept below for
+    the record.
   {% endif %}
 </div>
+
+{# The approved plan *is* the deliverable -- design 1 ends the pipeline at
+   recording it, and the operator buys labels from this table by hand. So a
+   terminal state keeps the manifest and the excluded list and drops only the
+   controls, rather than replacing the whole pane with a sentence. #}
+{% if r.manifest %}
+{% set m = r.manifest %}
+<h3 style="font-size:15px;margin-bottom:6px">
+  {{ 'The approved manifest' if r.terminal.startswith('approved') else 'The plan as it stood' }}
+</h3>
+{% include "_manifest.html" %}
+{% endif %}
+
+{% if r.excluded %}
+<p style="margin:14px 0 4px"><b>Excluded during review</b>
+  <span class="dim">&mdash; not shipped, and not written to the ledger as shipments</span></p>
+<table>{% for e in r.excluded %}
+  <tr><td><b>{{ e.name }}</b></td><td class="dim">{{ e.reason }}</td></tr>
+{% endfor %}</table>
+{% endif %}
+
 {% else %}
 
 <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
@@ -77,8 +99,36 @@
   {% endif %}
 </div>
 {% elif r.last_action and r.last_action.outcome == 'unchanged' %}
-<div class="notice" style="padding:10px">
-  <span class="good">Applied.</span> {{ r.last_action.describe }}
+{# `describe` already opens with "Applied.", so the pane states the outcome
+   with the tick and lets the sentence speak once. #}
+<div class="notice" style="padding:10px;border-left-color:var(--good)">
+  <b class="good">Applied.</b> {{ r.last_action.edit }} &mdash; the carrier set did not move.
+  {# The total *and* what it moved from. A bare delta says how far without
+     saying from where; an unmoved total is worth stating as unmoved rather
+     than as "+0.00", which reads like a rounding artefact. #}
+  {% if r.last_action.cost_after is not none %}
+    {% if r.last_action.cost_delta %}
+    Run total ${{ '%.2f'|format(r.last_action.cost_before) }} &rarr;
+    <b>${{ '%.2f'|format(r.last_action.cost_after) }}</b>
+    <span class="{% if r.last_action.cost_delta > 0 %}warn{% else %}good{% endif %}">
+      ({{ '%+.2f'|format(r.last_action.cost_delta) }})</span>.
+    {% else %}
+    Run total unchanged at <b>${{ '%.2f'|format(r.last_action.cost_after) }}</b>.
+    {% endif %}
+  {% endif %}
+  {# The rows that moved, spelled out. One pin can change a recipient's
+     carrier, service, gel pack count and cost at once, and the re-rendered
+     table below states none of it -- design 4 asks for the delta on the row. #}
+  {% if r.last_action.row_changes %}
+  <div style="margin-top:6px">
+    {% for change in r.last_action.row_changes %}
+    <div style="font-size:13px">{{ change }}</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="dim" style="font-size:13px;margin-top:4px">No shipment's
+    carrier, service, date, box, gel pack count or cost changed.</div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -91,6 +141,14 @@
   {% if r.pending.newly_stranded %}
   <div class="dim" style="margin-top:6px">Newly stranded:
     {{ r.pending.newly_stranded|join(', ') }}.</div>
+  {% endif %}
+  {% if r.pending.row_changes %}
+  <div style="margin-top:6px">
+    <div class="dim" style="font-size:12px">What it would change, row by row:</div>
+    {% for change in r.pending.row_changes %}
+    <div style="font-size:13px">{{ change }}</div>
+    {% endfor %}
+  </div>
   {% endif %}
   <div style="margin-top:10px;display:flex;gap:8px">
     <form data-review action="/runs/{{ job.id }}/review/confirm"><button type="submit">Confirm</button></form>

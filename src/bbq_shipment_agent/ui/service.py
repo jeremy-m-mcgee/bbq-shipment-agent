@@ -406,6 +406,7 @@ def _park_for_review(job: RunJob, context: Any) -> None:
         quoter=quoter(job.options),
         escalated=result.validation.escalated,
         suppressed=result.suppression.suppressed,
+        advisories=result.validation.advisories(),
     )
 
     narrator = None
