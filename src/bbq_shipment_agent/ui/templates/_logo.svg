@@ -1,0 +1,29 @@
+{#
+  The ShipnoToad mark, inlined into the page rather than served as a file.
+
+  This is the *mono* variant from docs/logos/. Inlined, `currentColor` picks up
+  whatever the header sets, so one file covers both the light and dark palettes
+  at the top of base.html. The full-colour badge would need two variants -- the
+  kit lists separate on-dark values -- and as an <img> the mono one renders
+  black, because currentColor only resolves in the DOM.
+
+  Deliberately no width/height: the viewBox scales and `.mark` sizes it, so a
+  second use at a different size does not need a second copy.
+
+  Inlining is also what keeps the UI free of a static mount. Design 10 gives
+  the app one file-serving route, keyed on an exact filename from a globbed
+  dict, never `dir / name`; a StaticFiles mount for one logo would be exactly
+  the shape that rule exists to refuse.
+#}
+<svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"
+     role="img" aria-label="ShipnoToad" fill="currentColor">
+  <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2.5"></circle>
+  <g transform="rotate(-20 32 34)">
+    <ellipse cx="32" cy="34" rx="26" ry="10" fill="none" stroke="currentColor" stroke-width="2.5"></ellipse>
+    <rect x="53" y="31.2" width="7.5" height="5.2" rx="2.6" fill="currentColor"></rect>
+  </g>
+  <rect x="16.5" y="20.5" width="31" height="28" rx="6.5" fill="none" stroke="currentColor" stroke-width="3"></rect>
+  <circle cx="26" cy="34.2" r="2.8" fill="currentColor"></circle>
+  <circle cx="38" cy="34.2" r="2.8" fill="currentColor"></circle>
+  <rect x="21.5" y="40" width="21" height="3" rx="1.5" fill="currentColor"></rect>
+</svg>
