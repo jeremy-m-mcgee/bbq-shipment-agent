@@ -1,4 +1,8 @@
 .venv/
+# uv.lock is the committed lock. A pip or poetry install resolves its own
+# versions and must not leave a second one behind claiming to be authoritative.
+poetry.lock
+*.egg-info/
 *.db
 *.sqlite
 # derived cache, rebuildable from ledger/*.jsonl at any time
