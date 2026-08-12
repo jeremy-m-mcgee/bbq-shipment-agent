@@ -260,10 +260,19 @@ def create_app(
 
         The page is easier to read and this is easier to keep. Both come from
         the same `render`, so they cannot disagree.
+
+        A parked review is served *its* manifest, not the run row's: an edit
+        re-solves, and a text export still showing the planned carriers after
+        the operator moved someone to Saturday describes a plan nobody
+        approved.
         """
         job = runs.get(job_id)
         if job is None or not job.view:
             raise HTTPException(status_code=404, detail="no manifest")
+        if job.review is not None:
+            edited = review_view(job.review)["manifest_text"]
+            if edited:
+                return edited
         return job.view["manifest_text"] or "no manifest"
 
     @app.get("/runs/{job_id}/state")

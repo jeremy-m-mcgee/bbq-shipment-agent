@@ -159,9 +159,6 @@
 {% elif m %}
 <h2>Manifest</h2>
 {% include "_manifest.html" %}
-
-<p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
-  <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes</span></p>
 {% elif view.outcome == 'extracted' %}
 <h2>Extraction &mdash; B1 only, nothing downstream ran</h2>
 <div class="panel">
@@ -219,6 +216,17 @@
   <p class="dim">No carrier subset produced a plan at all.</p>
   {% endif %}
 </div>
+{% endif %}
+
+{# Outside the branch above, and deliberately. The manifest link used to live
+   inside the `elif m` arm, which never renders once a review exists -- so on
+   every covering run, the one run that has a manifest, nothing on the page
+   linked to it. It stays put across pane swaps, and the route serves the
+   review's manifest rather than the planned one when they differ. #}
+{% if m or (review and review.manifest) %}
+<p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
+  <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes{% if review %},
+    as the plan stands now{% endif %}</span></p>
 {% endif %}
 
 {% if view.verification %}

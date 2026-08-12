@@ -113,6 +113,31 @@ class Edit:
 
 
 @dataclass(frozen=True)
+class RowChange:
+    """One shipment's assignment before and after an edit, field by field.
+
+    Design 4 asks an unchanged-pair edit to "show the delta on the affected
+    row", and a re-solve is free to move more than the field that was edited:
+    pinning one recipient to a Saturday changed that person's carrier, service,
+    gel pack count and cost at once. A re-rendered table states none of that,
+    and diffing two manifests from memory is the comparison design 2 says
+    humans do badly.
+
+    Computed from the two solves rather than inferred from the edit kind — the
+    same reasoning `propose` uses for the classification itself.
+    """
+
+    recipient_key: str
+    name: str
+    #: (field, before, after), already formatted for reading.
+    changes: tuple[tuple[str, str, str], ...]
+
+    def describe(self) -> str:
+        moves = ", ".join(f"{field} {before} → {after}" for field, before, after in self.changes)
+        return f"{self.name}: {moves}"
+
+
+@dataclass(frozen=True)
 class EditResult:
     """What a proposed edit would do, and whether it has been applied."""
 
@@ -128,6 +153,9 @@ class EditResult:
     cost_after: float | None = None
     #: Recipients newly stranded by the edit.
     newly_stranded: tuple[str, ...] = ()
+    #: Per-shipment moves the re-solve produced. Empty on a refusal, which
+    #: changed nothing.
+    row_changes: tuple[RowChange, ...] = ()
 
     @property
     def applied(self) -> bool:
@@ -152,22 +180,88 @@ class EditResult:
                 else " No ship date in this run works for that shipment."
             )
             return f"Refused. {self.refusal}{offer}"
-        # The cost delta is None when the edit leaves no covering plan -- an
-        # exclusion that empties the run is the clear case, and `cost_after` is
-        # then None. Say so rather than formatting None into a float.
-        cost = (
-            f"{self.cost_delta:+.2f} overall"
-            if self.cost_delta is not None
-            else "no covering plan after this"
-        )
         if self.outcome is EditOutcome.PAIR_MOVED:
             after = "+".join(self.carriers_after) or "(none)"
             return (
                 f"This changes the carrier set for the whole run: "
                 f"{'+'.join(self.carriers_before)} -> {after}, "
-                f"{cost}. Confirm before it is applied."
+                f"{self.cost_sentence}. Confirm before it is applied."
             )
-        return f"Applied. {cost}."
+        return f"Applied. {self.cost_sentence}.{self._rows_sentence()}"
+
+    @property
+    def cost_sentence(self) -> str:
+        """The run total, with the number it moved from.
+
+        A bare delta says how far without saying from where, and "+58.17" beside
+        a manifest of dollar amounts reads as a unit change. Three cases rather
+        than two: an edit can also give coverage *back* to a run that had none,
+        and reporting that as "no covering plan after this" would be exactly
+        backwards.
+        """
+        if self.cost_after is None:
+            return "no covering plan after this"
+        if self.cost_before is None:
+            return f"run total ${self.cost_after:.2f}, where there was no covering plan"
+        return (
+            f"run total ${self.cost_before:.2f} → ${self.cost_after:.2f} "
+            f"({self.cost_delta:+.2f})"
+        )
+
+    def _rows_sentence(self, limit: int = 3) -> str:
+        """The per-row moves, capped so one line stays one line.
+
+        Capped rather than dropped: a pair move can rewrite every row, and a
+        sentence listing twenty of them is not read. What is above the cap is
+        counted, because a silent truncation reads as "that was all of it".
+        """
+        if not self.row_changes:
+            return ""
+        shown = "; ".join(change.describe() for change in self.row_changes[:limit])
+        rest = len(self.row_changes) - limit
+        more = f"; and {rest} more row(s)" if rest > 0 else ""
+        return f" {shown}{more}."
+
+
+def row_changes(before: Any, after: Any) -> tuple[RowChange, ...]:
+    """Field-by-field moves between two carrier plans, keyed on the recipient.
+
+    Only shipments present in both are compared. One that leaves the plan is
+    either an exclusion (already named in the excluded list) or newly stranded
+    (already named on the result), and reporting it a third time as a "change"
+    would say the same thing in a weaker way.
+    """
+    if before is None or after is None:
+        return ()
+
+    def by_key(plan: Any) -> dict[str, Any]:
+        return {a.shipment.recipient_key: a for a in plan.assignments}
+
+    old, new = by_key(before), by_key(after)
+    changed: list[RowChange] = []
+    for key, new_assignment in new.items():
+        old_assignment = old.get(key)
+        if old_assignment is None:
+            continue
+        a, b = old_assignment.evaluated.configuration, new_assignment.evaluated.configuration
+        fields = (
+            ("ship date", a.ship_date.isoformat(), b.ship_date.isoformat()),
+            ("carrier", a.carrier, b.carrier),
+            ("service", a.service_name, b.service_name),
+            ("box", a.box_size.value, b.box_size.value),
+            ("gel", str(a.gel_packs), str(b.gel_packs)),
+            ("cost", f"${a.cost:.2f}", f"${b.cost:.2f}"),
+        )
+        moves = tuple((name, was, now) for name, was, now in fields if was != now)
+        if moves:
+            changed.append(
+                RowChange(
+                    recipient_key=key,
+                    name=new_assignment.shipment.name,
+                    changes=moves,
+                )
+            )
+    return tuple(sorted(changed, key=lambda c: c.name))
 
 
 class TerminalState(StrEnum):
@@ -198,6 +292,7 @@ class ReviewSession:
         thermal_model: ThermalModel | None = None,
         escalated: tuple[Excluded, ...] = (),
         suppressed: tuple[Excluded, ...] = (),
+        advisories: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         self.run = run
         self.origin = origin
@@ -207,6 +302,12 @@ class ReviewSession:
         self._model = thermal_model
         self._escalated = escalated
         self._shipments = shipments
+        # B2's free-text notes on addresses it classified CLEAN. A fact about
+        # the address, not about the solve, so they survive every re-solve
+        # unchanged -- and without carrying them the review pane, which is the
+        # only manifest the web UI renders on a covering run, silently drops
+        # what design 10 decided to show against the row.
+        self._advisories = dict(advisories or {})
         # Seeded with B4's suppressions, so an exclusion made during the
         # review joins the same list rather than starting a second one.
         self._excluded: list[Excluded] = list(suppressed)
@@ -248,6 +349,7 @@ class ReviewSession:
                 suppressed=tuple(self._excluded),
                 escalated=self._escalated,
                 cap_fingerprint=self.run.cap_fingerprint,
+                advisories=self._advisories,
             )
         except ValueError:
             # No covering subset. The session stays usable so the operator can
@@ -301,6 +403,10 @@ class ReviewSession:
             cost_before=self.total_cost,
             cost_after=after_cost,
             newly_stranded=newly_stranded,
+            # Computed against the solve that is about to be committed, so a
+            # pair move carries its row moves into the confirmation banner
+            # rather than only after the operator has agreed to them.
+            row_changes=row_changes(self.solve.best, after),
         )
 
         if moved:

@@ -874,6 +874,45 @@ class TestTheReviewIsButtonDrivenOffline:
         )
         assert again.status_code == 303
 
+    def test_approving_keeps_the_approved_manifest_on_the_page(self, client):
+        """The approved plan is the deliverable (design 1), so it stays put.
+
+        The terminal branch used to replace the whole pane with a one-line
+        notice, so the moment of approval was the moment the manifest -- the
+        thing the operator buys labels from -- left the screen."""
+        job_id = _park(client)
+        client.post(f"/runs/{job_id}/review/approve")
+        page = client.get(f"/runs/{job_id}")
+        assert "Approved" in page.text
+        assert "Ana Ruiz" in page.text
+        assert "1600 Pennsylvania Ave NW" in page.text
+
+    def test_the_approved_page_still_links_the_plain_text_manifest(self, client):
+        job_id = _park(client)
+        client.post(f"/runs/{job_id}/review/approve")
+        page = client.get(f"/runs/{job_id}")
+        assert f"/runs/{job_id}/manifest.txt" in page.text
+
+    def test_a_parked_review_links_the_plain_text_manifest(self, client):
+        # The link lived in the `elif m` arm, which never renders once a review
+        # exists -- so on every covering run nothing on the page linked to it.
+        job_id = _park(client)
+        page = client.get(f"/runs/{job_id}")
+        assert f"/runs/{job_id}/manifest.txt" in page.text
+        assert client.get(f"/runs/{job_id}/manifest.txt").status_code == 200
+
+    def test_the_text_manifest_is_the_reviews_not_the_planned_one(self, client):
+        # A pin that re-solves must reach the export; the run row's copy was
+        # rendered at plan time and cannot describe a plan the operator edited.
+        job_id = _park(client)
+        client.post(
+            f"/runs/{job_id}/review/edit",
+            data={"kind": "ship_date", "recipient_key": "ana", "ship_date": "2026-08-17"},
+        )
+        text = client.get(f"/runs/{job_id}/manifest.txt").text
+        assert "Ana Ruiz" in text
+        assert "2026-08-17" in text or "17 Aug" in text
+
     def test_reject_records_the_run_but_writes_no_shipments(self, client, workspace):
         job_id = _park(client)
         response = client.post(f"/runs/{job_id}/review/reject", data={"reason": "nope"})

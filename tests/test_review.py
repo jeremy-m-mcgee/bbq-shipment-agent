@@ -96,6 +96,123 @@ def session(tmp_path):
     )
 
 
+class _ButtonDrivenReview:
+    """The shape `review_view` reads: a session, and no narrator.
+
+    The UI's controller offline, minus the worker thread — enough to render the
+    pane from a session built here, without a server or a model.
+    """
+
+    def __init__(self, session):
+        self.session = session
+        self.narrator = None
+        self.narrator_available = False
+        self.abandoned = False
+
+
+@pytest.fixture
+def advised(tmp_path):
+    """The same session, with B2 advisories on one of the two addresses."""
+    (tmp_path / "recipients.yaml").write_text(ROSTER, encoding="utf-8")
+    roster = load_roster(tmp_path / "recipients.yaml")
+    run = _open_run(tmp_path, packet_count=roster.packet_count)
+    return ReviewSession(
+        run,
+        to_shipments(roster.recipients),
+        roster.origin,
+        roster.ship_dates,
+        ledger_root=tmp_path / "ledger",
+        quoter=RecordedQuoter.from_file(QUOTES),
+        advisories={"ana": ("Check the suite number before using this address.",)},
+    )
+
+
+class TestValidatorAdvisories:
+    """Design 10: the validator's notes on a CLEAN address ride the manifest.
+
+    The review session re-assembles the manifest on every solve, so an
+    advisory that is not carried into the session is dropped from the only
+    manifest the web UI renders on a covering run -- which is what happened,
+    silently, until the session took them.
+    """
+
+    def test_they_reach_the_manifest_the_review_renders(self, advised):
+        assert "Check the suite number" in advised.manifest.advisories["ana"][0]
+
+    def test_they_survive_a_re_solve(self, advised):
+        advised.propose(Edit(EditKind.SHIP_DATE, "ana", ship_date=TUESDAY))
+        # A fact about the address, not about the solve: an edit cannot make
+        # the validator's note untrue, so it must not make it disappear.
+        assert "ana" in advised.manifest.advisories
+
+    def test_a_session_given_none_carries_none(self, session):
+        assert session.manifest.advisories == {}
+
+    def test_they_reach_the_pane_against_the_named_row(self, advised):
+        """The seam the bug lived in: session -> view -> `_manifest.html`.
+
+        The template renders `m.advisories[row.name]` and always has; what it
+        was handed on a covering run was an empty dict, because the review
+        session re-assembled the manifest without them.
+        """
+        from bbq_shipment_agent.ui.view import review_view
+
+        view = review_view(_ButtonDrivenReview(advised))
+        assert view["manifest"]["advisories"]["Ana Ruiz"]
+
+
+class TestTheDeltaOnTheAffectedRow:
+    """Design 4: an applied edit shows what moved, row by row.
+
+    A re-solve is free to change more than the field that was edited -- pinning
+    one recipient to a Saturday moved that row's carrier, service, gel pack
+    count and cost at once -- and a re-rendered table states none of it.
+    """
+
+    def _rows(self, session):
+        return {
+            row.recipient_key: (row.ship_date, row.carrier, row.service, row.cost)
+            for row in session.manifest.rows
+        }
+
+    def test_the_rows_it_names_are_exactly_the_rows_that_moved(self, session):
+        before = self._rows(session)
+        result = session.propose(Edit(EditKind.SHIP_DATE, "ana", ship_date=TUESDAY))
+        after = self._rows(session)
+        moved = {key for key in before if before[key] != after[key]}
+        assert {change.recipient_key for change in result.row_changes} == moved
+
+    def test_a_carrier_move_is_named_before_it_is_confirmed(self, session):
+        # The pending banner is where the operator decides, so the row moves
+        # have to be on the result that is proposed, not only on the applied one.
+        result = session.propose(Edit(EditKind.SHIP_DATE, "ana", ship_date=SATURDAY))
+        assert result.outcome is EditOutcome.PAIR_MOVED
+        assert result.row_changes
+        fields = {field for change in result.row_changes for field, _, _ in change.changes}
+        assert "carrier" in fields
+
+    def test_a_refused_edit_moved_nothing_and_says_so(self, session):
+        result = EditResult(
+            edit=Edit(EditKind.SHIP_DATE, "ana", ship_date=TUESDAY),
+            outcome=EditOutcome.REFUSED,
+            refusal="arrival above 4.4C",
+        )
+        assert result.row_changes == ()
+
+    def test_the_sentence_says_applied_once_and_names_both_totals(self, session):
+        result = session.propose(Edit(EditKind.SHIP_DATE, "ana", ship_date=TUESDAY))
+        sentence = result.describe()
+        # The pane used to print its own "Applied." in front of this one.
+        assert sentence.count("Applied") == 1
+        assert f"${result.cost_before:.2f}" in sentence
+        assert f"${result.cost_after:.2f}" in sentence
+
+    def test_an_edit_that_leaves_no_plan_still_reads(self, session):
+        session.propose(Edit(EditKind.EXCLUDE, "bea"))
+        result = session.propose(Edit(EditKind.EXCLUDE, "ana"))
+        assert "no covering plan after this" in result.describe()
+
+
 class TestOpening:
     def test_it_starts_from_a_solved_manifest(self, session):
         assert session.manifest is not None

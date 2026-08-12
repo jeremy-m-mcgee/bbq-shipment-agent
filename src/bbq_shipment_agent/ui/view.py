@@ -242,6 +242,12 @@ def review_view(controller: Any) -> dict[str, Any]:
     narrator = controller.narrator
     turns = list(narrator.turns) if narrator is not None else []
 
+    def moves(result: Any) -> list[str]:
+        """The per-row deltas as sentences. Design 4's "delta on the affected
+        row" — kept out of `_manifest.html`, which the read-only run page shares
+        and which has no notion of a previous solve to compare against."""
+        return [change.describe() for change in result.row_changes]
+
     pending = None
     if session.pending is not None:
         # The held-back result is the most recent pair-moved edit; its own
@@ -255,6 +261,7 @@ def review_view(controller: Any) -> dict[str, Any]:
                     "carriers_after": list(r.carriers_after),
                     "cost_delta": r.cost_delta,
                     "newly_stranded": list(r.newly_stranded),
+                    "row_changes": moves(r),
                 }
                 break
 
@@ -269,10 +276,20 @@ def review_view(controller: Any) -> dict[str, Any]:
             # operator's to override, so the alternatives are the way forward.
             "refusal": last.refusal,
             "alternatives": [d.isoformat() for d in last.alternatives],
+            # What moved, per row. A re-solve is free to change more than the
+            # field that was edited, and the re-rendered table says none of it.
+            "row_changes": moves(last),
+            "cost_before": last.cost_before,
+            "cost_after": last.cost_after,
+            "cost_delta": last.cost_delta,
         }
 
     return {
         "manifest": _manifest(session.manifest) if session.manifest is not None else None,
+        # The plan as it stands, in the bytes `run plan --out` writes. The run
+        # row's copy is the *planned* manifest and goes stale the moment an edit
+        # re-solves, so `manifest.txt` reads this one whenever a review exists.
+        "manifest_text": render(session.manifest) if session.manifest is not None else "",
         # None when the operator has edited away every covering subset. The pane
         # stays usable so they can edit back to a plan or reject.
         "no_coverage": session.manifest is None,
