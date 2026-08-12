@@ -14,16 +14,22 @@ origin:
   state: CA
   zip: "94117"
 
-# Candidate ship dates. Optional — omit and the run uses the next Saturday,
-# Monday and Tuesday. Set them explicitly for a run you want to reproduce
-# later, since the default moves with the calendar.
+# Candidate ship dates. Optional, and deliberately left unset here: with no
+# `ship_dates` the run takes the next Saturday, Monday and Tuesday off the
+# calendar, so a copy of this template made a year from now still plans a run
+# in the future. A committed template that names dates goes stale on its own.
+#
+# Uncomment and set them for a run you want to reproduce later, since the
+# default moves with the calendar and the CLI prints whichever set it used
+# either way.
 #
 # Saturday, Monday and Tuesday only (design 3). Any other weekday is refused
 # by name rather than silently skipped.
-ship_dates:
-  - 2026-08-15   # Saturday
-  - 2026-08-17   # Monday
-  - 2026-08-18   # Tuesday
+#
+# ship_dates:
+#   - 2026-08-15   # Saturday
+#   - 2026-08-17   # Monday
+#   - 2026-08-18   # Tuesday
 
 # Ambient assumptions, referenced by key from a recipient below. Optional;
 # anything without a lane gets the default 22C. Design 5 keeps ambient a
