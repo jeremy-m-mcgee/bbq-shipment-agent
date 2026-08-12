@@ -354,9 +354,15 @@ def _review_narrator_tools(session: Any = None, **_: Any) -> tuple[Tool, ...]:
                 "problem": "no carrier subset covers the run as currently edited",
                 "infeasible": list(session.solve.infeasible),
             }
+        # Everyone the run was asked about, not only those still on the plan.
+        # Handing the narrator an `input_recipients` that its own `escalated`
+        # list overflows is how it ends up saying "all 8 input recipients are
+        # in the eligible set" on a manifest that names nine people -- true of
+        # the field, and not an answer to the question the operator asked.
         return manifest_payload(
             session.manifest,
-            tuple(s.recipient_key for s in session.shipments),
+            tuple(s.recipient_key for s in session.shipments)
+            + tuple(e.recipient_key for e in session.manifest.escalated),
         )
 
     def propose_edit(

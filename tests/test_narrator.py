@@ -70,6 +70,41 @@ def narrator(session, tmp_path, model):
     return Narrator(run, review, ledger_root=tmp_path / "ledger", model=model)
 
 
+class TestWhatReadManifestHandsTheNarrator:
+    """`input_recipients` has to span everyone the run was asked about.
+
+    Handed only the people still on the plan, the narrator answered a live
+    question about a missing recipient with "all 8 input recipients are in the
+    eligible set" — true of the field it was given, and not an answer to what
+    was asked, on a manifest that named nine people.
+    """
+
+    def test_it_spans_the_escalated_as_well_as_the_eligible(self, session, tmp_path):
+        from bbq_shipment_agent.agents.tools import build_tools
+        from bbq_shipment_agent.planning import Excluded
+
+        run, review = session
+        review._escalated = (
+            Excluded(
+                recipient_key="jules-g",
+                name="jules_g",
+                reason="no usable address in the source image: said 'my place'",
+            ),
+        )
+        review.manifest = review._manifest(review.solve)
+
+        tools = build_tools("review-narrator", session=review)
+        read = next(t for t in tools if t.name == "read_manifest")
+        payload = read.run()
+
+        assert "jules-g" in payload["input_recipients"]
+        assert "jules-g" in [e["recipient_key"] for e in payload["escalated"]]
+        # The invariant that failed live: nobody escalated is outside the set
+        # the narrator is told the run began with.
+        escalated = {e["recipient_key"] for e in payload["escalated"]}
+        assert escalated <= set(payload["input_recipients"])
+
+
 class TestTheToolLoop:
     def test_a_reply_with_no_tool_calls_ends_the_turn(self, session, tmp_path):
         model = ScriptedModel(Completion(text="here is the plan"))
