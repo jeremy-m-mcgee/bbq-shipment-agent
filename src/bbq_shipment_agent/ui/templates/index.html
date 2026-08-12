@@ -9,12 +9,43 @@
     <li><code>{{ key }}</code> — needed by {{ stages|join(', ') }}</li>
     {% endfor %}
   </ul>
-  If they are in <code>.env</code>, the process did not load it: <code>uv run</code>
-  reads that file only when <code>UV_ENV_FILE</code> points at it, which the
-  devcontainer sets and a plain shell may not. Stop the server and restart with
-  <code>UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui</code>.
+  {# Two remedies, not one. `UV_ENV_FILE` is a uv setting and nothing in this
+     package reads `.env` for itself, so on a pip or poetry install the uv line
+     changes nothing: the operator follows it, sees this banner again, and has
+     no next step. Naming both beats guessing which install this is -- see the
+     note beside `ENV_FILE_REMEDIES`. #}
+  If they are in <code>.env</code>, the process did not load it &mdash; nothing
+  here reads that file for itself. Stop the server, then:
+  <dl class="kv" style="margin:8px 0 0">
+    {% for install, command in env_remedies %}
+    <dt>{{ install }}</dt><dd><code>{{ command }}</code></dd>
+    {% endfor %}
+  </dl>
 </div>
 {% endif %}
+
+{# What this is, before the first control. The page opened straight into a
+   screenshot picker captioned "B1 reads these", which is the right vocabulary
+   and the wrong place to meet it. #}
+<div class="panel">
+  <p style="margin:0 0 8px">
+    <b>This plans one batch of frozen barbecue packets, and stops there.</b>
+    Screenshots of people asking for a packet become recipients
+    (<b>B1</b>), their addresses are validated and repaired (<b>B2</b>,
+    <b>B3</b>), every parcel is quoted against the carriers and kept only if
+    it arrives at or below 4.4C (<b>C1&ndash;C6</b>), and the manifest is
+    critiqued (<b>D1</b>) before you review, edit and approve it (<b>D2</b>).
+  </p>
+  <p class="dim" style="margin:0;font-size:13px">
+    No money is spent and no label is bought: approving records the plan in the
+    ledger, and the labels are bought from it by hand. Those stage codes are the
+    ones <code>docs/design.md</code> uses, and they label the panels on the
+    results page. What each stage is <em>allowed</em> to do &mdash; whether
+    repair runs, how hard validation is, whether D1 critiques at all &mdash; is
+    decided by LaunchDarkly when that stage runs, not by this form, so it is
+    reported on the results page rather than chosen here.
+  </p>
+</div>
 
 {% if active %}
 <div class="notice">
@@ -179,6 +210,20 @@
         </div>
       </details>
 
+      {# The whole bill, not just the vision half. The cost warning used to
+         live on the replay checkbox, which only exists when the server was
+         launched with recordings -- so the live server, the one where the
+         warning is true, was the one that never gave it. #}
+      <p id="cost" class="dim" style="font-size:13px;margin:0 0 12px">
+        {%- if replaying -%}
+        Replaying recordings &mdash; no live calls, and nothing to spend.
+        {%- else -%}
+        Live: one vision call per screenshot, one Shippo validation per
+        recipient, a few hundred rate quotes, then one verification (D1) and one
+        narration (D2) call. Usually a minute or two.
+        {%- endif -%}
+      </p>
+
       <button type="submit" id="go" {% if active %}disabled data-locked="1"{% endif %}>
         Generate manifest
       </button>
@@ -194,6 +239,14 @@
       <p class="dim" style="font-size:12px;margin:12px 0 0">
         Fixed at launch, not on this form. A run appends to that ledger, and a
         field for the path is a way to write a real run to the wrong file.
+      </p>
+      {# The roster is not only the no-screenshots fallback, and reading it as
+         one makes the origin and the ship dates look like they came from
+         nowhere. #}
+      <p class="dim" style="font-size:12px;margin:8px 0 0">
+        The roster supplies the origin address, the candidate ship dates and any
+        lane declarations on <em>every</em> run. On a screenshot run, only the
+        recipients come from the images.
       </p>
     </div>
 
@@ -218,6 +271,46 @@ const shots = document.getElementById('shots');
 const sample = document.getElementById('sample');
 const chosen = document.getElementById('chosen');
 const go = document.getElementById('go');
+const depth = document.getElementById('depth');
+const cost = document.getElementById('cost');
+const replay = document.querySelector('input[name=replay]');
+
+// How many images this run would read, whichever way it is choosing them. A
+// sample is priced on the number asked for rather than on what is ticked,
+// because the ticks are ignored in that mode.
+function imageCount() {
+  if (!shots) return 0;
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  if (mode === 'all') return shots.querySelectorAll('.shot').length;
+  if (mode === 'sample') {
+    const field = document.querySelector('input[name=count]');
+    return Math.max(0, parseInt((field && field.value) || '0', 10));
+  }
+  return shots.querySelectorAll('input:checked').length;
+}
+
+// The bill, in front of the button that runs it. The vision calls are the part
+// the picker already counts; the rest of the run costs money too, and used to
+// be named only on a server launched with recordings -- which is the one server
+// where it is not true.
+function priceIt() {
+  if (!cost) return;
+  if (replay && replay.checked) {
+    cost.textContent = 'Replaying recordings — no live calls, and nothing to spend.';
+    return;
+  }
+  const n = imageCount();
+  const vision = n ? `${n} vision call${n === 1 ? '' : 's'}` : 'no vision calls';
+  cost.textContent = depth && depth.value === 'extract'
+    ? `Live: ${vision}, and nothing else — no address validation, no rate quotes, `
+      + 'no verification.'
+    : `Live: ${vision}, one Shippo validation per recipient, a few hundred rate `
+      + 'quotes, then one verification (D1) and one narration (D2) call. '
+      + 'Usually a minute or two.';
+}
+
+if (replay) replay.addEventListener('change', priceIt);
+document.querySelectorAll('input[name=count]').forEach(f => f.addEventListener('input', priceIt));
 
 if (shots) {
   const total = shots.querySelectorAll('.shot').length;
@@ -256,6 +349,7 @@ if (shots) {
     if (go && !go.hasAttribute('data-locked')) {
       go.disabled = explicit && picked === 0;
     }
+    priceIt();
   }
 
   shots.addEventListener('change', refresh);
@@ -273,12 +367,15 @@ if (shots) {
 
 // The button names what it is about to do. "Generate manifest" on a run that
 // stops after B1 would promise something the depth has already ruled out.
-const depth = document.getElementById('depth');
 if (depth && go) {
   const label = () =>
     go.textContent = depth.value === 'extract' ? 'Read screenshots' : 'Generate manifest';
-  depth.addEventListener('change', label);
+  depth.addEventListener('change', () => { label(); priceIt(); });
   label();
 }
+
+// Once on load, so a page with no picker at all (roster-only server) still
+// prices its run rather than showing the server-rendered default forever.
+priceIt();
 </script>
 {% endblock %}

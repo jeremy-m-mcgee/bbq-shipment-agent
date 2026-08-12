@@ -748,6 +748,57 @@ class TestFailuresAreShownNotSwallowed:
         assert client.get("/runs/nope/events").status_code == 404
 
 
+class TestTheFormExplainsTheRunItConfigures:
+    """The page's first screen, for someone who has not read the design doc.
+
+    It opened straight into a picker captioned "B1 reads these" and priced only
+    the vision calls -- and priced those only on a server launched with
+    recordings, which is the one server where the price is zero.
+    """
+
+    def test_it_says_what_the_app_does_before_the_first_control(self, client):
+        body = client.get("/").text
+        assert "plans one batch of frozen barbecue packets" in body
+        # The stage codes the panels and the design doc both use.
+        for stage in ("B1", "B2", "D1", "D2"):
+            assert f"<b>{stage}</b>" in body
+
+    def test_it_says_no_label_is_bought(self, client):
+        assert "no label is bought" in client.get("/").text
+
+    def test_it_names_the_food_safety_threshold(self, client):
+        # The gate every plan on the results page is measured against.
+        assert "4.4C" in client.get("/").text
+
+    def test_it_says_the_modes_are_not_this_forms_to_choose(self, client):
+        assert "decided by LaunchDarkly when that stage runs" in client.get("/").text
+
+    def test_it_says_what_the_roster_supplies_on_a_screenshot_run(self, client):
+        body = client.get("/").text
+        assert "the origin address, the candidate ship dates" in body
+
+    def test_a_live_server_prices_the_whole_run_not_just_the_images(
+        self, options, workspace
+    ):
+        """The cost warning used to live on the replay checkbox, which a live
+        server does not render at all."""
+        live = _options_for(
+            options, directory=workspace / "shots", mode="all", names=[], count="",
+            seed="", profile="", campaign="", offline=True, replay=False,
+            no_screenshots=False,
+        )
+        client = TestClient(create_app(live, screenshot_dir=workspace / "shots"))
+        body = client.get("/").text
+        assert "replay recordings" not in body  # no recordings, so no control
+        assert "rate quotes" in body
+        assert "Shippo validation per recipient" in body
+
+    def test_a_replaying_server_says_there_is_nothing_to_spend(self, client):
+        # The fixture client is launched with recordings, so the box is ticked
+        # and the page says so before the button rather than after the run.
+        assert "no live calls, and nothing to spend" in client.get("/").text
+
+
 class TestTheMissingKeyBanner:
     """A server that starts cleanly implies it is ready to run."""
 
@@ -784,6 +835,26 @@ class TestTheMissingKeyBanner:
         )
         client = TestClient(create_app(replayed, screenshot_dir=workspace / "shots"))
         assert "A live run will fail" not in client.get("/").text
+
+    def test_the_remedy_covers_installs_that_are_not_uv(
+        self, options, workspace, monkeypatch
+    ):
+        """`UV_ENV_FILE` is a uv setting, and nothing here reads `.env` itself.
+
+        On a pip or poetry install the uv line changes nothing: the operator
+        follows it, sees this banner again, and has no next step. Both remedies
+        are named rather than detected."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        live = _options_for(
+            options, directory=workspace / "shots", mode="all", names=[], count="",
+            seed="", profile="", campaign="", offline=True, replay=False,
+            no_screenshots=False,
+        )
+        client = TestClient(create_app(live, screenshot_dir=workspace / "shots"))
+        body = client.get("/").text
+        assert "UV_ENV_FILE" in body
+        assert "source .env" in body
 
     def test_the_fixture_launch_does_warn_about_the_vision_stages(
         self, client, monkeypatch

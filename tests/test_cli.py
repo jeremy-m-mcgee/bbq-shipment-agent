@@ -117,6 +117,22 @@ class TestTheUiCommand:
         assert str(args.quotes) == "q.json"
         assert args.offline is True
 
+    def test_the_launch_warning_names_a_remedy_for_either_install(
+        self, parser, capsys, monkeypatch
+    ):
+        """The banner fires when someone is stuck, so it must not send them
+        somewhere that cannot help. `UV_ENV_FILE` is a uv setting and nothing
+        in the package reads `.env` for itself."""
+        from bbq_shipment_agent.cli import _options, _warn_about_credentials
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        monkeypatch.setenv("SHIPPO_API_KEY", "")
+        options = _options(parser.parse_args(["ui", "--offline"]))
+        _warn_about_credentials(options)
+        printed = capsys.readouterr().out
+        assert "UV_ENV_FILE" in printed
+        assert "source .env" in printed
+
     def test_it_has_a_port_and_no_host(self, parser):
         # Loopback is not configurable on purpose: the page serves home
         # addresses and has no authentication.

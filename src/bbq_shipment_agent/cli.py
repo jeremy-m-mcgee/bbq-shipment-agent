@@ -56,6 +56,7 @@ from .wiring import (
     DEFAULT_CACHE_DIR,
     DEFAULT_DB_PATH,
     DEFAULT_LEDGER_ROOT,
+    ENV_FILE_REMEDIES,
     PrintProgress,
     RunDepth,
     RunOptions,
@@ -624,11 +625,11 @@ def _warn_about_credentials(options: RunOptions) -> None:
     for key, stages in sorted(missing.items()):
         print(f"    {key:<20} unset or empty, needed by {', '.join(stages)}")
     print(
-        "\n  If the key is in .env, the process did not load it. `uv run` reads\n"
-        "  that file only when UV_ENV_FILE points at it — the devcontainer sets\n"
-        "  it, a plain shell may not. Restart with:\n\n"
-        "    UV_ENV_FILE=$PWD/.env uv run bbq-shipment-agent ui"
+        "\n  If the key is in .env, the process did not load it — nothing here\n"
+        "  reads that file for itself. Stop the server, then:\n"
     )
+    for install, command in ENV_FILE_REMEDIES:
+        print(f"    {install:<13} {command}")
 
 
 def _cmd_ui(args: argparse.Namespace) -> int:

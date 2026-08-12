@@ -58,6 +58,7 @@ from ..agents import NarratorUnavailable
 from ..operators import OperatorError, OperatorPool
 from ..review import Edit, EditKind, ReviewError
 from ..wiring import (
+    ENV_FILE_REMEDIES,
     RunDepth,
     RunOptions,
     ScreenshotSelection,
@@ -147,6 +148,14 @@ def create_app(
                 # looks identical to one that was never set, and the page is
                 # where someone is about to spend a minute finding out.
                 "missing_keys": missing_credentials(options),
+                # The banner's remedy comes from the same place the launch
+                # banner's does: one operator's journey, told twice, and it
+                # must not say two different things.
+                "env_remedies": ENV_FILE_REMEDIES,
+                # Whether this run will reach for a network at all, so the page
+                # can price it. `replaying` is the form's "replay recordings"
+                # box; a server with no recordings can never be true here.
+                "replaying": options.replaying,
                 "active": runs.active,
                 "recent": runs.recent(),
             },
