@@ -3,8 +3,13 @@
    like a planned one -- design 4's "a pane beside the manifest, not a second
    manifest." References only `m`; the caller supplies the heading. #}
 <div class="panel">
+  {# The two hard constraints are stated beside the numbers they produced.
+     The page used to show a 4.40C margin and a two-carrier set without ever
+     saying that 4.4C is the ceiling or that two is the cap, so a reader could
+     not tell which of these were policy and which were results. #}
   <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:6px">
-    <div><div class="dim" style="font-size:12px">carriers</div>
+    <div><div class="dim" style="font-size:12px">carriers
+        <span title="Design 3, hard constraint">(at most {{ m.max_carriers }})</span></div>
       <div style="font-size:18px">{{ m.carriers|join(' + ') or '(none)' }}</div></div>
     <div><div class="dim" style="font-size:12px">packets</div>
       <div style="font-size:18px">{{ m.packet_count }}</div></div>
@@ -15,6 +20,14 @@
            class="{% if m.min_margin is not none and m.min_margin < 1 %}warn{% endif %}">
         {{ '%.2f'|format(m.min_margin) if m.min_margin is not none else '—' }}C</div></div>
   </div>
+  <p class="dim" style="font-size:12px;margin:8px 0 0">
+    Every parcel has to arrive at or below <b>{{ '%.1f'|format(m.max_arrival_c) }}C</b>
+    &mdash; food safety, and not overridable by anything on this page. Margin is
+    the headroom against that, so {{ '%.1f'|format(m.max_arrival_c) }}C is the
+    best a row can do and 0C is a parcel arriving exactly at the limit. A run
+    may use at most {{ m.max_carriers }} carriers, which is why one Saturday
+    shipment is worth as much attention as it gets.
+  </p>
   {% if m.forced_by_saturday %}
   <p class="warn" style="font-size:13px;margin:10px 0 0">
     A Saturday-capable carrier was forced into the pair by
@@ -35,7 +48,8 @@
     <tr>
       <th>recipient</th><th>carrier</th><th>service</th><th>box</th>
       <th class="num">gel</th><th class="num">cost</th><th>arrives</th>
-      <th class="num">temp</th><th class="num">margin</th>
+      <th class="num" title="Predicted arrival temperature">temp</th>
+      <th class="num">margin of {{ '%.1f'|format(m.max_arrival_c) }}C</th>
     </tr>
     {% for row in day.rows %}
     <tr>
@@ -60,10 +74,15 @@
 {% endfor %}
 
 {% if m.runners_up %}
-<h3 style="font-size:15px">What the other carrier pairs would have cost</h3>
+{# "Pairs" was wrong twice over: one carrier can cover a run, and the table
+   only ever holds the subsets that *covered*. Without the denominator below,
+   two rows where design 4 describes six candidates reads as an arbitrary
+   sample -- and a reader cannot tell whether the rest were worse, infeasible,
+   or never quoted. #}
+<h3 style="font-size:15px">What the other carrier subsets would have cost</h3>
 <div class="panel">
   <table>
-    <tr><th>pair</th><th class="num">total</th><th class="num">extra</th>
+    <tr><th>subset</th><th class="num">total</th><th class="num">extra</th>
         <th class="num">covers</th><th>strands</th><th class="num">min margin</th></tr>
     {% for r in m.runners_up %}
     <tr>
@@ -78,7 +97,20 @@
     {% endfor %}
   </table>
   <p class="dim" style="font-size:12px;margin:12px 0 0">
-    Kept visible on purpose: the pairs differ across cost, coverage, stranded
+    {% if m.quoting_carriers %}
+    {{ m.quoting_carriers|join(', ') }} quoted this run. Every subset of at most
+    {{ m.max_carriers }} of them was priced &mdash; {{ m.subsets_priced }} produced a
+    plan, and {{ m.subsets_covering }} covered every recipient.
+    {% set hidden = m.subsets_covering - m.runners_up|length - 1 %}
+    {% if hidden > 0 %}
+    {{ hidden }} of those {{ 'is' if hidden == 1 else 'are' }} missing from this
+    table on purpose: {{ 'it produces' if hidden == 1 else 'they produce' }} the
+    same assignment at the same cost as the winner, and listing
+    {{ 'it' if hidden == 1 else 'them' }} at +$0.00 shows a tradeoff that does
+    not exist.
+    {% endif %}
+    {% endif %}
+    Kept visible on purpose: the subsets differ across cost, coverage, stranded
     shipments and thermal margin at once, and that comparison is the one humans
     do badly at the end of a review.
   </p>

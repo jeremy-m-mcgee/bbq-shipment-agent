@@ -120,6 +120,18 @@ class TestRunnersUp:
         costs = [o.total_cost for o in manifest.runners_up]
         assert costs == sorted(costs)
 
+    def test_the_table_carries_its_own_denominator(self, quoter):
+        """The runner-up table holds the subsets that *covered*, so without
+        these a reader cannot tell whether the rest were worse, infeasible or
+        never quoted. Same argument as `saturday_only`: a question the reader
+        will ask needs a field to rest on."""
+        manifest = manifest_for(quoter, shipments(3))
+        assert manifest.quoting_carriers
+        assert manifest.subsets_priced >= manifest.subsets_covering
+        # At least the winner and its runners-up; more when a covering subset
+        # was dropped for producing the winner's plan at the winner's cost.
+        assert manifest.subsets_covering >= len(manifest.runners_up) + 1
+
 
 class TestAccounting:
     def test_every_recipient_lands_in_exactly_one_bucket(self, quoter):

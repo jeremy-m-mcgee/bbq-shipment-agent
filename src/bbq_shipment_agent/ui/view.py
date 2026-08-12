@@ -20,7 +20,7 @@ from typing import Any
 
 from markupsafe import Markup, escape
 
-from ..planning import render
+from ..planning import MAX_ARRIVAL_TEMP_C, MAX_CARRIERS_PER_RUN, render
 from ..wiring import RunOptions
 from .modes import describe as describe_mode
 
@@ -405,6 +405,17 @@ def _manifest(manifest: Any) -> dict[str, Any]:
             names.get(key, key): list(messages)
             for key, messages in manifest.advisories.items()
         },
+        # The two hard constraints of design 3, read off the code that enforces
+        # them rather than written into the template. The page showed the
+        # *output* of both gates -- a margin, a carrier set -- and stated
+        # neither rule, so a reader could not tell which numbers were policy.
+        "max_arrival_c": MAX_ARRIVAL_TEMP_C,
+        "max_carriers": MAX_CARRIERS_PER_RUN,
+        # How the candidate set was arrived at, so the runner-up table has a
+        # denominator instead of looking like an arbitrary two rows.
+        "quoting_carriers": list(manifest.quoting_carriers),
+        "subsets_priced": manifest.subsets_priced,
+        "subsets_covering": manifest.subsets_covering,
     }
 
 
@@ -460,6 +471,10 @@ def _verification(verification: Any) -> dict[str, Any] | None:
         "model_responded": verification.model_responded,
         "drifted": verification.model_drifted,
         "blockers": len(verification.blockers),
+        # The names, not just the count. "Checks clean: 7" asks the operator to
+        # trust a number for the one panel whose whole job is to be checkable,
+        # and the agent already returned what it checked.
+        "clean_checks": list(verification.clean_checks),
         "findings": [
             {
                 "check": f.check,

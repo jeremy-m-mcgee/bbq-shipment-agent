@@ -160,6 +160,16 @@ class Manifest:
     #: claim a correction while returning identical fields, and that claim was
     #: captured and shown nowhere. Design 10.
     advisories: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: How the candidate set was arrived at: the carriers that quoted at all,
+    #: how many subsets of them were priced, and how many covered every
+    #: recipient. The runner-up table shows the covering ones and nothing else,
+    #: so without these a reader cannot tell whether the missing subsets were
+    #: worse, infeasible, or never quoted -- three different facts. Same
+    #: reasoning as `saturday_only`: a question the reader will ask needs a
+    #: field to rest on.
+    quoting_carriers: tuple[str, ...] = ()
+    subsets_priced: int = 0
+    subsets_covering: int = 0
     cap_fingerprint: str | None = None
 
     @property
@@ -239,6 +249,9 @@ def assemble_manifest(
         forced_by_saturday=plan.forced_by_saturday,
         saturday_only=solve.saturday_only,
         advisories=dict(advisories or {}),
+        quoting_carriers=tuple(sorted(solve.available_carriers)),
+        subsets_priced=len(solve.covering) + len(solve.partial),
+        subsets_covering=len(solve.covering),
         cap_fingerprint=cap_fingerprint,
     )
 
