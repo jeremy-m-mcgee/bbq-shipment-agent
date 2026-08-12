@@ -8,11 +8,110 @@ Full design: [`docs/design.md`](docs/design.md). Working notes: [`CLAUDE.md`](CL
 
 ## Setup
 
+Python 3.12 or newer. Nothing below needs an API key — every step runs against
+committed fixtures.
+
+```bash
+git clone https://github.com/jeremy-m-mcgee/bbq-shipment-agent.git
+cd bbq-shipment-agent
+```
+
+Then pick an installer. **uv is the supported one**: `uv.lock` is committed, so
+it is the only path that installs the exact versions this project is tested
+against. The other two resolve their own and are documented because they work,
+not because they are equivalent.
+
+<details open>
+<summary><b>uv</b> — recommended, and the only one that uses the committed lock</summary>
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), which
+also fetches Python 3.12 for you if you do not have it.
+
+```bash
+# Verify the install. About eight seconds. `uv run` installs from uv.lock on
+# first use, so there is no separate `uv sync` step and no venv to activate.
+uv run pytest
+
+# See a real manifest, spending nothing.
+uv run bbq-shipment-agent run plan --offline \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
+  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json \
+  --ledger /tmp/scratch
+```
+
+</details>
+
+<details>
+<summary><b>pip + venv</b></summary>
+
+Needs a Python 3.12 interpreter already on the machine — pip will not fetch one.
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+
+# `pytest httpx` is the dev group; pip only reads it as `--group dev` on 25.1+.
+pip install -e . pytest httpx
+
+pytest
+
+bbq-shipment-agent run plan --offline \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
+  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json \
+  --ledger /tmp/scratch
+```
+
+Drop the `uv run` prefix from every command elsewhere in this README, and see
+the note under [Load the keys](#load-the-keys--do-this-once-per-shell) —
+`UV_ENV_FILE` does nothing here.
+
+</details>
+
+<details>
+<summary><b>poetry</b></summary>
+
+Poetry 2.0 or newer, which reads the PEP 621 `[project]` table this repo uses.
+
+```bash
+poetry install                      # installs the dev group too
+poetry run pytest
+
+poetry run bbq-shipment-agent run plan --offline \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
+  --quotes tests/fixtures/shippo-quotes-sf-dc.json \
+  --validations tests/fixtures/shippo-addresses.json \
+  --completions tests/fixtures/d1-completions.json \
+  --ledger /tmp/scratch
+```
+
+`poetry install` writes a `poetry.lock` of its own resolution. It is gitignored
+deliberately: `uv.lock` is this project's lock, and a second one in the tree
+would be a second answer to the same question. Substitute `poetry run` for
+`uv run` elsewhere in this README, and see the note under
+[Load the keys](#load-the-keys--do-this-once-per-shell) — `UV_ENV_FILE` does
+nothing here.
+
+</details>
+
+Whichever you picked, that plan is the whole system on recorded inputs:
+LaunchDarkly served from `config/ld-snapshot.json`, Shippo and the model from
+the fixtures. See [Offline and replay](#offline-and-replay) for what each
+recording covers and where the replayed path stops.
+
+### Then, for live runs: keys
+
 ```bash
 cp .env.example .env        # then fill in LD_SDK_KEY, ANTHROPIC_API_KEY, SHIPPO_API_KEY
 cp recipients.example.yaml recipients.yaml
-uv run pytest
 ```
+
+`.env.example` says what each key is for, which of them are optional, and what
+happens without them. `recipients.yaml` is gitignored because it holds home
+addresses.
 
 ### Load the keys — do this once per shell
 
@@ -24,8 +123,9 @@ export UV_ENV_FILE=$PWD/.env
 when `UV_ENV_FILE` points at it. `.devcontainer/devcontainer.json` sets it via
 `remoteEnv`, but plenty of shells never see that — a new terminal, a
 non-interactive shell, `nohup`, a task runner. Skip it and every key reads as
-empty: LaunchDarkly quietly falls back to the `baseline` profile, while Shippo
-and Anthropic fail outright.
+empty: LaunchDarkly quietly falls back to the per-capability code defaults
+(planner off, validation standard, verification off), while Shippo and
+Anthropic fail outright.
 
 Confirm it took:
 
@@ -38,18 +138,31 @@ Three `False` values mean the file was not loaded, not that the keys are
 missing. If you would rather not export, prefix each command instead:
 `UV_ENV_FILE=$PWD/.env uv run ...`.
 
-## Commands
-
-Run these from the repo root, in a shell where the export above has been done.
+**On pip or poetry, `UV_ENV_FILE` does nothing** — it is a uv setting, and
+nothing in the package reads `.env` for itself. Source it into the environment
+instead, which the same confirmation command then checks:
 
 ```bash
-uv run bbq-shipment-agent run init      # A1 only: resolve capabilities, snapshot AI Configs
+set -a; source .env; set +a
+```
+
+
+
+## Commands
+
+Run these from the repo root. Everything but the `ledger` subcommands is live
+by default, so they want a shell where the export above has been done.
+
+```bash
+uv run bbq-shipment-agent run init      # A1 only: open a run, snapshot AI Configs
+uv run bbq-shipment-agent run extract   # A1 and B1 only: read screenshots, print what was found
 uv run bbq-shipment-agent run plan      # A1 -> B -> C -> D1, prints a verified manifest
 uv run bbq-shipment-agent run review    # the above, then the D2 conversation
 uv run bbq-shipment-agent ui            # the same thing in a browser, with a screenshot picker
 uv run bbq-shipment-agent drive         # fire runs at a running `ui`, one every 30s
 uv run bbq-shipment-agent ledger verify # parse every JSONL line, no database
 uv run bbq-shipment-agent ledger rebuild
+uv run bbq-shipment-agent ledger tools  # tools offered and called, folded by run
 ```
 
 `run plan`, `run review` and `ui` all default `--ledger` to the committed
@@ -96,10 +209,18 @@ carrier pairs sit beside the chosen one. Stage progress streams while the run
 goes, because a real run makes a vision call per image and a few hundred rate
 quotes.
 
-It stops where `run plan` stops. There is no approval button — D2 is still the
-`run review` conversation — and no control for the 4.4C threshold, the carrier
-cap or the kill switch, because those are a Python constant, a Python constant
-and a committed config file.
+It no longer stops where `run plan` stops. A run that produces a covering
+manifest parks in `awaiting_review`, and the review is a pane beside the
+manifest rather than a second one: ask the narrator a question, pin or exclude
+a recipient, and approve or reject. An edit re-solves and re-renders in place,
+and approval writes the ledger from the browser. Section 4's edit-handling
+table stays in Python — the routes only carry the operator's move to
+`ReviewSession`. A parked review holds the run slot until it reaches a terminal
+state, so a second run cannot append to the same ledger underneath it.
+
+What the form still does *not* offer is a control for the 4.4C threshold, the
+carrier cap or the kill switch, because the first two are Python constants and
+the third is a LaunchDarkly flag. The form configures a run, not the system.
 
 It binds `127.0.0.1` with no host option and has no authentication. That is the
 trade: nothing off this machine can reach it, and it serves real home addresses
@@ -162,7 +283,7 @@ differ only in wall-clock time exercise the server and measure nothing.
 | a random named subset | `--vary explicit` |
 | the whole directory, every time | `--vary all` |
 | no images at all, roster only | `--vary roster` |
-| the capability profile, cycled one per run | `--profiles baseline,planner_trial` |
+| the `profile` targeting label, cycled one per run | `--profiles baseline,planner_trial` |
 | a numbered campaign on the run context | `--campaign aug-load` |
 | where the run stops | `--depth plan\|extract\|mixed` |
 
@@ -225,15 +346,42 @@ Design 4 records what happens when one cannot.
 
 ## Offline and replay
 
-Nothing in the library opens a socket — the CLI is the only place live paths
-are assembled. To run without touching Shippo, LaunchDarkly or a model:
+Nothing in the library opens a socket — `wiring.py` is the only place a live
+client is built, and both front-ends go through it. To run without touching
+Shippo, LaunchDarkly or a model:
 
 ```bash
 uv run bbq-shipment-agent run plan --offline \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
   --quotes tests/fixtures/shippo-quotes-sf-dc.json \
   --validations tests/fixtures/shippo-addresses.json \
-  --completions tests/fixtures/d1-completions.json
+  --completions tests/fixtures/d1-completions.json \
+  --ledger /tmp/scratch
 ```
+
+**`--recipients` is not optional here**, and neither is `--ledger`. The
+recordings hold one lane, San Francisco to Washington; the default
+`recipients.yaml` — copied from `recipients.example.yaml` — has recipients in
+Chicago and Houston, and the run stops on the first of them with
+`no recorded validation for ...`. That is `RecordedQuoter` and
+`RecordedAddressValidator` refusing to invent an answer they never recorded,
+which is the behaviour you want; point them at a roster the recordings cover.
+`--ledger` keeps a trial run out of the committed `ledger/`.
+
+The other path that replays end to end is extraction, which stops before the
+quoter and so never meets that limit:
+
+```bash
+uv run bbq-shipment-agent run extract --offline \
+  --screenshots tests/fixtures/screenshots --screenshot-count 2 --screenshot-seed 1 \
+  --extractions tests/fixtures/b1-extractions.json \
+  --recipients tests/fixtures/roster-sf-dc.yaml \
+  --ledger /tmp/scratch
+```
+
+Recording another lane is the same task as recording B3's proposed addresses,
+noted in design 10. Until that is done, those two are the replayed paths that
+work end to end.
 
 ## Layout
 
@@ -247,6 +395,13 @@ uv run bbq-shipment-agent run plan --offline \
 | `src/bbq_shipment_agent/review.py` | D2 edit handling and terminal states |
 | `src/bbq_shipment_agent/agents/` | model seam, tools, D1 verification, D2 narrator |
 | `src/bbq_shipment_agent/ledger/` | append-only JSONL, DuckDB rebuild |
-| `config/capabilities.yaml` | capability profiles, prerequisites, kill switch |
+| `src/bbq_shipment_agent/capabilities.py` | the capability enums, the flag gate, coercion, the snapshot |
 | `config/lanes.yaml` | ambient assumptions per destination band and month |
+| `config/operators.yaml` | the user/department pool a run claims to be |
+| `config/ld-snapshot.json` | committed AI Config snapshot: audit trail and offline cache |
 | `ledger/*.jsonl` | committed source of truth; `ledger.duckdb` is derived |
+
+The capability flags and the kill switch are **not** in `config/`. They live
+in LaunchDarkly and are evaluated live, each under its own stage context; there
+is no committed capability file. What a run was actually served is recorded in
+`ledger/capability_evaluations.jsonl` and folded onto the run row.

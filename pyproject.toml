@@ -6,7 +6,11 @@ readme = "README.md"
 authors = [
     { name = "jeremy-m-mcgee", email = "mcgjeremy@gmail.com" }
 ]
-requires-python = ">=3.12"
+# Capped at <4 for Poetry's resolver, not for uv's. Poetry refuses to solve an
+# uncapped range against a dependency that caps itself (launchdarkly-server-sdk-ai
+# requires <4), so `poetry install` fails outright without this. uv is
+# indifferent either way, and nothing here is expected to see Python 4.
+requires-python = ">=3.12,<4"
 dependencies = [
     "anthropic>=0.120.2",
     "chevron>=0.14.0",
