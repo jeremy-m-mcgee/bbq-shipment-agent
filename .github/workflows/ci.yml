@@ -1,0 +1,51 @@
+name: ci
+
+# Runs on every push to main and every pull request. The whole job is a few
+# seconds of compute: the suite makes no network calls, so there is nothing
+# here that waits on an API.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first. Nothing here has side
+# effects, so an in-flight run is only ever wasted work.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # uv reads .python-version (3.12) and fetches the interpreter itself, so
+      # there is no setup-python step. CLAUDE.md: uv only, never pip.
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # --locked fails rather than resolving, so a uv.lock that has drifted
+      # from pyproject.toml is a CI failure instead of a silent re-resolve.
+      # uv.lock is committed precisely so this is the tested set of versions.
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      # `ruff format --check` belongs here too, but only once the formatter
+      # pass in #21 has landed -- 58 of 84 files are currently unformatted, so
+      # adding it now would make CI red on arrival.
+
+      # No API keys are set on this runner, which is the point rather than an
+      # omission: design 6.10 makes offline a normal path, live clients are
+      # injected rather than reached for, and the suite passes with
+      # LD_SDK_KEY, SHIPPO_API_KEY and ANTHROPIC_API_KEY all absent. If this
+      # step ever needs a secret, something has started opening a socket.
+      - name: Test
+        run: uv run pytest
