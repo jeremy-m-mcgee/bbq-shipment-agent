@@ -3,9 +3,20 @@
 {% block body %}
 
 <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+  {# Both identifiers, labelled. The heading used to show the run id and the
+     URL a different one, so the string the ledger knows and the string the
+     browser knows were two unlabelled hex blobs that never appeared together
+     -- and design 2 wants a surprising run diagnosable from the JSONL. #}
   <h1 style="font-size:18px;margin:0" class="mono">{{ header.run_id if header else job.id }}</h1>
   <span id="state-chip" class="tag {% if job.state in ('finished', 'approved', 'approved_with_exclusions') %}on{% endif %}">{{ job.state }}</span>
-  {% if header %}<span class="dim">{{ header.connection }} &middot; profile {{ header.profile }}</span>{% endif %}
+  {% if header %}
+  <span class="dim" style="font-size:13px">
+    {% if header.run_id != job.id %}ledger id &middot; this page is
+    <code>/runs/{{ job.id }}</code> &middot; {% endif %}{{ header.connection }}
+    &middot; profile <code>{{ header.profile }}</code>, a LaunchDarkly targeting
+    label rather than a set of settings
+  </span>
+  {% endif %}
   <span style="flex:1"></span>
   <a href="/" class="dim" style="font-size:13px">new run</a>
 </div>
@@ -32,10 +43,15 @@
    screenshots returning nothing renders as a short roster, not as a problem.
    The progress log above says the same thing while the run streams, and then
    it scrolls. #}
-{% if view.extraction and (view.extraction.unreadable or view.extraction.unresolved) %}
-<h2 class="bad">B1 read {{ view.extraction.read }} of {{ view.extraction.images }} screenshot(s)</h2>
+{# Two conditions, two headings. They shared one, in the error colour, headed
+   with a ratio that only described the first -- so a run where every image was
+   read and two people simply gave no address rendered as a red "3 of 3", which
+   is alarming and says nothing about what happened. #}
+{% if view.extraction and view.extraction.unreadable %}
+<h2 class="bad">B1 could not read
+  {{ view.extraction.images - view.extraction.read }} of
+  {{ view.extraction.images }} screenshot(s)</h2>
 <div class="panel">
-  {% if view.extraction.unreadable %}
   <p style="margin-top:0" class="bad">
     {{ view.extraction.unreadable|length }} screenshot(s) produced no usable
     reply. Anyone they named is missing from every count below.
@@ -52,15 +68,21 @@
     reply all read as &ldquo;unreadable&rdquo; without it. The image table
     below says which variation was serving.
   </p>
-  {% endif %}
-  {% if view.extraction.unresolved %}
-  <p{% if view.extraction.unreadable %} style="margin-top:20px"{% endif %}>
-    {{ view.extraction.unresolved|length }}
-    {{ 'person' if view.extraction.unresolved|length == 1 else 'people' }}
-    asked for a packet and gave no usable address.
-  </p>
+</div>
+{% endif %}
+
+{# Read fine, no address. Not an error and not styled as one: B1 doing its job
+   on someone who wrote "send it to my place" looks identical here to B1 doing
+   its job on someone who declined, and the note is the only thing that tells
+   them apart -- so the note leads rather than a summary sentence that claims
+   they all asked. #}
+{% if view.extraction and view.extraction.unresolved %}
+<h2>Read from a screenshot, no usable address &mdash;
+  {{ view.extraction.unresolved|length }}
+  {{ 'person' if view.extraction.unresolved|length == 1 else 'people' }}</h2>
+<div class="panel">
   <table>
-    <tr><th>name</th><th>from</th><th>what they said</th></tr>
+    <tr><th>name</th><th>from</th><th>what B1 read</th></tr>
     {% for u in view.extraction.unresolved %}
     <tr><td>{{ u.name }}</td>
       <td class="mono dim" style="font-size:12px">{{ u.source }}</td>
@@ -68,10 +90,12 @@
     {% endfor %}
   </table>
   <p class="dim" style="font-size:12px">
-    Not a failure &mdash; design 4 sends these to a human to chase rather than
-    dropping them.
+    Not a failure. Someone who asked and gave no address is design 4's
+    escalation &mdash; a human chases them rather than the run dropping them.
+    Someone who declined, or who was never a recipient, is B1 reading the
+    thread correctly; the note is what tells the two apart, and neither is on
+    the plan below.
   </p>
-  {% endif %}
 </div>
 {% endif %}
 
@@ -98,8 +122,36 @@
           {{ view.validation.escalated }} escalated.
         </div>
         {% endif %}
-        {% if cap.name == 'verification' and view and view.verification and view.verification.ran %}
-        <div class="dim" style="font-size:12px;margin-top:4px">D1 ran &mdash; see the verification panel below.</div>
+        {# Every mode reports its effect on *this* run, not just its
+           definition. Two of the three did, and the silence on the third read
+           as "an agent repaired addresses" on runs where nothing needed
+           repairing and B3 never ran. #}
+        {# Only where the run says something the effect above does not. An
+           `off` mode has already told the reader nothing ran, and repeating it
+           as a this-run line is noise; `on` with nothing to do is the case
+           that was invisible. #}
+        {% if cap.name == 'planner' and view and cap.value != 'off' %}
+        <div class="dim" style="font-size:12px;margin-top:4px">
+          {% if view.repair %}
+          this run: {{ view.repair.describe }}
+          {%- if not view.repair.applied %} &mdash; shadow, so nothing was applied{% endif %}
+          {% elif view.repair_unavailable %}
+          this run: B3 did not run &mdash; {{ view.repair_unavailable }}
+          {% else %}
+          this run: no address needed repair, so B3 never ran.
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if cap.name == 'verification' and view and cap.value != 'off' %}
+        <div class="dim" style="font-size:12px;margin-top:4px">
+          {% if view.verification and view.verification.ran %}
+          this run: D1 ran &mdash; see the verification panel above.
+          {% elif view.verification %}
+          this run: {{ view.verification.describe }}
+          {% else %}
+          this run: no manifest reached D1, so it had nothing to check.
+          {% endif %}
+        </div>
         {% endif %}
         {% if cap.reason %}<div class="dim mono" style="font-size:11px;margin-top:5px">{{ cap.reason }}</div>{% endif %}
       </div>
@@ -146,11 +198,58 @@
 {% set m = view.manifest %}
 
 {% if view.screenshots %}
-<h2>B1 read {{ view.screenshots|length }} screenshot(s)</h2>
+{# Distinct from the two B1 headings above, which are about what went wrong.
+   This one answers "what did the run see", which is a different question. #}
+<h2>Screenshots this run read &mdash; {{ view.screenshots|length }}</h2>
 <div class="panel mono" style="font-size:13px">{{ view.screenshots|join(', ') }}
   <p class="dim" style="font-family:inherit;font-size:12px;margin:8px 0 0">
     Recorded on the run row. A hand-picked set has no seed, so the filenames are
     the only account of what the run saw.</p>
+</div>
+{% endif %}
+
+{# D1 before the manifest, and therefore before the Approve button inside the
+   review pane. Design 4 has it critique the manifest *before a human sees it*;
+   rendering its verdict below the approval controls is the one placement that
+   cannot do that. A run with blockers now states them above the plan. #}
+{% if view.verification %}
+{% set v = view.verification %}
+<h2>D1 verification</h2>
+<div class="panel">
+  <p style="margin-top:0">
+    {% if v.blockers %}<span class="bad">&#9632;</span>{% elif v.ran %}<span class="good">&#9632;</span>{% endif %}
+    {{ v.describe }}
+  </p>
+  {% if v.ran %}
+  <p class="dim" style="font-size:12px">
+    {{ v.model_requested }} &mdash; {{ v.iterations }} iteration(s),
+    {{ v.input_tokens }}+{{ v.output_tokens }} tokens
+    {% if v.drifted %}<br>LaunchDarkly served {{ v.model_requested }}, but
+      {{ v.model_responded }} answered.{% endif %}
+  </p>
+  {% endif %}
+  {% for f in v.findings %}
+  <div style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+    <span class="{% if f.blocking %}bad{% else %}warn{% endif %}">{{ f.severity }}</span>
+    <b>{{ f.check }}</b>
+    {% if f.shipments %}<span class="dim">[{{ f.shipments|join(', ') }}]</span>{% endif %}
+    <div>{{ f.problem }}</div>
+    {% if f.evidence %}<div class="dim" style="font-size:12px">evidence: {{ f.evidence }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {# The checks by name. A count asks the operator to trust a number, on the
+     one panel whose entire job is to be checkable. #}
+  {% if v.clean_checks %}
+  <details style="margin-top:10px">
+    <summary class="dim" style="cursor:pointer;font-size:13px">
+      {{ v.clean_checks|length }} check(s) came back clean</summary>
+    <ul style="margin:8px 0 0 18px;padding:0;font-size:13px">
+      {% for check in v.clean_checks %}<li>{{ check }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% if v.raw %}<details style="margin-top:10px"><summary class="dim" style="cursor:pointer">raw reply</summary>
+    <pre style="margin-top:8px">{{ v.raw }}</pre></details>{% endif %}
 </div>
 {% endif %}
 
@@ -227,36 +326,6 @@
 <p><a href="/runs/{{ job.id }}/manifest.txt">plain-text manifest</a>
   <span class="dim">&mdash; the same bytes <code>run plan --out</code> writes{% if review %},
     as the plan stands now{% endif %}</span></p>
-{% endif %}
-
-{% if view.verification %}
-{% set v = view.verification %}
-<h2>D1 verification</h2>
-<div class="panel">
-  <p style="margin-top:0">
-    {% if v.blockers %}<span class="bad">&#9632;</span>{% elif v.ran %}<span class="good">&#9632;</span>{% endif %}
-    {{ v.describe }}
-  </p>
-  {% if v.ran %}
-  <p class="dim" style="font-size:12px">
-    {{ v.model_requested }} &mdash; {{ v.iterations }} iteration(s),
-    {{ v.input_tokens }}+{{ v.output_tokens }} tokens
-    {% if v.drifted %}<br>LaunchDarkly served {{ v.model_requested }}, but
-      {{ v.model_responded }} answered.{% endif %}
-  </p>
-  {% endif %}
-  {% for f in v.findings %}
-  <div style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
-    <span class="{% if f.blocking %}bad{% else %}warn{% endif %}">{{ f.severity }}</span>
-    <b>{{ f.check }}</b>
-    {% if f.shipments %}<span class="dim">[{{ f.shipments|join(', ') }}]</span>{% endif %}
-    <div>{{ f.problem }}</div>
-    {% if f.evidence %}<div class="dim" style="font-size:12px">evidence: {{ f.evidence }}</div>{% endif %}
-  </div>
-  {% endfor %}
-  {% if v.raw %}<details style="margin-top:10px"><summary class="dim" style="cursor:pointer">raw reply</summary>
-    <pre style="margin-top:8px">{{ v.raw }}</pre></details>{% endif %}
-</div>
 {% endif %}
 
 {% if view.escalated or view.suppressed or view.remediations or view.repair or view.repair_unavailable %}

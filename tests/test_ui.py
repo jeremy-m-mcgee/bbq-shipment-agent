@@ -601,7 +601,20 @@ class TestARunThatCouldNotReadEverything:
 
     def test_the_page_says_how_many_screenshots_were_read(self, finished):
         _, _, page = finished
-        assert "B1 read 1 of 2 screenshot(s)" in page.text
+        assert "B1 could not read" in page.text
+        assert "1 of\n  2 screenshot(s)" in page.text or "1 of 2 screenshot(s)" in page.text
+
+    def test_the_two_kinds_of_gap_are_separate_headings(self, finished):
+        """An unreadable image and a person with no address are different
+        problems for different people. They shared one heading, in the error
+        colour, headed with a ratio that only described the first."""
+        _, _, page = finished
+        assert "Read from a screenshot, no usable address" in page.text
+        # The unresolved heading is not styled as a failure: B1 read the thread
+        # correctly, and design 4 sends the person to a human to chase.
+        unresolved = page.text.index("Read from a screenshot, no usable address")
+        heading = page.text.rindex("<h2", 0, unresolved)
+        assert 'class="bad"' not in page.text[heading:unresolved]
 
     def test_the_page_names_the_screenshot_and_why_it_failed(self, finished):
         # The reason separates a console edit from a model choice. Without it
@@ -668,6 +681,57 @@ class TestAWholeRun:
         assert "planner" in page.text
         assert "validation" in page.text
         assert "verification" in page.text
+
+    def test_the_page_states_the_two_hard_constraints(self, finished):
+        """Design 3's constraints, beside the numbers they produced.
+
+        The page showed a 4.40C margin and a carrier set and stated neither
+        rule, so a reader could not tell which numbers were policy."""
+        _, page = finished
+        assert "arrive at or below" in page.text
+        assert "4.4C" in page.text
+        assert "at most 2" in page.text
+
+    def test_the_margin_column_names_what_it_is_a_margin_of(self, finished):
+        _, page = finished
+        assert "margin of 4.4C" in page.text
+
+    def test_the_runner_up_table_says_what_it_is_a_subset_of(self, finished):
+        # "Pairs" was wrong twice: one carrier can cover a run, and the table
+        # only holds the subsets that covered. Two rows with no denominator
+        # read as an arbitrary sample of design 4's six candidates.
+        _, page = finished
+        assert "carrier subsets" in page.text
+        assert "quoted this run" in page.text
+        assert "covered every recipient" in page.text
+
+    def test_both_identifiers_are_on_the_page_and_labelled(self, client, finished):
+        # The ledger knows one string, the browser knows another, and they had
+        # never appeared together.
+        job_id, page = finished
+        assert "ledger id" in page.text
+        assert f"/runs/{job_id}" in page.text
+
+    def test_the_profile_is_named_as_a_targeting_label(self, finished):
+        # "profile baseline" reads like a bundle of settings, and there is no
+        # such bundle any more -- it is what LaunchDarkly targets on.
+        _, page = finished
+        assert "targeting" in page.text
+
+    def test_a_mode_says_what_it_did_to_this_run(self, finished):
+        # B2 ran, so its row says what it did. The planner and verification are
+        # off offline, and an `off` mode already says nothing ran -- repeating
+        # that as a this-run line is noise, so it is not there.
+        _, page = finished
+        assert "this run: 0 corrected" in page.text
+        assert "this run: no repair was attempted" not in page.text
+
+    def test_d1_is_rendered_above_the_review_controls(self, finished):
+        """Design 4 has D1 critique the manifest before a human sees it.
+
+        Below the Approve button is the one placement that cannot."""
+        _, page = finished
+        assert page.text.index("D1 verification") < page.text.index("/review/approve")
 
     def test_the_plain_text_manifest_is_the_same_artifact(self, client, finished):
         job_id, _ = finished
