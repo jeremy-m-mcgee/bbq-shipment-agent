@@ -53,11 +53,12 @@ import json
 import mimetypes
 import re
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from ..agent_configs import AgentConfig
-from ..agents.metrics import metrics_for
+from ..agents.metrics import Outcome, metrics_for
 from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.verification import render_instructions
 from ..context import STAGE_EXTRACTION, ImageIdentity
@@ -247,32 +248,41 @@ def extract_from_images(
         # first.
         metrics = metrics_for(served)
 
-        read = _read_one(model, invocation, path)
+        # The wrapped call is the invocation, so its duration is reported per
+        # image, like the tracker and the ledger line: this is the latency of
+        # reading *this* screenshot, and design 6.6 makes the image the only
+        # unit B1's variation can be scored on. A per-run total would average
+        # away the comparison the rollout exists to make. No tool calls are
+        # reported -- B1 has no tool loop, so `tools_called` stays unset.
+        # `partial` rather than a lambda: the call is made inside `record`,
+        # within this iteration, but a closure over the loop variables would
+        # read whichever image the loop had reached by then if that ever
+        # stopped being true.
+        read = metrics.record(
+            partial(_read_one, model, invocation, path),
+            lambda r: Outcome(
+                success=not isinstance(r.parsed, str),
+                input_tokens=r.input_tokens,
+                output_tokens=r.output_tokens,
+            ),
+        )
         parsed, tries = read.parsed, read.attempts
         tokens_in += read.input_tokens
         tokens_out += read.output_tokens
         attempts += tries
 
-        metrics.track_tokens(read.input_tokens, read.output_tokens)
         metrics.track_time_to_first_token(read.time_to_first_token_ms)
-        # Per image, like the tracker and the ledger line: this is the latency
-        # of reading *this* screenshot, and design 6.6 makes the image the only
-        # unit B1's variation can be scored on. A per-run total would average
-        # away the comparison the rollout exists to make.
-        metrics.track_duration()
         # A string is the reason it could not be parsed -- the same either-or
         # `_parse` returns. Recorded rather than reduced to a flag: without it
         # an instruction variation that stopped asking for JSON is
         # indistinguishable from a model that answered in prose.
         if isinstance(parsed, str):
             unreadable.append(Unreadable(name=path.name, reason=parsed))
-            metrics.track_error()
             outcome = f"unreadable: {parsed}"
         else:
             found, missing = _records_from(parsed, path)
             recipients.extend(found)
             unresolved.extend(missing)
-            metrics.track_success()
             outcome = f"extracted:{len(found)}" + (
                 f" unresolved:{len(missing)}" if missing else ""
             )

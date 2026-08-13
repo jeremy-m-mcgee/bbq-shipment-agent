@@ -24,6 +24,7 @@ from bbq_shipment_agent.agent_configs import AgentConfig, SnapshotAgentConfigs
 from bbq_shipment_agent.agents.metrics import (
     InvocationMetrics,
     NoMetrics,
+    Outcome,
     SdkMetrics,
     metrics_for,
 )
@@ -71,6 +72,39 @@ class FakeTracker:
 
     def track_error(self):
         self.errors += 1
+
+    def track_metrics_of(self, extractor, func):
+        """The SDK's own shape: time the call, then report what it produced.
+
+        Mirrored rather than stubbed, because these tests are about what
+        LaunchDarkly ends up being told. A fake that merely recorded "record
+        was called" would pass whether or not duration, tokens and success
+        actually reach the tracker, which is the whole question.
+        """
+        started = time.perf_counter()
+        try:
+            result = func()
+        except Exception:
+            self.track_duration(round((time.perf_counter() - started) * 1000))
+            self.track_error()
+            raise
+        elapsed = round((time.perf_counter() - started) * 1000)
+        metrics = extractor(result)
+        if metrics is None:
+            self.track_duration(elapsed)
+            return result
+        self.track_duration(
+            metrics.duration_ms if metrics.duration_ms is not None else elapsed
+        )
+        if metrics.success:
+            self.track_success()
+        else:
+            self.track_error()
+        if metrics.tokens:
+            self.track_tokens(metrics.tokens)
+        if metrics.tool_calls is not None:
+            self.track_tool_calls(metrics.tool_calls)
+        return result
 
 
 class FakeEvent:
@@ -242,33 +276,93 @@ class TestTheReportersAgree:
         assert isinstance(metrics_for(config), NoMetrics)
 
 
-class TestDuration:
-    def test_it_is_reported_once_in_milliseconds(self):
+class TestRecord:
+    """`record` wraps the invocation, and the SDK derives four metrics from it."""
+
+    def test_duration_is_reported_once_in_milliseconds(self):
         tracker = FakeTracker()
-        SdkMetrics(tracker).track_duration()
+        SdkMetrics(tracker).record(lambda: "done", lambda _: Outcome(success=True))
 
         assert len(tracker.durations) == 1
         assert isinstance(tracker.durations[0], int)
         assert tracker.durations[0] >= 0
 
-    def test_a_second_call_never_reaches_the_tracker(self):
-        # Dropped here rather than at the tracker, which would log a warning.
+    def test_the_works_result_is_what_comes_back(self):
+        # `record` is not a side channel: the invocation *is* the wrapped
+        # call, so a stage that could not get its result back would have to
+        # run the work twice or keep it in a mutable box.
         tracker = FakeTracker()
-        metrics = SdkMetrics(tracker)
-        metrics.track_duration()
-        metrics.track_duration()
+        got = SdkMetrics(tracker).record(
+            lambda: "the answer", lambda _: Outcome(success=True)
+        )
 
+        assert got == "the answer"
+
+    def test_tokens_and_success_come_from_the_outcome(self):
+        tracker = FakeTracker()
+        SdkMetrics(tracker).record(
+            lambda: None,
+            lambda _: Outcome(success=True, input_tokens=7, output_tokens=11),
+        )
+
+        assert tracker.successes == 1
+        assert [(u.input, u.output, u.total) for u in tracker.tokens] == [(7, 11, 18)]
+
+    def test_an_unsuccessful_outcome_reports_an_error(self):
+        tracker = FakeTracker()
+        SdkMetrics(tracker).record(lambda: None, lambda _: Outcome(success=False))
+
+        assert (tracker.successes, tracker.errors) == (0, 1)
+
+    def test_a_failure_in_the_work_propagates_and_is_recorded(self):
+        # The caller's failure, not ours: B3 turns it into `RepairUnavailable`
+        # and D2 into `NarratorUnavailable`, and both need to see it.
+        tracker = FakeTracker()
+
+        def boom():
+            raise ValueError("model unreachable")
+
+        with pytest.raises(ValueError):
+            SdkMetrics(tracker).record(boom, lambda _: Outcome(success=True))
+
+        assert tracker.errors == 1
         assert len(tracker.durations) == 1
 
-    def test_a_tracker_that_raises_does_not_propagate(self):
+    def test_a_tracker_that_raises_does_not_lose_the_result(self):
+        # Reporting happens *after* the work returns, so a telemetry failure
+        # here would otherwise discard a completed invocation -- the run would
+        # fail because a metric could not be delivered.
         class Broken(FakeTracker):
             def track_duration(self, milliseconds):
                 raise RuntimeError("event delivery failed")
 
-        SdkMetrics(Broken()).track_duration()  # no exception
+        got = SdkMetrics(Broken()).record(
+            lambda: "the answer", lambda _: Outcome(success=True)
+        )
+
+        assert got == "the answer"
 
 
 class TestTimeToFirstToken:
+    def test_record_alone_never_reports_one(self):
+        """The reason `track_time_to_first_token` survived the SDK cleanup.
+
+        `LDAIMetrics` has four fields and TTFT is not among them, so nothing
+        an extractor returns can carry it and `track_metrics_of` cannot report
+        it. LaunchDarkly owns the metric; the milliseconds have to come from
+        whoever watched the stream.
+
+        This is the regression the cleanup was most likely to cause and the
+        least likely to notice: deleting the separate call would not fail a
+        test or raise anything, it would just quietly stop reporting and the
+        chart would go flat. If this ever starts seeing a first token, the SDK
+        has grown the field and the hand-measured call can go.
+        """
+        tracker = FakeTracker()
+        SdkMetrics(tracker).record(lambda: None, lambda _: Outcome(success=True))
+
+        assert tracker.first_token == []
+
     def test_an_unmeasured_latency_reports_nothing(self):
         # Every replayed completion answers `None`. Zero would put a fictional
         # latency in the same chart as the real ones.
@@ -299,8 +393,16 @@ class TestToolCalls:
         # The ledger keeps both -- "validated four addresses" is the fact
         # worth having -- and the console should not disagree with it.
         tracker = FakeTracker()
-        SdkMetrics(tracker).track_tools_called(
-            ["validate_address", "read_image_region", "validate_address"]
+        SdkMetrics(tracker).record(
+            lambda: None,
+            lambda _: Outcome(
+                success=True,
+                tools_called=[
+                    "validate_address",
+                    "read_image_region",
+                    "validate_address",
+                ],
+            ),
         )
 
         assert tracker.tool_calls == [
@@ -312,8 +414,18 @@ class TestToolCalls:
     def test_an_agent_that_called_nothing_reports_nothing(self):
         # Not an empty event: B1 and D1 have no tool loop at all, and an
         # empty report would make "was offered none" look like "declined".
+        # The SDK reports whatever list it is handed, including an empty one,
+        # so the emptiness has to be dropped before it gets there.
         tracker = FakeTracker()
-        SdkMetrics(tracker).track_tools_called([])
+        SdkMetrics(tracker).record(
+            lambda: None, lambda _: Outcome(success=True, tools_called=[])
+        )
+
+        assert tracker.tool_calls == []
+
+    def test_a_stage_with_no_tool_loop_reports_nothing(self):
+        tracker = FakeTracker()
+        SdkMetrics(tracker).record(lambda: None, lambda _: Outcome(success=True))
 
         assert tracker.tool_calls == []
 

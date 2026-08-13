@@ -48,7 +48,7 @@ from ..context import STAGE_MANIFEST_VERIFICATION
 from ..ledger import AgentInvocationRecord
 from ..planning import Manifest
 from ..run import Run, record_agent_invocation
-from .metrics import metrics_for
+from .metrics import Outcome, metrics_for
 from .model import Completion, Invocation, ModelClient, ModelUnavailable
 
 CONFIG_KEY = "manifest-verification"
@@ -296,57 +296,64 @@ def verify_manifest(
     # a parse retry makes it two round trips.
     metrics = metrics_for(config)
 
+    # Appended to inside `_invoke`, and read after it either way: a model that
+    # could not be reached still produced attempts worth counting, and the
+    # exception carries no list of its own.
     attempts: list[_Attempt] = []
-    prompt = payload
-    for _ in range(MAX_ATTEMPTS):
-        attempt = _Attempt()
-        attempts.append(attempt)
-        try:
-            attempt.completion = model.complete(invocation, prompt)
-        except ModelUnavailable as exc:
+
+    def _invoke() -> list[_Attempt]:
+        prompt = payload
+        for _ in range(MAX_ATTEMPTS):
+            attempt = _Attempt()
+            attempts.append(attempt)
             # A model that cannot be reached at all is not a bounded-retry
-            # case: the same call would fail the same way.
-            metrics.track_duration()
-            metrics.track_error()
-            return Verification(
-                outcome="unavailable", reason=str(exc), iterations=len(attempts)
+            # case: the same call would fail the same way. It propagates, and
+            # the SDK records the error and the duration on the way out.
+            attempt.completion = model.complete(invocation, prompt)
+
+            # First measured one wins: on a parse retry the operator's wait for
+            # a first token started with the first attempt, not the second.
+            metrics.track_time_to_first_token(
+                attempt.completion.time_to_first_token_ms
             )
 
-        # First measured one wins: on a parse retry the operator's wait for a
-        # first token started with the first attempt, not the second.
-        metrics.track_time_to_first_token(attempt.completion.time_to_first_token_ms)
+            parsed = _parse(attempt.completion.text)
+            if isinstance(parsed, str):
+                attempt.error = parsed
+                # The nudge carries the parse error rather than repeating the
+                # ask. A model that produced prose around JSON needs to be told
+                # that, not told the same thing again.
+                prompt = (
+                    f"{payload}\n\nYour previous reply could not be parsed: "
+                    f"{parsed}. Reply with the JSON object described in your "
+                    "instructions and nothing else."
+                )
+                continue
 
-        parsed = _parse(attempt.completion.text)
-        if isinstance(parsed, str):
-            attempt.error = parsed
-            # The nudge carries the parse error rather than repeating the ask.
-            # A model that produced prose around JSON needs to be told that,
-            # not told the same thing again.
-            prompt = (
-                f"{payload}\n\nYour previous reply could not be parsed: "
-                f"{parsed}. Reply with the JSON object described in your "
-                "instructions and nothing else."
-            )
-            continue
+            attempt.parsed = parsed
+            attempt.findings = _findings(parsed)
+            attempt.clean = [str(c) for c in parsed.get("clean") or []]
+            break
+        return attempts
 
-        attempt.parsed = parsed
-        attempt.findings = _findings(parsed)
-        attempt.clean = [str(c) for c in parsed.get("clean") or []]
-        break
-
-    tokens_in = sum(a.completion.input_tokens for a in attempts if a.completion)
-    tokens_out = sum(a.completion.output_tokens for a in attempts if a.completion)
-    metrics.track_tokens(tokens_in, tokens_out)
-    metrics.track_duration()
     # D1 is offered no tools by design 6.2, so no tool calls are reported --
-    # not an empty list, which would claim it declined tools it never had.
-    # Success is about the invocation, not the manifest: an agent that
-    # correctly reports six blockers did its job. Only an unparseable reply
-    # is a failed invocation.
-    if attempts[-1].parsed is None:
-        metrics.track_error()
-    else:
-        metrics.track_success()
+    # `tools_called` stays unset rather than empty, which would claim it
+    # declined tools it never had. Success is about the invocation, not the
+    # manifest: an agent that correctly reports six blockers did its job. Only
+    # an unparseable reply is a failed invocation.
+    def _outcome(done: list[_Attempt]) -> Outcome:
+        return Outcome(
+            success=done[-1].parsed is not None,
+            input_tokens=sum(a.completion.input_tokens for a in done if a.completion),
+            output_tokens=sum(a.completion.output_tokens for a in done if a.completion),
+        )
+
+    try:
+        metrics.record(_invoke, _outcome)
+    except ModelUnavailable as exc:
+        return Verification(
+            outcome="unavailable", reason=str(exc), iterations=len(attempts)
+        )
 
     return _result(run, ledger_root, attempts, invocation)
 

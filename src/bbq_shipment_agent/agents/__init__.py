@@ -18,7 +18,7 @@ decide what to do with the answer. No prompt text and no model name is written
 in this package.
 """
 
-from .metrics import InvocationMetrics, NoMetrics, SdkMetrics, metrics_for
+from .metrics import InvocationMetrics, NoMetrics, Outcome, SdkMetrics, metrics_for
 from .model import (
     DEFAULT_MAX_TOKENS,
     AnthropicModel,
@@ -58,6 +58,7 @@ __all__ = [
     "AnthropicModel",
     "Completion",
     "InvocationMetrics",
+    "Outcome",
     "NoMetrics",
     "SdkMetrics",
     "ConversingModel",
