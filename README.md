@@ -6,6 +6,14 @@ and buys no labels — the operator does that by hand from an approved manifest.
 
 Full design: [`docs/design.md`](docs/design.md). Working notes: [`CLAUDE.md`](CLAUDE.md).
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/ui-setup-dark.png">
+  <img src="docs/img/ui-setup.png" alt="The run setup page: nine message-thread screenshots to pick from, each captioned with how many recipients it holds and how hard they are to read, beside a panel showing the replay toggle and the fixed ledger path.">
+</picture>
+
+Picking which screenshots B1 reads is the one thing a terminal cannot do, and
+the reason the web UI exists at all.
+
 ## Setup
 
 Python 3.12 or newer. Nothing below needs an API key — every step runs against
@@ -162,6 +170,32 @@ of them and prints which three, but you cannot *choose* three without seeing
 them. The picker captions each image from `ground_truth.json` where there is
 one — how many recipients it holds, and how hard they are to read — so you can
 aim a run at the awkward cases rather than sampling blind.
+
+### The results page
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/ui-results-dark.png">
+  <img src="docs/img/ui-results.png" alt="A finished run: the stage-by-stage progress log, a panel per capability mode showing what each one did and which LaunchDarkly variation and model served it, the D1 verification result, and the manifest grouped by ship date with cost, gel pack count, predicted arrival temperature and thermal margin per row.">
+</picture>
+
+Three things on that page are worth pointing at, because they are the design
+rather than the decoration:
+
+- **Every mode says which stage it gated and what it actually did**, not just
+  its value. `off` is reported as a normal outcome — "never runs, a broken
+  address stays on the escalation list" — because a capability being off is a
+  configuration, not a degradation.
+- **The values were decided by LaunchDarkly when each stage ran**, and the page
+  says so rather than offering a control. The form configures a run; it does
+  not configure the system. The `4.4C` limit and the two-carrier cap appear as
+  stated policy for the same reason — neither is the operator's to move.
+- **The agent config table names the variation and model that served each
+  stage**, which is what makes a surprising run diagnosable months later
+  against the committed ledger.
+
+The screenshots above are a **replayed** run against committed fixtures — no
+keys, no network, nothing spent. That is also why D1 reads *did not run*: the
+offline gate serves the code default, and `verification-enabled` defaults off.
 
 The page shows what the CLI prints, in the shape it should have been in all
 along: the capability header and the served AI Configs stay at the top instead
