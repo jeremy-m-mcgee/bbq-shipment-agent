@@ -48,73 +48,86 @@ Four documented facts fix the design:
 4. **Judges run in your process against your own credentials** — "LaunchDarkly
    does not proxy or independently invoke model providers."
 
-### How the judge is executed — the documented pattern, not a deviation
+### The judge is the SDK's judge — we write no scoring code
 
-Fetch the config from LaunchDarkly, call the model yourself, track through the
-tracker LD mints. That is **LaunchDarkly's primary documented integration**, not
-a workaround, and it is what this repo already does on all four stages.
+Use `LDAIClient.create_judge(JUDGE_KEY, context)` and `await judge.evaluate(
+message_history, response_to_evaluate)`. The SDK owns the model call, the
+prompt framing, the structured-output schema, the 0.0-1.0 validation, its own
+tracker, and emission to `$ld:ai:judge:narration-scope`. We read `result.score`
+and decide.
 
-Their getting-started guide for OpenAI — their flagship provider, the one that
-*has* a first-party runner package — teaches exactly this shape:
+This replaces an earlier draft of this plan that fetched `judge_config()` and
+re-implemented `Judge.evaluate` against `AnthropicModel`. That draft duplicated
+SDK behaviour for no benefit the SDK does not already provide, which is the
+thing to stop doing.
 
-```python
-config  = ai_client.completion_config(key, context)     # LD serves model + prompt
-tracker = config.create_tracker()                       # LD mints the tracker
-openai_client.chat.completions.create(                  # you call the provider
-    model=config.model.name, messages=chat_messages, **params,
-)                                                       # wrapped in track_metrics_of(...)
+**Required dependencies.** `create_judge` needs a provider package, and
+Anthropic is reached through langchain (there is no `-anthropic` provider):
+
+```
+uv add launchdarkly-server-sdk-ai-langchain langchain-anthropic
 ```
 
-with the guide stating plainly that no managed model runner or intermediary
-layer is involved. The Anthropic guide says the same thing in the same place.
+Without them `RunnerFactory` finds no provider and `create_judge` returns
+`None` — which the guard must treat as "unavailable, fail open" rather than as
+an error, since that is also the offline state.
 
-So the judge does what every other stage here does: `judge_config()` for the
-model, rubric and `evaluationMetricKey`; `AnthropicModel` for the call;
-`track_judge_result` for the score.
+**Three things this costs, to be chosen rather than discovered:**
 
-**Two corrections worth recording**, because both were got wrong while writing
-this plan and a future reader will hit them again:
+- **A socket outside `wiring.py`.** The judge's runner opens its own
+  connection from inside `ldai`. CLAUDE.md's "`wiring.py` is the only module
+  that constructs something which opens a socket" stops being literally true,
+  and the property it protects -- no test can open one -- now depends on
+  `create_judge` being injected rather than reached for. Construct the `Judge`
+  in `wiring.py` and pass it in, exactly as the models are.
+- **No `RecordedModel` replay.** Guard tests stub the `Judge` object itself
+  (`evaluate` returning a scripted `JudgeResult`) rather than replaying a
+  recorded completion.
+- **An async bridge.** `Judge.evaluate` is `async` and `Narrator.say` is not.
+  `asyncio.run(...)` is safe at all three call sites: the CLI is plain sync, the
+  UI worker runs on its own thread, and the SSE route already runs the turn on a
+  daemon thread -- none has a running loop.
 
-- **AI Configs and the runner abstraction are different things.** AI Configs
-  place no limit on the request you build — vision, streaming, tool loops and
-  multi-turn all work, which is why B1 sends screenshots and D2 streams today.
-  The string-only surface is `Runner.run(input: str)`
-  (`langchain_model_runner.py:62` wraps it in a single `HumanMessage`), which is
-  the optional execution layer. "The SDK can't do vision" is false; "the runner
-  is string-in" is true and much narrower.
-- **Using `create_tracker` *is* the documented pattern.** Design 10's warning
-  that hand-reimplementing it cost two live bugs is a warning against bypassing
-  the helper, not against calling the provider directly. This design uses the
-  helper.
+**What LaunchDarkly still does not measure**, so it stays ours: time to first
+token has no field in `LDAIMetrics` and no hook in any runner. That is why
+`AnthropicModel` streams for D2, and it is unrelated to the judge, which is
+single-shot and has no first token worth timing.
 
-### The optional runner layer, and why it stays unused
+### Correcting two things this plan got wrong earlier
 
-`ManagedModel` / `ManagedAgent` / `create_judge` would additionally execute the
-call, extract metrics, and auto-dispatch judges. Adopting it is a real option
-for a judge — single-shot, untooled, text-only is exactly its shape — and it is
-declined on three narrow grounds:
+Both are easy to re-derive incorrectly, so they are recorded rather than
+quietly fixed:
 
-- **It cannot serve most of this pipeline.** `Runner.run` is string-in with no
-  streaming anywhere in `ldai` or the langchain provider, so B1 (base64
-  screenshots) and D2 (token-by-token SSE) cannot use it. Adopting it only for
-  the judge would create a second invocation path in a codebase whose central
-  claim is single seams.
-- **It needs a dependency chain** — `launchdarkly-server-sdk-ai-langchain` plus
-  `langchain-anthropic` — for one scoring call per turn.
-- **It would open a socket outside `wiring.py`**, which is what makes "no test
-  can open a socket" true, and it removes the `RecordedModel` replay path the
-  guard's fixtures want.
+- **AI Configs are not the runner abstraction.** AI Configs place no limit on
+  the request you build -- vision, streaming, tool loops and multi-turn all
+  work, which is why B1 sends screenshots and D2 streams today. The string-only
+  surface is `Runner.run(input: str)` (`langchain_model_runner.py:62` wraps it
+  in one `HumanMessage`), which is the optional execution layer. "The SDK can't
+  do vision" is false; "the runner is string-in" is true and much narrower.
+- **The direct provider call is LaunchDarkly's documented pattern**, not a
+  deviation -- their OpenAI guide teaches config-in / call-it-yourself / track
+  on the provider that *does* ship a runner. So B1, B3 and D2 calling Anthropic
+  directly is correct and stays. What was wrong was extending that to a *judge*,
+  where the SDK does the whole job.
 
-What that costs us is small and bounded: the prompt framing, the structured
-parse, and the 0.0–1.0 clamp that `Judge.evaluate` would otherwise do. Mirror
-the SDK's own framing (`MESSAGE HISTORY: … RESPONSE TO EVALUATE: …`,
-`judge/__init__.py:169`) so a console-authored rubric behaves identically and
-adopting the runner later stays a drop-in.
+### Pre-existing duplication this surfaced — separate work
 
-Mitigate it by mirroring the SDK's own prompt framing
-(`MESSAGE HISTORY: … RESPONSE TO EVALUATE: …`, `judge/__init__.py:169`) so a
-rubric authored in the console behaves identically under either path, and
-switching to Path A later is a drop-in rather than a re-tune.
+Not part of this change, but found while writing it and worth its own issue:
+
+- **`SdkMetrics` hand-rolls `track_metrics_of`** -- its own `perf_counter`
+  timing, token wrapping, and success/error calls. Justified for B3 and D2,
+  whose turns span up to eight model calls where `track_metrics_of` wraps one,
+  and which need `track_time_to_first_token`. Not obviously justified for B1 or
+  D1, which are single-shot.
+- **`_from_variation` hand-parses LD's wire format** (`_ldMeta`, `model.name`,
+  `model.parameters`, `instructions`, `tools`) -- work `agent_config()` already
+  does. The repo calls both, because the SDK does not expose `variation_key` or
+  `version` and design 6.4 mitigation 2 requires them on every ledger line. The
+  identity half is forced; the parsing half may not be.
+- **The snapshot's offline-fallback half** overlaps
+  `agent_config(key, ctx, default=AIAgentConfigDefault(...))`. The audit-trail
+  half is genuinely separate -- 6.4 needs committed bytes -- but the fallback
+  half may be re-expressible as an SDK default.
 
 ```mermaid
 flowchart TD
@@ -238,46 +251,52 @@ out a review.
 ### New — `src/bbq_shipment_agent/agents/guard.py`
 
 `ScopeGuard`, holding `JUDGE_KEY = "narration-scope"`, `REFUSAL`, `THRESHOLD`,
-and `check(prompt, reply) -> Verdict`.
+and `check(history, reply) -> Verdict`. It is deliberately thin: the SDK does
+the scoring, and this class only decides and records.
 
-- Fetches `LDAIClient.judge_config(...)` for the model, rendered messages and
-  metric key, and adapts the returned `AIJudgeConfig` into the repo's
-  `AgentConfig` shape so `metrics_for`, `Invocation.from_config` and
-  `record_agent_invocation` all work unchanged.
-- `Invocation.from_config` **raises** when a config is unavailable or names no
-  model (`model.py:118-128`) — catch it and degrade to a no-op guard. Both
-  front-ends wrap `Narrator` construction in
-  `except (NarratorUnavailable, ModelUnavailable)`, so an uncaught raise would
-  kill the narrator instead of the guard.
-- Calls `ModelClient.complete` (`model.py:158-161`) — single shot. Recent turns
-  go in as `message_history`, `turn.reply` as `response_to_evaluate`.
-- Parses `{score, reasoning}`, clamps to 0.0–1.0 (the SDK discards anything
-  outside), compares against `THRESHOLD`.
-- Reports with `tracker.track_judge_result(...)`, which is duck-typed
-  (`tracker.py:392`), so a constructed `JudgeResult(judge_config_key=…,
-  metric_key=…, score=…, sampled=True, success=True)` lands the score on
-  `$ld:ai:judge:narration-scope`. It **no-ops unless `sampled` is True** — set
-  it explicitly; this is the 100%-sampled blocking guard the docs describe.
-- Records its invocation with **four fixed outcomes**: `in_scope`,
-  `out_of_scope`, `unparsed`, `error`. The last two behave as in-scope.
-  `record_agent_invocation` takes an explicit `config=` argument
-  (`run.py:397-409`) — needed here, because a judge is not in
-  `run.agent_configs` and the default identity lookup would find nothing.
-- `tools_offered` / `tools_called` are **omitted, not `[]`** — design 7 makes
-  absent mean "this append knows nothing" and empty a measurement; the judge has
-  no tool loop, like B1 and D1.
+- **Takes an injected `Judge | None`.** `wiring.py` calls
+  `LDAIClient.create_judge(JUDGE_KEY, context)`; `ScopeGuard` never constructs
+  one. `create_judge` returns `None` when the config is disabled, when no
+  provider package is installed, or when LD is unreachable -- all of which mean
+  the same thing here: no guard, messages pass.
+- **Scores with `await judge.evaluate(history, reply)`.** The SDK owns the
+  prompt framing, the structured-output schema, the model call, and the
+  0.0-1.0 validation. `Judge.evaluate` never raises -- it catches everything and
+  returns a `JudgeResult` carrying `error_message` -- so failing open is the
+  default rather than something to build.
+- **Bridges async with `asyncio.run(...)`** at the one call site inside `say`.
+  Safe on all three paths: the CLI is sync, the UI worker is its own thread, and
+  the SSE route already runs the turn on a daemon thread.
+- **Emits the score itself.** Programmatic judges do *not* report their own
+  metric -- the docs are explicit that `create_judge` "doesn't automatically
+  emit monitoring metrics"; only attached judges get dispatched by
+  `ManagedAgent`. So call `track_judge_result(result)` on the narrator's
+  tracker, which requires exposing the raw tracker from `SdkMetrics` (it holds
+  one already). It no-ops unless `sampled` is `True`, which a 100%-sampled
+  judge config satisfies.
+- **Decides**: suppress when `result.success` and `result.score` is not `None`
+  and `score < THRESHOLD` and the mode is `enforce`. Every other combination --
+  including a sampled-out, errored, or unparseable result -- passes through.
+- **Records one invocation line** with `agent_key = JUDGE_KEY`, `judge_score`,
+  and a fixed `outcome` of `in_scope` / `out_of_scope` / `error`. Pass `config=`
+  explicitly to `record_agent_invocation` (`run.py:397-409`); a judge is not in
+  `run.agent_configs`, so the default identity lookup finds nothing.
+  `tools_offered` / `tools_called` are **omitted, not `[]`** -- design 7 makes
+  absent mean "this append knows nothing" and empty a measurement, and a judge
+  has no tool loop, like B1 and D1.
 
 **The threshold is a Python constant**, not a served value: a threshold is
 control flow, and design 6.1 keeps control flow in Python. The mode, the model
 and the rubric are LaunchDarkly's.
 
-**Model-authored text must never reach the ledger.** The judge's `reasoning`
-goes to the screen and to LaunchDarkly, never into `agent_invocations` —
-CLAUDE.md's secrets rule requires a recorded value be structurally incapable of
-carrying free text. The **score** is safe: a bounded float. Add a nullable
+**Model-authored text must never reach the ledger.** `result.reasoning` may go
+to the screen and to LaunchDarkly, never into `agent_invocations` -- CLAUDE.md's
+secrets rule requires a recorded value be structurally incapable of carrying
+free text. The **score** is safe: a bounded float. Add a nullable
 `judge_score DOUBLE` to `AgentInvocationRecord` (`ledger/schema.py:266-321`) so
 a run stays diagnosable from committed JSONL alone; a nullable column needs no
 `SCHEMA_VERSION` bump.
+
 
 ### Modified
 
@@ -288,9 +307,9 @@ a run stays diagnosable from committed JSONL alone; a nullable column needs no
 | `context.py:61-67` | Add `STAGE_REVIEW_GUARD = "review_guard"`; no `_ATTRIBUTES` change, `stage` is key-only |
 | `run.py:146-172` | Generalise `_evaluate` to take a `Capability` descriptor |
 | `run.py:174-184` | Add `def guard(self) -> GuardMode` |
-| `agent_configs.py` | Add judge retrieval (`judge_config`, `judge_config_template`) and extend the snapshot — see below |
+| `agent_configs.py` | Snapshot the judge's un-rendered rubric via `judge_config_template` — see below. No retrieval-for-execution: `create_judge` does that. |
 | `agents/narrator.py:120-202` | `say` → `_say`; new `say` = `_say` + judge + suppression/rollback; `open()` calls `_say`; `Turn` gains `refused: bool = False`; new **keyword-only** `guard=None` param; `on_delta` withheld when enforcing |
-| `wiring.py` | Add `guard_model(options, mode)` beside `verifier` (`:601`) and `narrator_for(...)` |
+| `wiring.py` | Add `scope_judge(client, run, mode) -> Judge \| None` beside `verifier` (`:601`) and `narrator_for(...)` |
 | `cli.py:529-540`, `ui/service.py:415-421` | Replace both `Narrator(...)` constructions with `wiring.narrator_for(...)` |
 | `ui/service.py:99,220,259` | `RunService(conversing_model=)` → `narrator_factory=` |
 | `ui/app.py:374-445`, `ui/templates/_review_pane.html:76-81` | Post to the sync route when enforcing (drop `data-stream`) |
@@ -328,12 +347,19 @@ construction is copied across `cli.py:533-538` and `ui/service.py:415-421`, and
 `cli.py:508-514` records this repo being bitten once already when "the seam the
 CLI actually uses was the one thing not covered."
 
-`guard_model(options, mode)` mirrors `verifier` (`wiring.py:601-607`), putting
-the off short-circuit in the factory. It **returns `None`, never raises**:
-`conversing_model` raises `ModelUnavailable` to request the button-driven
-fallback, so a raising guard factory would silently kill the narrator.
-`ScopeGuard` must never construct `AnthropicModel()` itself — `wiring.py` stays
-the only module that opens a socket.
+`scope_judge(client, run, mode)` mirrors `verifier` (`wiring.py:601-607`),
+putting the off short-circuit in the factory: `None` when the mode is `OFF`,
+when there is no live LD client, or when `create_judge` returns `None`. It
+**returns `None`, never raises** — `conversing_model` raises `ModelUnavailable`
+to request the button-driven fallback, so a raising factory would silently kill
+the narrator.
+
+Keeping `create_judge` here rather than inside `ScopeGuard` is what preserves
+the spirit of "`wiring.py` is the only module that constructs something which
+opens a socket". The letter of it changes: the judge's runner opens its own
+connection inside `ldai`, so `wiring.py` is no longer the only place a socket
+*can* originate — only the only place one is *constructed*. CLAUDE.md should say
+so rather than quietly becoming untrue.
 
 ## Cost and latency
 
@@ -422,7 +448,8 @@ CLAUDE.md: capability rules, snapshot description, layout.
   judge's `reasoning` appears in no ledger record; `on_delta` is not forwarded
   when enforcing; snapshot round-trip for a judge entry.
 - Guard tests inject a synthetic judge config and a scripted `ModelClient`
-  (`ScriptedModel`, `test_narrator.py:33-46`). A fake rubric string in a test is
+  (a stub `Judge` whose `evaluate` returns a scripted `JudgeResult`, in the
+  spirit of `ScriptedModel`, `test_narrator.py:33-46`). A fake rubric in a test is
   not a CLAUDE.md violation — that rule targets a second copy of the *served*
   text, and the repo already does this at `test_agent_configs.py:26,211,439`.
 - `uv run bbq-shipment-agent ui`, flag at `enforce`, run to `awaiting_review`:
