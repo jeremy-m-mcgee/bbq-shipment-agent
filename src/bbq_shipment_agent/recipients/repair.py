@@ -47,7 +47,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from ..agents.metrics import metrics_for
+from ..agents.metrics import Outcome, metrics_for
 from ..agents.model import ConversingModel, Invocation, ModelUnavailable
 from ..agents.tools import Tool, ToolError, ToolImage, build_tools
 from ..agents.verification import render_instructions
@@ -135,46 +135,56 @@ def repair_addresses(
     parsed: dict[str, Any] | None = None
     iterations = 0
 
-    for iterations in range(1, MAX_ITERATIONS + 1):  # noqa: B007 — count read after the loop
-        try:
+    def _loop() -> None:
+        nonlocal tokens_in, tokens_out, parsed, iterations
+
+        for iterations in range(1, MAX_ITERATIONS + 1):  # noqa: B007 — count read after the loop
+            # An unreachable model propagates: the SDK records the error and
+            # the duration on the way out, and the caller turns it into
+            # `RepairUnavailable`.
             completion = model.converse(invocation, messages, tools)
-        except ModelUnavailable as exc:
-            metrics.track_duration()
-            metrics.track_error()
-            raise RepairUnavailable(str(exc)) from exc
-        metrics.track_time_to_first_token(completion.time_to_first_token_ms)
-        tokens_in += completion.input_tokens
-        tokens_out += completion.output_tokens
-        messages.append(
-            {
-                "role": "assistant",
-                "content": completion.raw_content
-                if completion.raw_content is not None
-                else completion.text,
-            }
+            metrics.track_time_to_first_token(completion.time_to_first_token_ms)
+            tokens_in += completion.input_tokens
+            tokens_out += completion.output_tokens
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": completion.raw_content
+                    if completion.raw_content is not None
+                    else completion.text,
+                }
+            )
+
+            if not completion.tool_calls:
+                candidate = _parse(completion.text)
+                parsed = None if isinstance(candidate, str) else candidate
+                break
+
+            results = []
+            for call in completion.tool_calls:
+                called.append(call.name)
+                results.append(_run(by_name, call))
+            messages.append({"role": "user", "content": results})
+
+    # The whole loop is the invocation, so the duration includes the validator
+    # round trips it made -- which is the point: a variation that validates six
+    # times before answering is slower for the operator, and design 6.2 wants
+    # that attributable per variant. `called` is reported rather than the
+    # offered set: design 6.1 keeps what an agent *may* do in Python, and a
+    # metric naming a tool the model never invoked would turn an offer into a
+    # call. It is the list the ledger line carries.
+    try:
+        metrics.record(
+            _loop,
+            lambda _: Outcome(
+                success=parsed is not None,
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                tools_called=called,
+            ),
         )
-
-        if not completion.tool_calls:
-            candidate = _parse(completion.text)
-            parsed = None if isinstance(candidate, str) else candidate
-            break
-
-        results = []
-        for call in completion.tool_calls:
-            called.append(call.name)
-            results.append(_run(by_name, call))
-        messages.append({"role": "user", "content": results})
-
-    metrics.track_tokens(tokens_in, tokens_out)
-    # `called`, not the offered set: design 6.1 keeps what an agent *may* do in
-    # Python, and a metric naming a tool the model never invoked would turn an
-    # offer into a call. It is the list the ledger line carries.
-    metrics.track_tools_called(called)
-    # Includes the validator round trips the loop made, which is the point: a
-    # variation that validates six times before answering is slower for the
-    # operator, and design 6.2 wants that attributable per variant.
-    metrics.track_duration()
-    metrics.track_success() if parsed is not None else metrics.track_error()
+    except ModelUnavailable as exc:
+        raise RepairUnavailable(str(exc)) from exc
 
     repaired, escalated, rejected = _adjudicate(needing_repair, parsed, validator)
 

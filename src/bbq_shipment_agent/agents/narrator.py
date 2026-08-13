@@ -42,7 +42,7 @@ from typing import Any
 
 from ..context import STAGE_REVIEW_NARRATOR
 from ..run import Run, record_agent_invocation
-from .metrics import metrics_for
+from .metrics import Outcome, metrics_for
 from .model import ConversingModel, Invocation, ModelUnavailable
 from .tools import Tool, ToolError, build_tools
 from .verification import render_instructions
@@ -136,9 +136,9 @@ class Narrator:
         # invocation -- the same unit `iterations` counts on the ledger line.
         metrics = metrics_for(self.config)
 
-        for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
-            turn.iterations = iteration
-            try:
+        def _loop() -> Turn:
+            for iteration in range(1, MAX_TOOL_ITERATIONS + 1):
+                turn.iterations = iteration
                 # `on_delta` is passed only when a caller asked to stream, so a
                 # non-streaming turn's call is byte-for-byte the one it always
                 # was -- a `ConversingModel` that predates the delta channel is
@@ -152,51 +152,58 @@ class Narrator:
                         self.invocation, self.messages, self._tools
                     )
                 )
-            except ModelUnavailable as exc:
-                metrics.track_duration()
-                metrics.track_error()
-                self._record("unavailable", turn)
-                raise NarratorUnavailable(str(exc)) from exc
 
-            # The turn's first token, which is the one the operator waited on.
-            # Later iterations are the tool loop and report nothing.
-            metrics.track_time_to_first_token(completion.time_to_first_token_ms)
-            turn.input_tokens += completion.input_tokens
-            turn.output_tokens += completion.output_tokens
-            self.messages.append(
-                {
-                    "role": "assistant",
-                    "content": completion.raw_content
-                    if completion.raw_content is not None
-                    else completion.text,
-                }
-            )
+                # The turn's first token, which is the one the operator waited
+                # on. Later iterations are the tool loop and report nothing.
+                metrics.track_time_to_first_token(completion.time_to_first_token_ms)
+                turn.input_tokens += completion.input_tokens
+                turn.output_tokens += completion.output_tokens
+                self.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": completion.raw_content
+                        if completion.raw_content is not None
+                        else completion.text,
+                    }
+                )
 
-            if not completion.tool_calls:
-                turn.reply = completion.text
-                break
+                if not completion.tool_calls:
+                    turn.reply = completion.text
+                    break
 
-            results = []
-            for call in completion.tool_calls:
-                turn.tools_called.append(call.name)
-                results.append(self._run(call))
-            self.messages.append({"role": "user", "content": results})
-        else:
-            # Ran out of iterations with the model still calling tools. The
-            # turn ends rather than the budget; the operator can ask again.
-            turn.reply = (
-                "(the narrator kept calling tools without answering; "
-                "ask again, or read the manifest directly)"
-            )
+                results = []
+                for call in completion.tool_calls:
+                    turn.tools_called.append(call.name)
+                    results.append(self._run(call))
+                self.messages.append({"role": "user", "content": results})
+            else:
+                # Ran out of iterations with the model still calling tools. The
+                # turn ends rather than the budget; the operator can ask again.
+                turn.reply = (
+                    "(the narrator kept calling tools without answering; "
+                    "ask again, or read the manifest directly)"
+                )
+            return turn
 
-        metrics.track_tokens(turn.input_tokens, turn.output_tokens)
-        # The same list the ledger line carries, so a variation's tool use is
+        # The whole loop is the invocation, so the duration the SDK records
+        # covers what the operator waited for: a narration that re-solved twice
+        # took as long as it took, tool execution included. `tools_called` is
+        # the same list the ledger line carries, so a variation's tool use is
         # answerable from the console as well as from the committed JSONL.
-        metrics.track_tools_called(turn.tools_called)
-        # Reported after the tool loop, so it covers what the operator waited
-        # for: a narration that re-solved twice took as long as it took.
-        metrics.track_duration()
-        metrics.track_success()
+        try:
+            metrics.record(
+                _loop,
+                lambda t: Outcome(
+                    success=True,
+                    input_tokens=t.input_tokens,
+                    output_tokens=t.output_tokens,
+                    tools_called=t.tools_called,
+                ),
+            )
+        except ModelUnavailable as exc:
+            self._record("unavailable", turn)
+            raise NarratorUnavailable(str(exc)) from exc
+
         self._record("findings" if turn.tools_called else "clean", turn)
         self.turns.append(turn)
         return turn
