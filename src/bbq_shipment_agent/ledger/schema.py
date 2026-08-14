@@ -320,6 +320,21 @@ class AgentInvocationRecord(LedgerRecord):
     tools_offered: list[str] | None = _opt("VARCHAR[]")
     tools_called: list[str] | None = _opt("VARCHAR[]")
 
+    #: What a judge scored this invocation, 0.0-1.0. Only D2's scope guard
+    #: writes it today, on its own line -- the judge is the invocation, so the
+    #: score belongs to it rather than to the narration it graded.
+    #:
+    #: The score and not the reasoning. A judge returns both, and the prose is
+    #: model-authored free text: the ledger is committed and append-only, so
+    #: nothing that could carry an address or a key goes in it (see the
+    #: capability coercion, which exists for the same reason). A bounded float
+    #: cannot. The reasoning reaches the operator's screen and LaunchDarkly,
+    #: which are not append-only and not committed.
+    #:
+    #: Nullable and so needs no `SCHEMA_VERSION` bump: every invocation written
+    #: before judges existed simply has none, which is the honest reading.
+    judge_score: float | None = _opt("DOUBLE")
+
 
 @dataclass(kw_only=True)
 class CapabilityEvaluationRecord(LedgerRecord):

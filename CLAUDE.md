@@ -59,7 +59,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
 - Phase B works on `Recipient` (address + provenance + confidence); `to_shipments` makes the `Shipment` phase C wants at the end of B4. Provenance never reaches planning.
-- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
+- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2), guard.py (D2's scope guard)
 - `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), extraction.py (B1), roster.py (the run input file), validation.py (B2), repair.py (B3), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
@@ -112,6 +112,18 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `ContextBuilder` is the only thing that constructs an evaluation context, and `context.py` the only module calling `Context.from_dict`. A second construction site is how the run and stage contexts drift apart, which is what a percentage rollout cannot survive. Context attributes are declared per kind in `_ATTRIBUTES`; an undeclared one is refused, not forwarded, because a context is sent to LD's servers.
 - Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
+
+## The D2 scope guard
+- `narration-scope-relevance` is a LaunchDarkly **judge** config, not an agent config. Not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, fetched with `create_judge`, not `variation_detail`.
+- The SDK does the scoring. `judge.evaluate(history, reply)` owns the model call, prompt framing, output schema and 0.0–1.0 validation. Do not reimplement any of it.
+- **The judge decides what the operator sees.** A score below `THRESHOLD` withholds the narration behind a canned refusal. That is the point of it, not a mode.
+- **One switch, and it is in LaunchDarkly.** Enabling and targeting the judge config is the whole of it — `create_judge` returns `None` when disabled, untargeted or unreachable, and then there is no guard. There is deliberately no flag beside it: a second control over the same thing is another place to look.
+- It judges the **response**, not the question, and the last few turns travel as context — a terse reply is unscoreable without them. Measured: the first rubric scored a correct one-line narration 0.3 for reading like a fragment.
+- **Guarding and streaming are mutually exclusive.** A reply that must be judged before the operator sees it cannot already be on their screen, so the pane drops `data-stream` whenever the guard is live.
+- A suppressed turn rolls back **whole** — prompt and answer both leave `self.messages`. There is no input-side gate, so the prompt may itself be off-topic, and keeping it re-primes the model into suppressing every following turn.
+- `open()` is never judged. `OPENING_PROMPT` is Python's text asking for the manifest narration, so it is in scope by construction and withholding it would leave the review with nothing to read.
+- Everything that is not a clear refusal passes: no judge, a raising judge, a sampled-out or scoreless result all show the narration and are recorded. A withheld correct narration has no operator override, which is worse than an off-topic one getting through.
+- The score goes in the ledger; the reasoning never does. Model-authored free text in an append-only committed file is what the capability coercion exists to prevent.
 
 ## Agent invocation
 - A model parameter LD serves may be refused by the provider (`temperature` is deprecated for Sonnet 5). `AnthropicModel` drops it, retries once, and reports it on `Completion.dropped_parameters`. Nothing validates parameters at startup — design 10.

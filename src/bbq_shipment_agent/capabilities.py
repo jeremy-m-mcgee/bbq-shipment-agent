@@ -85,6 +85,7 @@ class VerificationMode(StrEnum):
     ON = "on"
 
 
+
 class CapabilityConfigError(Exception):
     """A capability value cannot be trusted to be what it says.
 
