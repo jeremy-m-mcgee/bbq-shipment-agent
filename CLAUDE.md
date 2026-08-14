@@ -113,14 +113,17 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
 
-## Scoring D2's narrations
-- `narration-scope-relevance` is a LaunchDarkly **judge** config, not an agent config. It is not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, and is fetched with `create_judge`, not `variation_detail`.
-- The SDK does the scoring. `judge.evaluate(history, reply)` owns the model call, the prompt framing, the output schema and the 0.0–1.0 validation. Do not reimplement any of it.
-- **It observes and never intervenes.** The score reaches the ledger and LaunchDarkly; it changes nothing the operator sees. There is no flag: enabling and targeting the judge in LD is the whole of the on switch.
-- It scores the **response**, and the last few turns travel with it as context — a terse reply is unscoreable without them. Measured: the first rubric scored a correct one-line narration 0.3 for reading like a fragment.
-- `open()` is not scored. `OPENING_PROMPT` is Python's text asking for the manifest narration, so it is in scope by construction.
+## The D2 scope guard
+- `narration-scope-relevance` is a LaunchDarkly **judge** config, not an agent config. Not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, fetched with `create_judge`, not `variation_detail`.
+- The SDK does the scoring. `judge.evaluate(history, reply)` owns the model call, prompt framing, output schema and 0.0–1.0 validation. Do not reimplement any of it.
+- **The judge decides what the operator sees.** A score below `THRESHOLD` withholds the narration behind a canned refusal. That is the point of it, not a mode.
+- **One switch, and it is in LaunchDarkly.** Enabling and targeting the judge config is the whole of it — `create_judge` returns `None` when disabled, untargeted or unreachable, and then there is no guard. There is deliberately no flag beside it: a second control over the same thing is another place to look.
+- It judges the **response**, not the question, and the last few turns travel as context — a terse reply is unscoreable without them. Measured: the first rubric scored a correct one-line narration 0.3 for reading like a fragment.
+- **Guarding and streaming are mutually exclusive.** A reply that must be judged before the operator sees it cannot already be on their screen, so the pane drops `data-stream` whenever the guard is live.
+- A suppressed turn rolls back **whole** — prompt and answer both leave `self.messages`. There is no input-side gate, so the prompt may itself be off-topic, and keeping it re-primes the model into suppressing every following turn.
+- `open()` is never judged. `OPENING_PROMPT` is Python's text asking for the manifest narration, so it is in scope by construction and withholding it would leave the review with nothing to read.
+- Everything that is not a clear refusal passes: no judge, a raising judge, a sampled-out or scoreless result all show the narration and are recorded. A withheld correct narration has no operator override, which is worse than an off-topic one getting through.
 - The score goes in the ledger; the reasoning never does. Model-authored free text in an append-only committed file is what the capability coercion exists to prevent.
-- **An earlier version withheld low-scoring narrations and was removed.** Five live turns produced no suppressions: asked something off-topic, `review-narrator` declines it itself, and the decline — which discusses carriers and margins — correctly scores 1.0. It held even on Haiku, which was the scenario the suppression was justified by. Do not re-add it without evidence the narrator actually lets something through.
 
 ## Agent invocation
 - A model parameter LD serves may be refused by the provider (`temperature` is deprecated for Sonnet 5). `AnthropicModel` drops it, retries once, and reports it on `Completion.dropped_parameters`. Nothing validates parameters at startup — design 10.

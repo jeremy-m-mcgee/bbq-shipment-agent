@@ -64,7 +64,7 @@ STAGE_ADDRESS_VALIDATION = "address_validation"
 STAGE_ADDRESS_REPAIR = "address_repair"
 STAGE_INFEASIBILITY_REMEDIATION = "infeasibility_remediation"
 STAGE_MANIFEST_VERIFICATION = "manifest_verification"
-STAGE_NARRATION_SCORING = "narration_scoring"
+STAGE_REVIEW_GUARD = "review_guard"
 STAGE_REVIEW_NARRATOR = "review_narrator"
 
 #: What each kind may carry beyond its `key`. Read `_individual`.

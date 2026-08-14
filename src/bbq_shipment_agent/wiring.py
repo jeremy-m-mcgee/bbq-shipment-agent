@@ -56,7 +56,7 @@ from .capabilities import (
     ValidationMode,
     VerificationMode,
 )
-from .context import STAGE_NARRATION_SCORING, ImageIdentity, to_ld_context
+from .context import STAGE_REVIEW_GUARD, ImageIdentity, to_ld_context
 from .operators import DEFAULT_OPERATORS_PATH, OperatorPool
 from .planning import (
     DEFAULT_LANE,
@@ -633,7 +633,7 @@ def conversing_model(options: RunOptions) -> Any:
     return AnthropicModel()
 
 
-def narration_judge(client: Any, run: Any) -> Any:
+def scope_judge(client: Any, run: Any) -> Any:
     """D2's scope guard judge, or None when there will not be one.
 
     `None` on every path that means "nothing to score with": there is no live
@@ -645,7 +645,7 @@ def narration_judge(client: Any, run: Any) -> Any:
     config\'s business, decided in LaunchDarkly by enabling or targeting it;
     the flag only decides whether a low score withholds the reply.
 
-    Constructed here rather than inside `NarrationScorer` for the reason every other
+    Constructed here rather than inside `ScopeGuard` for the reason every other
     live object is: this module is where things that open sockets are built.
     The judge\'s runner does open its own connection from inside `ldai`, so
     `wiring.py` is no longer the only place a socket can *originate* -- but it
@@ -661,10 +661,10 @@ def narration_judge(client: Any, run: Any) -> Any:
     try:
         from ldai.client import LDAIClient
 
-        from .agents.scoring import JUDGE_KEY
+        from .agents.guard import JUDGE_KEY
 
         return LDAIClient(client).create_judge(
-            JUDGE_KEY, to_ld_context(run.context_for_stage(STAGE_NARRATION_SCORING))
+            JUDGE_KEY, to_ld_context(run.context_for_stage(STAGE_REVIEW_GUARD))
         )
     except Exception:  # noqa: BLE001 - no guard is a normal state
         return None
@@ -691,8 +691,8 @@ def narrator_for(
     review and both of them already catch it. `model_factory` stays injectable
     so a test can script the conversation without reaching a socket.
     """
+    from .agents.guard import ScopeGuard
     from .agents.narrator import Narrator
-    from .agents.scoring import NarrationScorer
 
     make_model = model_factory or conversing_model
     return Narrator(
@@ -700,9 +700,7 @@ def narrator_for(
         session,
         ledger_root=ledger_root,
         model=make_model(options),
-        scorer=NarrationScorer(
-            run, narration_judge(client, run), ledger_root=ledger_root
-        ),
+        guard=ScopeGuard(run, scope_judge(client, run), ledger_root=ledger_root),
     )
 
 

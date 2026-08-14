@@ -186,6 +186,10 @@ class ReviewController:
     def narrator_available(self) -> bool:
         return self.narrator is not None
 
+    @property
+    def guard_enforcing(self) -> bool:
+        """Whether the scope guard will withhold a narration on this review."""
+        return self.narrator is not None and self.narrator.enforcing
 
     def abandon(self) -> None:
         """Leave the review without recording anything, and free the client."""
