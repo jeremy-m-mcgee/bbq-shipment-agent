@@ -49,6 +49,7 @@ from .context import (
     STAGE_ADDRESS_REPAIR,
     STAGE_ADDRESS_VALIDATION,
     STAGE_MANIFEST_VERIFICATION,
+    STAGE_REVIEW_GUARD,
     reason_code,
     to_ld_context,
 )
@@ -83,6 +84,22 @@ class ValidationMode(StrEnum):
 class VerificationMode(StrEnum):
     OFF = "off"
     ON = "on"
+
+
+class GuardMode(StrEnum):
+    """D2's scope guard. Not a boolean, for the reason `planner` is not.
+
+    `shadow` scores every narration and records the verdict without
+    suppressing anything, which is how the threshold gets set from real
+    scores rather than from a guess -- and how the false-positive rate is
+    measured before a refusal is ever shown to an operator. `enforce` also
+    costs the operator streaming (a reply that must be judged before it is
+    seen cannot already be on screen), so the shadow step is not ceremony.
+    """
+
+    OFF = "off"
+    SHADOW = "shadow"
+    ENFORCE = "enforce"
 
 
 class CapabilityConfigError(Exception):
@@ -182,6 +199,26 @@ CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
 CAPABILITY_FLAGS: dict[str, str] = {
     cap.flag_key: name for name, cap in CAPABILITIES.items()
 }
+
+#: D2's scope guard, deliberately **not** in `CAPABILITIES`.
+#:
+#: Same reason the kill switch is not: it is evaluated outside the planning
+#: fold. `resolved_capabilities` needs every registered capability before it
+#: will produce a fingerprint, and this one is read at D2 -- long after
+#: `_record_planning` has written the run row. Registering it would leave
+#: every run row with a null `cap_snapshot` and no exception to say why.
+#:
+#: Evaluating it early to dodge that would be worse: it would resolve a
+#: conversation dial on `run plan` invocations that never reach D2, and it
+#: would re-partition `cap_fingerprint` for every run -- so a *shipment* row's
+#: fingerprint would move because the chatbot got a guard. Design 7's
+#: equivalence class is about what produced the plan.
+#:
+#: The consequence, which design 7 records: `guard` appears on the
+#: `capability_evaluations` stream but not in `cap_snapshot`.
+GUARD = Capability(
+    "guard", "narrator-guard-mode", GuardMode, STAGE_REVIEW_GUARD, GuardMode.OFF
+)
 
 #: The kill switch is a boolean flag, not a capability with an enum, so it is
 #: not in `CAPABILITIES`. It is evaluated at A1 under `stage: run_init` and

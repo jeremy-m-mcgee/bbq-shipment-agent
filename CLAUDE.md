@@ -10,6 +10,7 @@ Full design: @docs/design.md
 - Max 2 carriers per run.
 - The system spends no money. Dispatch (E1/E3) was removed — design 9. `authority-level`, `authority_ceiling` and the clamp were removed too, once it was clear they gated nothing — design 6.5. An acting stage added later brings its own permission with it; do not reintroduce one ahead of the stage.
 - Every capability in `CAPABILITY_TYPES` is read by a stage: `planner` by B3, `validation` by B2, `verification` by D1. A test pins the set. A capability nothing consults is decorative — that is why `authority` and `memory` are gone.
+- `guard` (`narrator-guard-mode`, D2's scope guard) is a `Capability` evaluated through the same gate but deliberately **not** in `CAPABILITIES`, like the kill switch. It is read at D2, after `_record_planning` has folded the registered set, so registering it would leave every run row with a null `cap_snapshot` and no error to say why — and it would move a *shipment's* `cap_fingerprint` because the chatbot got a guard. It reaches `capability_evaluations` like everything else; it is not in `cap_snapshot`.
 - LaunchDarkly is the sole source of truth for the capability flags, evaluated live, each under its own stage context (`planner`→`address_repair`, `validation`→`address_validation`, `verification`→`manifest_verification`). There is no committed capability config — no profiles, no prerequisites, no `resolve` proposal layer. Offline, each falls back to a code default (planner off, validation standard, verification off), which is what `baseline` now means. `profile` survives only as a targeting label sent to LD.
 - The kill switch is `pipeline-kill-switch`, an LD flag evaluated at A1 under `stage: run_init`. It fails **open** (default off) when LD is unreachable, so an outage does not brick an offline run — the system spends no money either way, so stopping is not a safety-critical open call.
 - Ledger is append-only JSONL. DuckDB is derived and rebuildable. Never write DuckDB as source of truth.
@@ -59,7 +60,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `src/bbq_shipment_agent/ledger/` — schema.py (records), writer.py (append-only JSONL), rebuild.py (DuckDB cache)
 - `src/bbq_shipment_agent/plan.py` — the spine wired end to end: A1 → B2 → B4 → C1–C6 → D1
 - Phase B works on `Recipient` (address + provenance + confidence); `to_shipments` makes the `Shipment` phase C wants at the end of B4. Provenance never reaches planning.
-- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2)
+- `src/bbq_shipment_agent/agents/` — model.py (the model-call seam), metrics.py (LD AI metrics), tools.py (contract + registry), verification.py (D1), narrator.py (D2), guard.py (D2's scope guard)
 - `src/bbq_shipment_agent/recipients/` — record.py (`Recipient`, phase B's type), extraction.py (B1), roster.py (the run input file), validation.py (B2), repair.py (B3), dedupe.py (B4)
 - `src/bbq_shipment_agent/planning/` — catalog, rates (Shippo seam), configurations (C2), thermal (C3), lanes (ambient), remediation (C4), solve (C5), manifest (C6)
 - `src/bbq_shipment_agent/review.py` — D2 edit handling and terminal states
@@ -112,6 +113,17 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - `ContextBuilder` is the only thing that constructs an evaluation context, and `context.py` the only module calling `Context.from_dict`. A second construction site is how the run and stage contexts drift apart, which is what a percentage rollout cannot survive. Context attributes are declared per kind in `_ATTRIBUTES`; an undeclared one is refused, not forwarded, because a context is sent to LD's servers.
 - Both A1 sources default to offline. Live LD is injected, never reached for, so no test can open a socket.
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
+
+## The D2 scope guard
+- `narration-scope` is a LaunchDarkly **judge** config, not an agent config. It is not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, and is fetched with `create_judge`, not `variation_detail`.
+- The SDK does the scoring. `judge.evaluate(history, reply)` owns the model call, the prompt framing, the output schema and the 0.0–1.0 validation. Do not reimplement any of it — an earlier draft did, and that is the duplication this repo keeps having to remove.
+- It judges the **response**, not the question. An in-scope question can still produce a wandering answer, and only checking the output catches both.
+- Only one path suppresses: judge ran, returned a score, score below `THRESHOLD`, mode `enforce`. Unavailable judge, sampled-out, errored, missing score — all pass and are recorded. A guard that blanks a legitimate narration is worse than the answer it prevents.
+- The threshold is a Python constant. A threshold is control flow; the mode, model and rubric are LD's.
+- `enforce` turns off streaming. A reply that must be judged before the operator sees it cannot already be on their screen, so the pane drops `data-stream` and posts to the sync route.
+- A suppressed turn rolls back **whole** — prompt and answer both leave `self.messages`. There is no input-side gate, so the prompt may itself be off-topic, and keeping it re-primes the model into suppressing forever.
+- `open()` is never judged. `OPENING_PROMPT` is Python's text asking for the manifest narration, so it is in scope by construction.
+- The score goes in the ledger; the reasoning never does. Model-authored free text in an append-only committed file is what the capability coercion exists to prevent.
 
 ## Agent invocation
 - A model parameter LD serves may be refused by the provider (`temperature` is deprecated for Sonnet 5). `AnthropicModel` drops it, retries once, and reports it on `Completion.dropped_parameters`. Nothing validates parameters at startup — design 10.

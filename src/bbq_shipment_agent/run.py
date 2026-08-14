@@ -38,10 +38,13 @@ from .agents.tools import assert_tool_contract
 from .capabilities import (
     CAPABILITIES,
     DEFAULT_PROFILE,
+    GUARD,
     KILL_SWITCH_FLAG,
+    Capability,
     CapabilitySet,
     FlagEvaluation,
     FlagGate,
+    GuardMode,
     KillSwitchEngaged,
     OfflineGate,
     PlannerMode,
@@ -143,17 +146,23 @@ class Run:
     _cap_sources: dict[str, str] = field(default_factory=dict)
     _cap_reasons: dict[str, str] = field(default_factory=dict)
 
-    def _evaluate(self, name: str) -> Any:
+    def _evaluate(self, cap: Capability) -> Any:
         """Evaluate one capability live, cache it, and record the evaluation.
 
         Cache-first: a value already known -- because a stage asked earlier, or
         a test seeded it -- is returned without touching the gate or the
         ledger. That keeps one value per capability per run and stops a re-read
         writing a duplicate event.
+
+        Takes a descriptor rather than a registry key so a capability that is
+        deliberately *not* in `CAPABILITIES` can use the identical path. `guard`
+        is one: it is read at D2, after `_record_planning` has already folded
+        the registered set, so registering it would null every run row's
+        snapshot. It still evaluates, caches and records exactly like the rest.
         """
+        name = cap.name
         if name in self._capabilities:
             return self._capabilities[name]
-        cap = CAPABILITIES[name]
         context = self.contexts.for_stage(cap.stage)
         value, source, reason = evaluate_capability(cap, self.gate, context)
         self._capabilities[name] = value
@@ -173,15 +182,25 @@ class Run:
 
     def planner(self) -> PlannerMode:
         """B3's gate, evaluated under `stage: address_repair`."""
-        return self._evaluate("planner")
+        return self._evaluate(CAPABILITIES["planner"])
 
     def validation(self) -> ValidationMode:
         """B2's mode, evaluated under `stage: address_validation`."""
-        return self._evaluate("validation")
+        return self._evaluate(CAPABILITIES["validation"])
 
     def verification(self) -> VerificationMode:
         """D1's gate, evaluated under `stage: manifest_verification`."""
-        return self._evaluate("verification")
+        return self._evaluate(CAPABILITIES["verification"])
+
+    def guard(self) -> GuardMode:
+        """D2's scope guard, evaluated under `stage: review_guard`.
+
+        Not in `CAPABILITIES` and so not in `cap_snapshot` -- see the
+        descriptor. It reaches the `capability_evaluations` stream like every
+        other capability, which design 7 calls the authoritative per-stage
+        record.
+        """
+        return self._evaluate(GUARD)
 
     def resolved_capabilities(self) -> CapabilitySet | None:
         """The full set, once every capability has been evaluated.
@@ -405,6 +424,7 @@ def record_agent_invocation(
     image_key: str | None = None,
     tools_offered: Sequence[str] | None = None,
     tools_called: Sequence[str] | None = None,
+    judge_score: float | None = None,
     config: AgentConfig | None = None,
 ) -> AgentInvocationRecord:
     """Append the ledger record for one agent invocation.
@@ -425,6 +445,9 @@ def record_agent_invocation(
     `tools_offered` and `tools_called` come from the loop that ran, not from
     `TOOL_NAMES`: what an agent was actually handed depends on the run. A caller
     with no tool loop passes neither and the columns stay absent.
+
+    `judge_score` is a judge's own line, not a grade attached to the thing it
+    graded: the judge is an invocation and the score is what it produced.
     """
     config = config or run.agent_configs.get(agent_key)
     if config is None:
@@ -446,6 +469,7 @@ def record_agent_invocation(
         outcome=outcome,
         tools_offered=None if tools_offered is None else list(tools_offered),
         tools_called=None if tools_called is None else list(tools_called),
+        judge_score=judge_score,
     )
     LedgerWriter(ledger_root).append(record)
     return record

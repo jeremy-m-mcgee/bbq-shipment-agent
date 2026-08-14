@@ -50,13 +50,14 @@ from .agents import (
     RecordedVision,
 )
 from .capabilities import (
+    GuardMode,
     LaunchDarklyGate,
     OfflineGate,
     PlannerMode,
     ValidationMode,
     VerificationMode,
 )
-from .context import ImageIdentity
+from .context import STAGE_REVIEW_GUARD, ImageIdentity, to_ld_context
 from .operators import DEFAULT_OPERATORS_PATH, OperatorPool
 from .planning import (
     DEFAULT_LANE,
@@ -631,6 +632,79 @@ def conversing_model(options: RunOptions) -> Any:
             "the review is button-driven rather than conversational."
         )
     return AnthropicModel()
+
+
+def scope_judge(client: Any, run: Any, mode: GuardMode) -> Any:
+    """D2's scope guard judge, or None when there will not be one.
+
+    `None` on every path that means "no guard": the flag is off, there is no
+    live LaunchDarkly client, or `create_judge` could not build one -- which it
+    reports by returning `None` when the config is disabled, missing, or no
+    provider package is installed for its model.
+
+    Constructed here rather than inside `ScopeGuard` for the reason every other
+    live object is: this module is where things that open sockets are built.
+    The judge\'s runner does open its own connection from inside `ldai`, so
+    `wiring.py` is no longer the only place a socket can *originate* -- but it
+    stays the only place one is *constructed*, which is what keeps a test from
+    opening one by importing a stage.
+
+    Never raises. `conversing_model` raises `ModelUnavailable` to ask for the
+    button-driven fallback; a guard that did the same would take the whole
+    narrator down with it, which is the opposite of failing open.
+    """
+    if mode is GuardMode.OFF or client is None:
+        return None
+    try:
+        from ldai.client import LDAIClient
+
+        from .agents.guard import JUDGE_KEY
+
+        return LDAIClient(client).create_judge(
+            JUDGE_KEY, to_ld_context(run.context_for_stage(STAGE_REVIEW_GUARD))
+        )
+    except Exception:  # noqa: BLE001 - no guard is a normal state
+        return None
+
+
+def narrator_for(
+    run: Any,
+    session: Any,
+    *,
+    options: RunOptions,
+    ledger_root: Any,
+    client: Any = None,
+    model_factory: Any = None,
+) -> Any:
+    """D2\'s narrator, guard included, or None when the review is button-driven.
+
+    The one place a `Narrator` is built. Both front-ends used to construct one
+    each, which is how the CLI once ended up with a seam the tests never
+    covered (see `cli._review`); adding a second constructor argument to two
+    copies is how that happens again.
+
+    Raises `NarratorUnavailable` or `ModelUnavailable` rather than returning
+    None, because that is how a front-end already asks for the button-driven
+    review and both of them already catch it. `model_factory` stays injectable
+    so a test can script the conversation without reaching a socket.
+    """
+    from .agents.guard import ScopeGuard
+    from .agents.narrator import Narrator
+
+    make_model = model_factory or conversing_model
+    mode = run.guard()
+    return Narrator(
+        run,
+        session,
+        ledger_root=ledger_root,
+        model=make_model(options),
+        guard=ScopeGuard(
+            run,
+            scope_judge(client, run, mode),
+            ledger_root=ledger_root,
+            mode=mode,
+        ),
+    )
 
 
 @dataclass
