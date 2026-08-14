@@ -451,7 +451,7 @@ def _cmd_run_review(args: argparse.Namespace) -> int:
 
         print(render(result.manifest))
         _print_verification(result.verification)
-        return _review(args, options, run, roster, result)
+        return _review(args, options, run, roster, result, context.client)
     finally:
         if context.client is not None:
             context.client.close()
@@ -491,14 +491,16 @@ def _print_verification(verification) -> bool:
     return bool(verification.blockers)
 
 
-def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) -> int:
+def _review(
+    args: argparse.Namespace, options: RunOptions, run, roster, result, client=None
+) -> int:
     """D2. Conversational review over the manifest, then a terminal state.
 
     Falls back to a plain prompt loop when `review-narrator` is unavailable.
     Design 6.10's posture: no instructions means no agent, and a manually
     read manifest is less helpful rather than less correct.
     """
-    from .agents.narrator import Narrator, NarratorUnavailable
+    from .agents.narrator import NarratorUnavailable
     from .review import Edit, EditKind, ReviewError, ReviewSession
 
     # The deduped set, not B2's output: reviewing a plan that still contains
@@ -528,13 +530,10 @@ def _review(args: argparse.Namespace, options: RunOptions, run, roster, result) 
 
     narrator = None
     try:
-        from .wiring import conversing_model
+        from .wiring import narrator_for
 
-        narrator = Narrator(
-            run,
-            session,
-            ledger_root=args.ledger,
-            model=conversing_model(options),
+        narrator = narrator_for(
+            run, session, options=options, ledger_root=args.ledger, client=client
         )
     except (NarratorUnavailable, ModelUnavailable) as exc:
         print(f"\nreview-narrator unavailable ({exc}). Reading the manifest directly.")

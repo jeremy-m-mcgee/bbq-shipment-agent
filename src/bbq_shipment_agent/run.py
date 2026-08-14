@@ -150,6 +150,7 @@ class Run:
         a test seeded it -- is returned without touching the gate or the
         ledger. That keeps one value per capability per run and stops a re-read
         writing a duplicate event.
+
         """
         if name in self._capabilities:
             return self._capabilities[name]
@@ -182,6 +183,7 @@ class Run:
     def verification(self) -> VerificationMode:
         """D1's gate, evaluated under `stage: manifest_verification`."""
         return self._evaluate("verification")
+
 
     def resolved_capabilities(self) -> CapabilitySet | None:
         """The full set, once every capability has been evaluated.
@@ -405,6 +407,7 @@ def record_agent_invocation(
     image_key: str | None = None,
     tools_offered: Sequence[str] | None = None,
     tools_called: Sequence[str] | None = None,
+    judge_score: float | None = None,
     config: AgentConfig | None = None,
 ) -> AgentInvocationRecord:
     """Append the ledger record for one agent invocation.
@@ -425,6 +428,9 @@ def record_agent_invocation(
     `tools_offered` and `tools_called` come from the loop that ran, not from
     `TOOL_NAMES`: what an agent was actually handed depends on the run. A caller
     with no tool loop passes neither and the columns stay absent.
+
+    `judge_score` is a judge's own line, not a grade attached to the thing it
+    graded: the judge is an invocation and the score is what it produced.
     """
     config = config or run.agent_configs.get(agent_key)
     if config is None:
@@ -446,6 +452,7 @@ def record_agent_invocation(
         outcome=outcome,
         tools_offered=None if tools_offered is None else list(tools_offered),
         tools_called=None if tools_called is None else list(tools_called),
+        judge_score=judge_score,
     )
     LedgerWriter(ledger_root).append(record)
     return record

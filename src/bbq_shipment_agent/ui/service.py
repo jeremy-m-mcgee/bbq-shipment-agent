@@ -186,6 +186,11 @@ class ReviewController:
     def narrator_available(self) -> bool:
         return self.narrator is not None
 
+    @property
+    def guard_enforcing(self) -> bool:
+        """Whether the scope guard will withhold a narration on this review."""
+        return self.narrator is not None and self.narrator.enforcing
+
     def abandon(self) -> None:
         """Leave the review without recording anything, and free the client."""
         self.abandoned = True
@@ -391,7 +396,7 @@ def _park_for_review(job: RunJob, context: Any) -> None:
     fallback. Its opening narration runs here, on the worker thread, so the
     first render already carries it rather than the pane appearing empty.
     """
-    from ..agents import ModelUnavailable, Narrator, NarratorUnavailable
+    from ..agents import ModelUnavailable, NarratorUnavailable
     from ..recipients import to_shipments
     from ..review import ReviewSession
     from ..wiring import quoter
@@ -414,9 +419,15 @@ def _park_for_review(job: RunJob, context: Any) -> None:
 
     narrator = None
     try:
-        model = job.conversing_model(job.options)
-        narrator = Narrator(
-            context.run, session, ledger_root=job.options.ledger, model=model
+        from ..wiring import narrator_for
+
+        narrator = narrator_for(
+            context.run,
+            session,
+            options=job.options,
+            ledger_root=job.options.ledger,
+            client=context.client,
+            model_factory=job.conversing_model,
         )
         narrator.open()
     except (NarratorUnavailable, ModelUnavailable) as exc:

@@ -42,6 +42,7 @@ from typing import Any
 
 from ..context import STAGE_REVIEW_NARRATOR
 from ..run import Run, record_agent_invocation
+from .guard import REFUSAL, ScopeGuard
 from .metrics import Outcome, metrics_for
 from .model import ConversingModel, Invocation, ModelUnavailable
 from .tools import Tool, ToolError, build_tools
@@ -52,6 +53,11 @@ CONFIG_KEY = "review-narrator"
 #: Tool round trips allowed inside one operator turn. See the module
 #: docstring: a liveness bound, not a safety one.
 MAX_TOOL_ITERATIONS = 8
+
+#: Prior exchanges handed to the scope guard as context. Enough for a terse
+#: follow-up to be recognisable as one; not the whole review, which would make
+#: every judgement more expensive as the conversation grew.
+HISTORY_TURNS = 4
 
 #: What the narrator is handed to open with. Not instruction text -- that is
 #: LaunchDarkly's -- but the turn that starts the conversation.
@@ -75,6 +81,10 @@ class Turn:
     iterations: int = 1
     input_tokens: int = 0
     output_tokens: int = 0
+    #: The scope guard withheld this narration and `reply` is the canned
+    #: refusal rather than the model's answer. Carried so the review pane can
+    #: say so instead of attributing Python's words to the narrator.
+    refused: bool = False
 
 
 class Narrator:
@@ -93,6 +103,7 @@ class Narrator:
         *,
         ledger_root: Path | str,
         model: ConversingModel,
+        guard: ScopeGuard | None = None,
     ) -> None:
         config = run.agent_configs.get(CONFIG_KEY)
         if config is None or not config.available:
@@ -112,22 +123,91 @@ class Narrator:
         self.session = session
         self.ledger_root = ledger_root
         self._model = model
+        #: None is the ordinary state: the flag is off, LaunchDarkly is
+        #: unreachable, or no judge config is served. All of them mean
+        #: narrations pass.
+        self._guard = guard
         self._tools: tuple[Tool, ...] = build_tools(CONFIG_KEY, session=session)
         self._by_name = {tool.name: tool for tool in self._tools}
         self.messages: list[dict[str, Any]] = []
         self.turns: list[Turn] = []
 
+    @property
+    def enforcing(self) -> bool:
+        """Whether a narration will be withheld unless the judge clears it.
+
+        Read by the front-ends, because enforcement and streaming cannot both
+        happen: a reply that must be judged before the operator sees it cannot
+        already be painted on their screen.
+        """
+        return self._guard is not None and self._guard.enforcing
+
     def open(self) -> Turn:
-        """The opening narration. Design 4 requires it before any table."""
-        return self.say(OPENING_PROMPT)
+        """The opening narration. Design 4 requires it before any table.
+
+        Deliberately not scope-guarded. `OPENING_PROMPT` is Python\'s text, not
+        an operator\'s, and it asks for exactly the manifest narration the
+        guard exists to protect -- so it is in scope by construction, and
+        withholding it would leave the review with no opening at all.
+        """
+        turn = self._say(OPENING_PROMPT)
+        self._record("findings" if turn.tools_called else "clean", turn)
+        self.turns.append(turn)
+        return turn
 
     def say(self, text: str, on_delta: Any = None) -> Turn:
-        """One operator turn, including any tools the model runs for it.
+        """One operator turn, scored by the scope guard before it is shown.
 
         `on_delta`, when given, is called with each text fragment as the reply
-        streams -- the D2 review pane's live rendering. It is a side channel: the
-        `Turn` returned, the metrics and the ledger line are identical with or
-        without it, because the assembled completion is what everything reads.
+        streams -- the D2 review pane\'s live rendering. It is **not** forwarded
+        while the guard is enforcing, for the reason above: the operator cannot
+        be shown a reply that is still being judged.
+        """
+        # Captured before the turn appends anything, so a suppressed turn can
+        # be removed whole. Both halves go: with no input-side gate the prompt
+        # may itself be the off-topic question, and keeping it would re-prime
+        # the model on the next turn into a loop the operator cannot see.
+        before = len(self.messages)
+        turn = self._say(text, None if self.enforcing else on_delta)
+
+        verdict = (
+            self._guard.check(self._recent(), turn.reply)
+            if self._guard is not None
+            else None
+        )
+        if verdict is not None and verdict.suppress:
+            del self.messages[before:]
+            turn.reply = REFUSAL
+            turn.refused = True
+            # The streaming route renders deltas and swaps in the pane at the
+            # end; without this it would show an empty bubble until the swap.
+            if on_delta is not None:
+                on_delta(REFUSAL)
+            self._record("suppressed", turn)
+        else:
+            self._record("findings" if turn.tools_called else "clean", turn)
+
+        self.turns.append(turn)
+        return turn
+
+    def _recent(self, limit: int = HISTORY_TURNS) -> str:
+        """Prior exchanges, so the judge scores a reply in context.
+
+        The highest-value defence against a false positive. "Why?" and "what
+        about ana?" are in scope only if the judge can see what was asked, and
+        a judge handed a bare terse answer has no way to tell a follow-up from
+        a non sequitur.
+        """
+        return "\n\n".join(
+            f"operator: {t.prompt}\nnarrator: {t.reply}" for t in self.turns[-limit:]
+        )
+
+    def _say(self, text: str, on_delta: Any = None) -> Turn:
+        """One turn against the model. Unjudged, and does not record.
+
+        Split from `say` so `open` can use it: recording and the guard belong
+        to the caller, because what a turn is *called* in the ledger depends on
+        whether it survived scoring.
         """
         turn = Turn(prompt=text)
         self.messages.append({"role": "user", "content": text})
@@ -204,8 +284,6 @@ class Narrator:
             self._record("unavailable", turn)
             raise NarratorUnavailable(str(exc)) from exc
 
-        self._record("findings" if turn.tools_called else "clean", turn)
-        self.turns.append(turn)
         return turn
 
     def _run(self, call: Any) -> dict[str, Any]:
