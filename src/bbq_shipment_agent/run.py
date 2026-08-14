@@ -38,13 +38,10 @@ from .agents.tools import assert_tool_contract
 from .capabilities import (
     CAPABILITIES,
     DEFAULT_PROFILE,
-    GUARD,
     KILL_SWITCH_FLAG,
-    Capability,
     CapabilitySet,
     FlagEvaluation,
     FlagGate,
-    GuardMode,
     KillSwitchEngaged,
     OfflineGate,
     PlannerMode,
@@ -146,7 +143,7 @@ class Run:
     _cap_sources: dict[str, str] = field(default_factory=dict)
     _cap_reasons: dict[str, str] = field(default_factory=dict)
 
-    def _evaluate(self, cap: Capability) -> Any:
+    def _evaluate(self, name: str) -> Any:
         """Evaluate one capability live, cache it, and record the evaluation.
 
         Cache-first: a value already known -- because a stage asked earlier, or
@@ -154,15 +151,10 @@ class Run:
         ledger. That keeps one value per capability per run and stops a re-read
         writing a duplicate event.
 
-        Takes a descriptor rather than a registry key so a capability that is
-        deliberately *not* in `CAPABILITIES` can use the identical path. `guard`
-        is one: it is read at D2, after `_record_planning` has already folded
-        the registered set, so registering it would null every run row's
-        snapshot. It still evaluates, caches and records exactly like the rest.
         """
-        name = cap.name
         if name in self._capabilities:
             return self._capabilities[name]
+        cap = CAPABILITIES[name]
         context = self.contexts.for_stage(cap.stage)
         value, source, reason = evaluate_capability(cap, self.gate, context)
         self._capabilities[name] = value
@@ -182,25 +174,16 @@ class Run:
 
     def planner(self) -> PlannerMode:
         """B3's gate, evaluated under `stage: address_repair`."""
-        return self._evaluate(CAPABILITIES["planner"])
+        return self._evaluate("planner")
 
     def validation(self) -> ValidationMode:
         """B2's mode, evaluated under `stage: address_validation`."""
-        return self._evaluate(CAPABILITIES["validation"])
+        return self._evaluate("validation")
 
     def verification(self) -> VerificationMode:
         """D1's gate, evaluated under `stage: manifest_verification`."""
-        return self._evaluate(CAPABILITIES["verification"])
+        return self._evaluate("verification")
 
-    def guard(self) -> GuardMode:
-        """D2's scope guard, evaluated under `stage: review_guard`.
-
-        Not in `CAPABILITIES` and so not in `cap_snapshot` -- see the
-        descriptor. It reaches the `capability_evaluations` stream like every
-        other capability, which design 7 calls the authoritative per-stage
-        record.
-        """
-        return self._evaluate(GUARD)
 
     def resolved_capabilities(self) -> CapabilitySet | None:
         """The full set, once every capability has been evaluated.

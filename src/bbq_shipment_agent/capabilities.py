@@ -49,7 +49,6 @@ from .context import (
     STAGE_ADDRESS_REPAIR,
     STAGE_ADDRESS_VALIDATION,
     STAGE_MANIFEST_VERIFICATION,
-    STAGE_REVIEW_GUARD,
     reason_code,
     to_ld_context,
 )
@@ -85,26 +84,6 @@ class VerificationMode(StrEnum):
     OFF = "off"
     ON = "on"
 
-
-class GuardMode(StrEnum):
-    """Whether a low-scoring narration is actually withheld.
-
-    A boolean, and deliberately only that. It once had a third `shadow`
-    member, which was redundant: LaunchDarkly already decides whether scoring
-    happens at all, by enabling, disabling or targeting the judge config. What
-    it cannot express is whether the *application* blocks on a low score --
-    the judge returns a number, and acting on it is application logic.
-
-    So the two controls do not overlap. The judge config governs scoring, its
-    rubric and its model; this governs suppression. "Shadow" is then not a
-    mode but the ordinary state of the pair: judge enabled, this off. That is
-    where a rollout starts, because it is how the threshold gets set from real
-    scores and how the false-positive rate is measured before an operator is
-    ever shown a wrong refusal.
-    """
-
-    OFF = "off"
-    ON = "on"
 
 
 class CapabilityConfigError(Exception):
@@ -204,26 +183,6 @@ CAPABILITY_TYPES: dict[str, type[StrEnum]] = {
 CAPABILITY_FLAGS: dict[str, str] = {
     cap.flag_key: name for name, cap in CAPABILITIES.items()
 }
-
-#: D2's scope guard, deliberately **not** in `CAPABILITIES`.
-#:
-#: Same reason the kill switch is not: it is evaluated outside the planning
-#: fold. `resolved_capabilities` needs every registered capability before it
-#: will produce a fingerprint, and this one is read at D2 -- long after
-#: `_record_planning` has written the run row. Registering it would leave
-#: every run row with a null `cap_snapshot` and no exception to say why.
-#:
-#: Evaluating it early to dodge that would be worse: it would resolve a
-#: conversation dial on `run plan` invocations that never reach D2, and it
-#: would re-partition `cap_fingerprint` for every run -- so a *shipment* row's
-#: fingerprint would move because the chatbot got a guard. Design 7's
-#: equivalence class is about what produced the plan.
-#:
-#: The consequence, which design 7 records: `guard` appears on the
-#: `capability_evaluations` stream but not in `cap_snapshot`.
-GUARD = Capability(
-    "guard", "narrator-guard-enforce", GuardMode, STAGE_REVIEW_GUARD, GuardMode.OFF
-)
 
 #: The kill switch is a boolean flag, not a capability with an enum, so it is
 #: not in `CAPABILITIES`. It is evaluated at A1 under `stage: run_init` and

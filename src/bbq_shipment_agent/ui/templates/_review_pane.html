@@ -65,28 +65,15 @@
     {% endif %}
     {% for turn in r.transcript %}
     <div class="msg user">{{ turn.prompt }}</div>
-    {% if turn.refused %}
-    {# Withheld by the scope guard. Labelled as the guard rather than the
-       narrator: the text is Python's, and attributing it to the model would
-       misreport what happened. #}
-    <div class="msg bot refused">
-      <div class="who">withheld &middot; scope guard</div>
-      {{ turn.reply | md }}
-    </div>
-    {% else %}
     <div class="msg bot">
       <div class="who">narrator{% if turn.tools_called %} &middot; ran {{ turn.tools_called|join(', ') }}{% endif %}</div>
       {{ turn.reply | md }}
     </div>
-    {% endif %}
     {% endfor %}
   </div>
   {# data-stream: the page POSTs to the SSE variant and renders the reply as it
-     arrives, falling back to the sync /review/say on any error.
-     Omitted while the scope guard is enforcing -- a reply that must be judged
-     before the operator sees it cannot already be streaming onto their
-     screen, so the turn goes through the sync route and appears whole. #}
-  <form data-review {% if not r.guard_enforcing %}data-stream{% endif %} action="/runs/{{ job.id }}/review/say" style="margin:10px 0">
+     arrives, falling back to the sync /review/say on any error. #}
+  <form data-review data-stream action="/runs/{{ job.id }}/review/say" style="margin:10px 0">
     <textarea name="message" rows="2" required
       style="width:100%;box-sizing:border-box"
       placeholder="Ask about the tradeoff, or describe a change in words…"></textarea>

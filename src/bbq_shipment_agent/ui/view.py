@@ -294,20 +294,9 @@ def review_view(controller: Any) -> dict[str, Any]:
         # stays usable so they can edit back to a plan or reject.
         "no_coverage": session.manifest is None,
         "narrator_available": controller.narrator_available,
-        # Enforcing and streaming are mutually exclusive: a reply that must be
-        # judged before the operator sees it cannot already be on their screen.
-        # The page reads this to decide which route to post to.
-        "guard_enforcing": controller.guard_enforcing,
         "opening": turns[0].reply if turns else "",
         "transcript": [
-            {
-                "prompt": t.prompt,
-                "reply": t.reply,
-                "tools_called": list(t.tools_called),
-                # Python's words, not the narrator's -- the pane labels it so
-                # a withheld answer is not attributed to the model.
-                "refused": t.refused,
-            }
+            {"prompt": t.prompt, "reply": t.reply, "tools_called": list(t.tools_called)}
             for t in turns[1:]
         ],
         "history": [

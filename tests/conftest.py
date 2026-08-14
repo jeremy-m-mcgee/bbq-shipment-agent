@@ -10,18 +10,9 @@ from __future__ import annotations
 
 from bbq_shipment_agent.capabilities import (
     CAPABILITIES,
-    GUARD,
     KILL_SWITCH_FLAG,
     FlagEvaluation,
 )
-
-#: Every capability a test can name, including the ones deliberately outside
-#: `CAPABILITIES`. `guard` is not registered because it is read at D2, after
-#: the fingerprint is folded -- but it is still evaluated through the same
-#: gate, so a test has to be able to serve it.
-_FLAG_KEYS = {name: cap.flag_key for name, cap in CAPABILITIES.items()} | {
-    GUARD.name: GUARD.flag_key
-}
 
 
 class CapabilityGate:
@@ -36,7 +27,7 @@ class CapabilityGate:
     def __init__(self, *, kill: bool = False, reason: str = "RULE_MATCH:test", **caps):
         self._values: dict[str, object] = {KILL_SWITCH_FLAG: kill}
         for name, value in caps.items():
-            self._values[_FLAG_KEYS[name]] = value
+            self._values[CAPABILITIES[name].flag_key] = value
         self._reason = reason
 
     def evaluate(self, flag_key, context, default):

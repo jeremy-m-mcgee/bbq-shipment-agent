@@ -107,10 +107,6 @@ class _ButtonDrivenReview:
         self.session = session
         self.narrator = None
         self.narrator_available = False
-        # No narrator means nothing to guard, so nothing to enforce -- and the
-        # pane keeps its streaming form, which is moot without a narrator but
-        # should not depend on the guard to be decided.
-        self.guard_enforcing = False
         self.abandoned = False
 
 
