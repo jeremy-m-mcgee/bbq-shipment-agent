@@ -115,7 +115,7 @@ All ten steps are built. B1 is `recipients/extraction.py`, B3 is
 - Query nested ledger JSON with `json_extract_string(...)`, not `->>` — DuckDB mis-resolves that operator inside a compound predicate.
 
 ## The D2 scope guard
-- `narration-scope` is a LaunchDarkly **judge** config, not an agent config. It is not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, and is fetched with `create_judge`, not `variation_detail`.
+- `narration-scope-relevance` is a LaunchDarkly **judge** config, not an agent config. It is not in `LD_CONFIGURED_STAGES`, needs no `TOOL_NAMES` entry, and is fetched with `create_judge`, not `variation_detail`.
 - The SDK does the scoring. `judge.evaluate(history, reply)` owns the model call, the prompt framing, the output schema and the 0.0–1.0 validation. Do not reimplement any of it — an earlier draft did, and that is the duplication this repo keeps having to remove.
 - It judges the **response**, not the question. An in-scope question can still produce a wandering answer, and only checking the output catches both.
 - Only one path suppresses: judge ran, returned a score, score below `THRESHOLD`, mode `enforce`. Unavailable judge, sampled-out, errored, missing score — all pass and are recorded. A guard that blanks a legitimate narration is worse than the answer it prevents.

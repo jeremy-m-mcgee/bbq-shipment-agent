@@ -57,7 +57,7 @@ from ..run import Run, record_agent_invocation
 
 #: The judge AI Config. Created in LaunchDarkly in judge mode, with an
 #: `evaluationMetricKey` -- `Judge.evaluate` returns early without one.
-JUDGE_KEY = "narration-scope"
+JUDGE_KEY = "narration-scope-relevance"
 
 #: Below this, a narration is out of scope. A Python constant because a
 #: threshold is control flow (design 6.1), and because it should be set from
