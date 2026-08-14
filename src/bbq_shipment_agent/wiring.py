@@ -50,7 +50,6 @@ from .agents import (
     RecordedVision,
 )
 from .capabilities import (
-    GuardMode,
     LaunchDarklyGate,
     OfflineGate,
     PlannerMode,
@@ -634,13 +633,17 @@ def conversing_model(options: RunOptions) -> Any:
     return AnthropicModel()
 
 
-def scope_judge(client: Any, run: Any, mode: GuardMode) -> Any:
+def scope_judge(client: Any, run: Any) -> Any:
     """D2's scope guard judge, or None when there will not be one.
 
-    `None` on every path that means "no guard": the flag is off, there is no
-    live LaunchDarkly client, or `create_judge` could not build one -- which it
-    reports by returning `None` when the config is disabled, missing, or no
-    provider package is installed for its model.
+    `None` on every path that means "nothing to score with": there is no live
+    LaunchDarkly client, or `create_judge` could not build one -- which it
+    reports by returning `None` when the config is disabled, not targeted at
+    this run, missing, or has no provider package installed for its model.
+
+    Deliberately not gated on the flag. Whether scoring happens is the judge
+    config\'s business, decided in LaunchDarkly by enabling or targeting it;
+    the flag only decides whether a low score withholds the reply.
 
     Constructed here rather than inside `ScopeGuard` for the reason every other
     live object is: this module is where things that open sockets are built.
@@ -653,7 +656,7 @@ def scope_judge(client: Any, run: Any, mode: GuardMode) -> Any:
     button-driven fallback; a guard that did the same would take the whole
     narrator down with it, which is the opposite of failing open.
     """
-    if mode is GuardMode.OFF or client is None:
+    if client is None:
         return None
     try:
         from ldai.client import LDAIClient
@@ -692,7 +695,6 @@ def narrator_for(
     from .agents.narrator import Narrator
 
     make_model = model_factory or conversing_model
-    mode = run.guard()
     return Narrator(
         run,
         session,
@@ -700,9 +702,9 @@ def narrator_for(
         model=make_model(options),
         guard=ScopeGuard(
             run,
-            scope_judge(client, run, mode),
+            scope_judge(client, run),
             ledger_root=ledger_root,
-            mode=mode,
+            mode=run.guard(),
         ),
     )
 

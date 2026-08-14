@@ -117,7 +117,7 @@ def session(tmp_path):
     roster = load_roster(ROSTER)
     run = initialize_run(
         ledger_root=tmp_path / "ledger",
-        gate=CapabilityGate(guard="enforce"),
+        gate=CapabilityGate(guard="on"),
         agent_source=SnapshotAgentConfigs(SNAPSHOT),
         snapshot_path=tmp_path / "snap.json",
     )
@@ -131,7 +131,7 @@ def session(tmp_path):
     )
 
 
-def narrator(session, tmp_path, model, judge, mode=GuardMode.ENFORCE):
+def narrator(session, tmp_path, model, judge, mode=GuardMode.ON):
     run, review = session
     return Narrator(
         run,
@@ -162,22 +162,15 @@ class TestTheOpeningIsNeverJudged:
         assert turn.refused is False
 
 
-class TestOff:
-    def test_the_judge_is_never_called(self, session, tmp_path):
-        judge = ScriptedJudge(_result(0.0))
-        voice = narrator(
-            session, tmp_path, ScriptedModel(Completion(text="leetcode")), judge,
-            mode=GuardMode.OFF,
-        )
-
-        turn = voice.say("reverse a linked list")
-
-        assert judge.calls == []
-        assert turn.reply == "leetcode"
-        assert invocations(tmp_path, JUDGE_KEY) == []
-
-
 class TestShadow:
+    """Judge enabled, enforcement off -- where a rollout starts.
+
+    Not a mode of its own any more. LaunchDarkly decides whether scoring
+    happens by enabling or targeting the judge config; the flag only decides
+    whether a low score withholds the reply. "Shadow" is the ordinary state of
+    that pair.
+    """
+
     def test_it_scores_and_records_but_shows_the_reply(self, session, tmp_path):
         # How the threshold gets set from real scores instead of a guess, and
         # how the false-positive rate is measured before a refusal is ever
@@ -185,7 +178,7 @@ class TestShadow:
         judge = ScriptedJudge(_result(0.0))
         voice = narrator(
             session, tmp_path, ScriptedModel(Completion(text="leetcode")), judge,
-            mode=GuardMode.SHADOW,
+            mode=GuardMode.OFF,
         )
 
         turn = voice.say("reverse a linked list")
@@ -200,7 +193,7 @@ class TestShadow:
         judge = ScriptedJudge(_result(0.0))
         voice = narrator(
             session, tmp_path, ScriptedModel(Completion(text="leetcode")), judge,
-            mode=GuardMode.SHADOW,
+            mode=GuardMode.OFF,
         )
 
         voice.say("reverse a linked list")
@@ -398,7 +391,7 @@ class TestStreaming:
     def test_shadow_still_streams(self, session, tmp_path):
         judge = ScriptedJudge(_result(1.0))
         model = ScriptedModel(Completion(text="ok"))
-        voice = narrator(session, tmp_path, model, judge, mode=GuardMode.SHADOW)
+        voice = narrator(session, tmp_path, model, judge, mode=GuardMode.OFF)
 
         voice.say("why?", on_delta=lambda _: None)
 

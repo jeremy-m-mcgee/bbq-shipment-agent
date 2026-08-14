@@ -87,19 +87,24 @@ class VerificationMode(StrEnum):
 
 
 class GuardMode(StrEnum):
-    """D2's scope guard. Not a boolean, for the reason `planner` is not.
+    """Whether a low-scoring narration is actually withheld.
 
-    `shadow` scores every narration and records the verdict without
-    suppressing anything, which is how the threshold gets set from real
-    scores rather than from a guess -- and how the false-positive rate is
-    measured before a refusal is ever shown to an operator. `enforce` also
-    costs the operator streaming (a reply that must be judged before it is
-    seen cannot already be on screen), so the shadow step is not ceremony.
+    A boolean, and deliberately only that. It once had a third `shadow`
+    member, which was redundant: LaunchDarkly already decides whether scoring
+    happens at all, by enabling, disabling or targeting the judge config. What
+    it cannot express is whether the *application* blocks on a low score --
+    the judge returns a number, and acting on it is application logic.
+
+    So the two controls do not overlap. The judge config governs scoring, its
+    rubric and its model; this governs suppression. "Shadow" is then not a
+    mode but the ordinary state of the pair: judge enabled, this off. That is
+    where a rollout starts, because it is how the threshold gets set from real
+    scores and how the false-positive rate is measured before an operator is
+    ever shown a wrong refusal.
     """
 
     OFF = "off"
-    SHADOW = "shadow"
-    ENFORCE = "enforce"
+    ON = "on"
 
 
 class CapabilityConfigError(Exception):
@@ -217,7 +222,7 @@ CAPABILITY_FLAGS: dict[str, str] = {
 #: The consequence, which design 7 records: `guard` appears on the
 #: `capability_evaluations` stream but not in `cap_snapshot`.
 GUARD = Capability(
-    "guard", "narrator-guard-mode", GuardMode, STAGE_REVIEW_GUARD, GuardMode.OFF
+    "guard", "narrator-guard-enforce", GuardMode, STAGE_REVIEW_GUARD, GuardMode.OFF
 )
 
 #: The kill switch is a boolean flag, not a capability with an enum, so it is

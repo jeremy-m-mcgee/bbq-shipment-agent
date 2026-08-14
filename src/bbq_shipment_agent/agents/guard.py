@@ -114,8 +114,14 @@ class ScopeGuard:
 
     @property
     def active(self) -> bool:
-        """Whether a narration will actually be scored."""
-        return self._judge is not None and self.mode is not GuardMode.OFF
+        """Whether a narration will be scored.
+
+        LaunchDarkly\'s answer, not the flag\'s: a judge exists when its config
+        is enabled and targeted at this run, and `create_judge` returns None
+        when it is not. Scoring is the judge config\'s business; the flag only
+        decides what is done with the score.
+        """
+        return self._judge is not None
 
     @property
     def enforcing(self) -> bool:
@@ -125,7 +131,7 @@ class ScopeGuard:
         exclusive, because a reply that must be judged before the operator sees
         it cannot already be painted on their screen.
         """
-        return self.active and self.mode is GuardMode.ENFORCE
+        return self.active and self.mode is GuardMode.ON
 
     def check(self, history: str, reply: str) -> Verdict:
         """Score one narration. Never raises, and never blocks on a failure."""
@@ -149,7 +155,7 @@ class ScopeGuard:
         in_scope = score >= THRESHOLD
         return self._record(
             Verdict(
-                suppress=not in_scope and self.mode is GuardMode.ENFORCE,
+                suppress=not in_scope and self.mode is GuardMode.ON,
                 outcome="in_scope" if in_scope else "out_of_scope",
                 score=float(score),
                 reasoning=_reasoning(result),
