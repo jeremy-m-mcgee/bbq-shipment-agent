@@ -15,11 +15,18 @@ import json
 import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from bbq_shipment_agent.agents.model import Completion
+from bbq_shipment_agent.capabilities import (
+    CapabilitySet,
+    PlannerMode,
+    ValidationMode,
+    VerificationMode,
+)
 from bbq_shipment_agent.ledger import (
     AgentInvocationRecord,
     RunRecord,
@@ -29,7 +36,7 @@ from bbq_shipment_agent.ledger import (
 from bbq_shipment_agent.ui import RunService, create_app
 from bbq_shipment_agent.ui.app import _options_for
 from bbq_shipment_agent.ui.modes import describe
-from bbq_shipment_agent.ui.view import screenshot_catalogue
+from bbq_shipment_agent.ui.view import _off, screenshot_catalogue
 from bbq_shipment_agent.wiring import RunDepth, RunOptions
 
 
@@ -84,6 +91,10 @@ COMPLETIONS = FIXTURES / "d1-completions.json"
 EXTRACTIONS = FIXTURES / "b1-extractions.json"
 FIXTURE_SHOTS = FIXTURES / "screenshots"
 SNAPSHOT = Path(__file__).parent.parent / "config" / "ld-snapshot.json"
+TEMPLATES = (
+    Path(__file__).parent.parent
+    / "src" / "bbq_shipment_agent" / "ui" / "templates"
+)
 
 ROSTER = """
 origin:
@@ -726,12 +737,34 @@ class TestAWholeRun:
         assert "this run: 0 corrected" in page.text
         assert "this run: no repair was attempted" not in page.text
 
-    def test_d1_is_rendered_above_the_review_controls(self, finished):
+    def test_d1_is_rendered_above_the_review_controls(self):
         """Design 4 has D1 critique the manifest before a human sees it.
 
-        Below the Approve button is the one placement that cannot."""
+        Below the Approve button is the one placement that cannot.
+
+        Asserted against the template rather than a rendered page. The panel is
+        conditional on `verification-enabled` now, so the only run this suite
+        can produce offline is one where it is correctly absent -- and a
+        placement claim is a fact about `run.html` whether or not a given run
+        fires the condition.
+        """
+        markup = (TEMPLATES / "run.html").read_text(encoding="utf-8")
+        assert markup.index("D1 verification") < markup.index('id="review-pane"')
+
+    def test_verification_off_takes_the_panel_off_the_page(self, finished):
+        """The capability gates the component, not just the stage.
+
+        `verification-enabled` off is a normal run (design 6.10), and a panel
+        reading "D1 did not run" states an absence the operator did not ask
+        about. `TestTheVerificationPanelFollowsTheCapability` is the positive
+        control: this asserts a string is missing, which proves nothing on its
+        own.
+        """
         _, page = finished
-        assert page.text.index("D1 verification") < page.text.index("/review/approve")
+        assert "D1 verification" not in page.text
+        # Nothing about the run becomes unexplained by removing it -- the mode
+        # card still says verification is off and what that means.
+        assert "reviewed by a human" in page.text
 
     def test_the_plain_text_manifest_is_the_same_artifact(self, client, finished):
         job_id, _ = finished
@@ -1315,6 +1348,40 @@ class TestModeDescriptor:
         described = describe("planner", "experimental")
         assert described["value"] == "experimental"
         assert "default" in described["effect"]
+
+
+class TestTheVerificationPanelFollowsTheCapability:
+    """`verification-enabled` decides whether the D1 panel exists at all.
+
+    Pinned as a pure function, for the reason the view layer is plain data: the
+    decision is one predicate over the resolved capability set, and driving a
+    whole HTTP run to observe it would test the worker thread instead. The
+    rendered half is `TestAWholeRun`, which shows the panel gone offline.
+    """
+
+    def _run(self, resolved):
+        return SimpleNamespace(resolved_capabilities=lambda: resolved)
+
+    def _resolved(self, verification):
+        return CapabilitySet(
+            planner=PlannerMode.OFF,
+            validation=ValidationMode.STANDARD,
+            verification=verification,
+        )
+
+    def test_off_hides_it(self):
+        assert _off(self._run(self._resolved(VerificationMode.OFF)), "verification")
+
+    def test_on_shows_it(self):
+        # The positive control for TestAWholeRun's absence assertion.
+        assert not _off(self._run(self._resolved(VerificationMode.ON)), "verification")
+
+    def test_an_unresolved_set_is_not_an_off(self):
+        # `resolved_capabilities` is None until every capability is evaluated,
+        # which an extract-depth run never does -- it reaches no gated stage.
+        # "We have not asked" must not render as "the operator turned it off",
+        # or a truncated run would claim a decision nobody made.
+        assert not _off(self._run(None), "verification")
 
 
 class TestThereIsNoProfileControl:

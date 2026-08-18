@@ -147,7 +147,21 @@ def plan_view(context: Any, options: RunOptions) -> dict[str, Any]:
             }
             for r in result.remediations
         ],
-        "verification": _verification(result.verification),
+        # `verification-enabled` gates the panel as well as the stage. D1 with
+        # the capability off is a normal run rather than a degraded one, and a
+        # panel reading "D1 did not run" states an absence the operator did not
+        # ask about -- design 6.10's "less helpful, not less correct" rendered
+        # as an empty section every time.
+        #
+        # Read from the capability rather than from `outcome == "skipped"`:
+        # the capability is the cause and the outcome is its effect, and a
+        # second reason to skip would silently start hiding the panel for a
+        # case the operator *would* want to see. The mode card in the header
+        # still says verification is off and what that means, so nothing about
+        # the run becomes unexplained by removing this.
+        "verification": None if _off(context.run, "verification") else _verification(
+            result.verification
+        ),
         "extraction": _extraction(context.extraction, context.images),
         "partial": _partial(result.solve),
         "manifest": None,
@@ -465,6 +479,19 @@ def _repair(result: Any) -> dict[str, Any] | None:
         ],
         "rejected": list(result.repair.rejected),
     }
+
+
+def _off(run: Any, capability: str) -> bool:
+    """Whether a capability resolved to `off` on this run.
+
+    False when the set has not been evaluated yet, which is deliberate: an
+    extract-depth run reaches no capability-gated stage and so has no answer,
+    and "we do not know" must not render as "the operator turned it off".
+    """
+    resolved = run.resolved_capabilities()
+    if resolved is None:
+        return False
+    return getattr(getattr(resolved, capability, None), "value", None) == "off"
 
 
 def _verification(verification: Any) -> dict[str, Any] | None:
