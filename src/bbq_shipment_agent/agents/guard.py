@@ -16,8 +16,23 @@ earlier draft of this design and it duplicated the SDK for no benefit.
 What is left is the part LaunchDarkly deliberately does not do: deciding. The
 judges documentation is explicit that a score becomes a guardrail only when the
 application acts on it, and design 6.1 keeps that decision in Python. So the
-threshold is a constant here, and the mode -- `off` / `shadow` / `enforce` --
-is the flag LaunchDarkly serves.
+threshold is a constant here, and enabling and targeting the judge config is
+the whole of the on switch -- there is no flag beside it.
+
+## The judge is looked up per turn, not held
+
+`create_judge` evaluates the config once and freezes it into the `Judge`:
+`enabled`, the model, the rubric and the targeting are all read at construction
+and never again. A guard holding one instance for the life of a review is
+therefore deaf to LaunchDarkly for the whole review -- a console edit lands on
+the next *run*, which is the opposite of what design 6.1 buys by putting the
+rubric in a console at all.
+
+So this holds a *factory* and calls it at the top of every scored turn. The
+cost is one flag evaluation per turn, against a review that is a handful of
+turns long, and the SDK is reading a locally cached ruleset rather than making
+a network round trip. What it buys is that disabling the judge mid-review stops
+the scoring on the next turn, and a rubric edit is live on the next turn too.
 
 ## Everything that is not a clear refusal passes
 
@@ -92,53 +107,68 @@ class Verdict:
 class ScopeGuard:
     """Scores one narration and decides whether the operator sees it.
 
-    Holds an injected `Judge` because `wiring.py` is where things that open
-    sockets are built. `None` is a normal state, not a failure: it means the
-    mode is `off`, LaunchDarkly is unreachable, no provider package is
-    installed, or the judge config is disabled -- and all of them mean the same
-    thing here, which is that narrations pass.
+    Holds an injected *factory* rather than a `Judge`, because `wiring.py` is
+    where things that open sockets are built and because a held instance cannot
+    see a console edit (see the module docstring). `None` is a normal state,
+    not a failure: it means there is no live LaunchDarkly client at all, and so
+    there can never be a judge on this run.
     """
 
     def __init__(
-        self, run: Run, judge: Any | None, *, ledger_root: Path | str
+        self,
+        run: Run,
+        judge_factory: Any | None,
+        *,
+        ledger_root: Path | str,
     ) -> None:
         self.run = run
         self.ledger_root = ledger_root
-        self._judge = judge
+        #: Called once per scored turn. Returns a `Judge`, or None when the
+        #: config is disabled, untargeted, unreachable, or has no provider
+        #: package -- all of which mean narrations pass.
+        self._judge_factory = judge_factory
 
     @property
     def enforcing(self) -> bool:
-        """Whether narrations are scored and withheld.
+        """Whether this review *may* withhold a narration.
 
-        One property, because there is one switch. Enabling and targeting the
-        judge config in LaunchDarkly is the whole of it: `create_judge` returns
-        None when the config is disabled, untargeted, or unreachable, and then
-        there is no guard. A flag beside it would be a second control over the
-        same thing and another place to look.
+        Deliberately the weaker claim. Whether a given turn is scored is
+        LaunchDarkly's to decide and is asked per turn, so the only thing
+        knowable in advance is whether there is a client to ask -- and a
+        property that answered from a stale judge would be the held-instance
+        bug this class exists to avoid, moved somewhere harder to see.
 
-        Read by the front-ends too: streaming and guarding are mutually
-        exclusive, because a reply that must be judged before the operator sees
-        it cannot already be painted on their screen.
+        Read by the front-ends, because streaming and guarding are mutually
+        exclusive: a reply that must be judged before the operator sees it
+        cannot already be painted on their screen. The consequence of the
+        weaker claim is that a live client suppresses streaming even on a run
+        whose judge config turns out to be disabled.
         """
-        return self._judge is not None
+        return self._judge_factory is not None
 
     def check(self, history: str, reply: str) -> Verdict:
-        """Score one narration. Never raises, and never blocks on a failure."""
-        if not self.enforcing:
+        """Score one narration. Never raises, and never blocks on a failure.
+
+        The judge is resolved here rather than at construction, so a config
+        disabled or re-targeted mid-review takes effect on this turn.
+        """
+        judge = self._resolve()
+        if judge is None:
             return Verdict(suppress=False, outcome="in_scope")
 
-        result = self._evaluate(history, reply)
+        result = self._evaluate(judge, history, reply)
         if result is None:
-            return self._record(Verdict(suppress=False, outcome="error"))
+            return self._record(Verdict(suppress=False, outcome="error"), judge)
 
-        self._track(result)
+        self._track(judge, result)
 
         score = getattr(result, "score", None)
         if not getattr(result, "success", False) or score is None:
             # Sampled out, errored, or unparseable. The SDK already logged it;
             # a narration is not withheld because a grader had a bad day.
             return self._record(
-                Verdict(suppress=False, outcome="error", reasoning=_reasoning(result))
+                Verdict(suppress=False, outcome="error", reasoning=_reasoning(result)),
+                judge,
             )
 
         in_scope = score >= THRESHOLD
@@ -148,10 +178,25 @@ class ScopeGuard:
                 outcome="in_scope" if in_scope else "out_of_scope",
                 score=float(score),
                 reasoning=_reasoning(result),
-            )
+            ),
+            judge,
         )
 
-    def _evaluate(self, history: str, reply: str) -> Any | None:
+    def _resolve(self) -> Any | None:
+        """This turn's judge, or None if there is not one.
+
+        Never raises, for the reason `wiring.scope_judge` does not: a grader
+        that cannot be built must not take the review down with it. A factory
+        that throws is the same outcome as a disabled config -- no scoring.
+        """
+        if self._judge_factory is None:
+            return None
+        try:
+            return self._judge_factory()
+        except Exception:  # noqa: BLE001 - no judge is a normal state
+            return None
+
+    def _evaluate(self, judge: Any, history: str, reply: str) -> Any | None:
         """`Judge.evaluate` across the async boundary.
 
         `asyncio.run` is safe at all three call sites -- the CLI is
@@ -161,16 +206,16 @@ class ScopeGuard:
         that is a reason to pass rather than to fail.
         """
         try:
-            return asyncio.run(self._judge.evaluate(history, reply))
+            return asyncio.run(judge.evaluate(history, reply))
         except Exception:  # noqa: BLE001 - a grader never fails a review
             return None
 
-    def _track(self, result: Any) -> None:
+    def _track(self, judge: Any, result: Any) -> None:
         """Send the score to LaunchDarkly. Best effort, like every metric."""
         with contextlib.suppress(Exception):  # telemetry never fails a run
-            self._judge.get_ai_config().create_tracker().track_judge_result(result)
+            judge.get_ai_config().create_tracker().track_judge_result(result)
 
-    def _record(self, verdict: Verdict) -> Verdict:
+    def _record(self, verdict: Verdict, judge: Any) -> Verdict:
         """One ledger line per scored narration, carrying the score only.
 
         The reasoning is model-authored free text and the ledger is committed
@@ -189,11 +234,11 @@ class ScopeGuard:
                 JUDGE_KEY,
                 outcome=verdict.outcome,
                 judge_score=verdict.score,
-                config=self._identity(),
+                config=self._identity(judge),
             )
         return verdict
 
-    def _identity(self) -> AgentConfig:
+    def _identity(self, judge: Any) -> AgentConfig:
         """What the ledger records this judge as.
 
         A judge is not in `run.agent_configs`, so the usual lookup finds
@@ -201,11 +246,15 @@ class ScopeGuard:
         `version` stay unset: the SDK's judge config does not expose them, the
         same gap `agent_configs` works around for agents by reading the raw
         variation. The model and the instruction hash still pin what ran.
+
+        Taken from the judge that scored *this* turn rather than from the
+        review, which is what makes a mid-review rubric edit legible: two turns
+        of one review can now carry two different instruction hashes.
         """
         model = None
         instructions = None
         with contextlib.suppress(Exception):
-            served = self._judge.get_ai_config()
+            served = judge.get_ai_config()
             model = getattr(getattr(served, "model", None), "name", None)
             instructions = "\n\n".join(
                 m.content for m in (getattr(served, "messages", None) or [])
