@@ -634,16 +634,22 @@ def conversing_model(options: RunOptions) -> Any:
 
 
 def scope_judge(client: Any, run: Any) -> Any:
-    """D2's scope guard judge, or None when there will not be one.
+    """D2\'s scope guard judge, or None when there is not one *right now*.
 
     `None` on every path that means "nothing to score with": there is no live
     LaunchDarkly client, or `create_judge` could not build one -- which it
     reports by returning `None` when the config is disabled, not targeted at
     this run, missing, or has no provider package installed for its model.
 
-    Deliberately not gated on the flag. Whether scoring happens is the judge
-    config\'s business, decided in LaunchDarkly by enabling or targeting it;
-    the flag only decides whether a low score withholds the reply.
+    There is no flag beside it. Whether scoring happens is the judge config\'s
+    business, decided in LaunchDarkly by enabling or targeting it, and a second
+    control over the same thing would only be another place to look.
+
+    **Called once per scored turn, not once per review.** `create_judge`
+    evaluates the config and freezes it into the `Judge`, so a held instance
+    never sees a console edit; `ScopeGuard` therefore takes `judge_factory`
+    below and calls it each turn. Cheap: the SDK evaluates against a locally
+    cached ruleset, so this is not a network round trip.
 
     Constructed here rather than inside `ScopeGuard` for the reason every other
     live object is: this module is where things that open sockets are built.
@@ -700,7 +706,14 @@ def narrator_for(
         session,
         ledger_root=ledger_root,
         model=make_model(options),
-        guard=ScopeGuard(run, scope_judge(client, run), ledger_root=ledger_root),
+        # A factory, not a judge: `create_judge` freezes the config into the
+        # instance, so one built here would hold run-start rules for every turn
+        # of a review that may sit parked for a long time.
+        guard=ScopeGuard(
+            run,
+            (lambda: scope_judge(client, run)) if client is not None else None,
+            ledger_root=ledger_root,
+        ),
     )
 
 

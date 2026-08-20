@@ -131,13 +131,20 @@ def session(tmp_path):
 
 
 def narrator(session, tmp_path, model, judge):
+    """A narrator whose guard resolves to `judge` on every turn.
+
+    `judge` may also be a zero-argument callable, which is how a test scripts
+    LaunchDarkly *changing* mid-review -- the guard asks per turn, so a factory
+    is what the production wiring passes too.
+    """
     run, review = session
+    factory = judge if callable(judge) else lambda: judge
     return Narrator(
         run,
         review,
         ledger_root=tmp_path / "ledger",
         model=model,
-        guard=ScopeGuard(run, judge, ledger_root=tmp_path / "ledger"),
+        guard=ScopeGuard(run, factory, ledger_root=tmp_path / "ledger"),
     )
 
 
@@ -256,11 +263,117 @@ class TestTheLedger:
         assert secret not in written
 
 
+class TestLaunchDarklyIsAskedEveryTurn:
+    """`create_judge` freezes the config, so the guard must not hold a judge.
+
+    The bug this pins is invisible from inside a review: a judge built at run
+    start scores every turn against run-start rules, so a console edit -- the
+    thing design 6.1 buys by putting the rubric in a console -- does nothing
+    until the next run.
+    """
+
+    def test_the_judge_is_resolved_once_per_scored_turn(self, session, tmp_path):
+        judge = ScriptedJudge(_result(1.0), _result(1.0))
+        built = []
+
+        def factory():
+            built.append(1)
+            return judge
+
+        voice = narrator(
+            session,
+            tmp_path,
+            ScriptedModel(Completion(text="a"), Completion(text="b"), Completion(text="c")),
+            factory,
+        )
+
+        voice.open()
+        voice.say("why?")
+        voice.say("and ana?")
+
+        # Two, not three: `open` is never judged, so it never asks.
+        assert built == [1, 1]
+
+    def test_disabling_the_config_mid_review_stops_suppression(self, session, tmp_path):
+        # Turn one scores 0.0 and is withheld. LaunchDarkly then disables the
+        # judge, `create_judge` starts returning None, and turn two passes
+        # without waiting for the next run.
+        judge = ScriptedJudge(_result(0.0))
+        live = [judge, None]
+
+        voice = narrator(
+            session,
+            tmp_path,
+            ScriptedModel(Completion(text="leetcode"), Completion(text="also leetcode")),
+            lambda: live.pop(0),
+        )
+
+        first = voice.say("reverse a linked list")
+        second = voice.say("reverse it again")
+
+        assert first.reply == REFUSAL
+        assert first.refused is True
+        assert second.reply == "also leetcode"
+        assert second.refused is False
+        # Only the scored turn is on the judge's ledger stream.
+        assert [r.outcome for r in invocations(tmp_path, JUDGE_KEY)] == ["out_of_scope"]
+
+    def test_enabling_the_config_mid_review_starts_suppression(self, session, tmp_path):
+        # And the other direction, which is the one worth having: a guard
+        # turned on because a narration went wrong takes effect on the next
+        # turn rather than on the next run.
+        live = [None, ScriptedJudge(_result(0.0))]
+
+        voice = narrator(
+            session,
+            tmp_path,
+            ScriptedModel(Completion(text="fine"), Completion(text="leetcode")),
+            lambda: live.pop(0),
+        )
+
+        first = voice.say("why?")
+        second = voice.say("reverse a linked list")
+
+        assert first.reply == "fine"
+        assert second.reply == REFUSAL
+
+
 class TestItFailsOpen:
     """Nothing but a clear refusal withholds a narration."""
 
-    def test_no_judge_at_all(self, session, tmp_path):
+    def test_no_client_at_all(self, session, tmp_path):
+        # `None` rather than a factory: offline, there is nothing to ask, and
+        # `enforcing` is the one case that can be answered without asking.
+        run, review = session
+        voice = Narrator(
+            run,
+            review,
+            ledger_root=tmp_path / "ledger",
+            model=ScriptedModel(Completion(text="anything")),
+            guard=ScopeGuard(run, None, ledger_root=tmp_path / "ledger"),
+        )
+
+        assert voice.enforcing is False
+        turn = voice.say("why?")
+
+        assert turn.reply == "anything"
+        assert invocations(tmp_path, JUDGE_KEY) == []
+
+    def test_a_config_that_serves_no_judge(self, session, tmp_path):
         voice = narrator(session, tmp_path, ScriptedModel(Completion(text="anything")), None)
+
+        turn = voice.say("why?")
+
+        assert turn.reply == "anything"
+        assert invocations(tmp_path, JUDGE_KEY) == []
+
+    def test_a_factory_that_raises(self, session, tmp_path):
+        # A grader that cannot be built must not take the review down with it,
+        # for the reason `wiring.scope_judge` never raises either.
+        def factory():
+            raise RuntimeError("LaunchDarkly fell over")
+
+        voice = narrator(session, tmp_path, ScriptedModel(Completion(text="anything")), factory)
 
         turn = voice.say("why?")
 
