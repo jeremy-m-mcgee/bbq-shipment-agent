@@ -1,0 +1,80 @@
+# The demo roster. Four recipients, chosen so each flag in the demo has
+# something visible to change.
+#
+#   demo/demo.sh all
+#
+# Committed, unlike `recipients.yaml`, because every address here is a public
+# building rather than a home. That is the whole reason this file exists
+# separately: the demo has to be reproducible on a projector, and the real
+# run input is gitignored for good reason.
+#
+# Who does what in the demo:
+#
+#   ana-ruiz      clean address, non-Saturday. The control.
+#   bo-nakamura   clean, but the validator attaches advisory text it did not
+#                 act on -- design 10's "validator notes" case, visible on the
+#                 manifest under every setting.
+#   dev-okonkwo   CORRECTABLE. Submitted ZIP 60631; the validator returns
+#                 60613, a different 5-digit ZIP and therefore a different
+#                 lane. `validation-mode: standard` applies the correction and
+#                 ships; `strict` escalates the recipient to a human. This is
+#                 the one row that moves when segment 2 flips the flag.
+#   cass-delgado  ship_date pinned to a Saturday, which forces USPS into the
+#                 carrier pair for the entire run (design 3). It is also what
+#                 D1 flags in segment 3.
+
+origin:
+  name: BBQ HQ
+  street1: 64 Divisadero St
+  city: San Francisco
+  state: CA
+  zip: "94117"
+
+# Pinned rather than left to the calendar, so the manifest a year from now is
+# the manifest in the slides. The run prints whichever set it used either way.
+ship_dates:
+  - 2026-08-15   # Saturday
+  - 2026-08-17   # Monday
+  - 2026-08-18   # Tuesday
+
+lanes:
+  gulf:
+    ambient_c: 32.0
+    zone: 4
+  mountain:
+    ambient_c: 14.0
+    zone: 7
+
+recipients:
+  - name: Ana Ruiz
+    street1: 1600 Pennsylvania Ave NW
+    city: Washington
+    state: DC
+    zip: "20500"
+
+  - key: bo-nakamura
+    name: Bo Nakamura
+    street1: 233 S Wacker Dr
+    city: Chicago
+    state: IL
+    zip: "60606"
+    lane: mountain
+
+  # The correctable one. Do not "fix" this ZIP -- 60631 being wrong is what
+  # segment 2 demonstrates.
+  - key: dev-okonkwo
+    name: Dev Okonkwo
+    street1: 1060 W Addison St
+    city: Chicago
+    state: IL
+    zip: "60631"
+    lane: mountain
+
+  # The operator pin. The only way a Saturday shipment enters the plan.
+  - name: Cass Delgado
+    street1: 700 Louisiana St
+    city: Houston
+    state: TX
+    zip: "77002"
+    lane: gulf
+    ship_date: 2026-08-15

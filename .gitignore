@@ -41,3 +41,18 @@ recipients.*.yaml
 # committed by accident once and amended back out.
 .claude/settings.local.json
 .claude/worktrees/
+
+# Rehearsal output. `demo/demo.sh` writes runs to demo/ledger/ rather than to
+# the committed ledger/, so practising the talk does not append five runs to an
+# append-only file that ships. demo/roster.yaml and the runbook stay tracked —
+# the roster holds public buildings, not homes, which is why it can be.
+demo/ledger/
+demo/.out/
+
+# Personal notes and cheat sheets. `*.local.md` is the escape hatch for a
+# working document that describes the repo without being part of it: it can go
+# stale, it answers to nobody, and docs/design.md stays the committed account.
+*.local.md
+
+# macOS Finder metadata.
+.DS_Store
