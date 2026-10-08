@@ -1,8 +1,8 @@
 """C2: enumerate configurations. Design section 4, Phase C.
 
 "Cross product of gel pack count, ship date, and carrier service, per
-shipment, in the smallest box the load fits in. All four carriers at this
-stage. No pair restriction yet."
+shipment, in the smallest box the load fits in. Every carrier returned by
+Shippo participates at this stage. No pair restriction yet."
 
 Box size is a fit check rather than an axis of the cross product -- design 5
 found the larger box dominated on cost and thermal margin at once, so
