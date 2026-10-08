@@ -7,9 +7,10 @@ which is what section 1 relies on when it says no solver is needed.
 Carriers and services are deliberately *not* here. They were, as a four-member
 enum and a nine-entry service table with transit times chosen by hand, and
 against the live API that was wrong in kind: DHL will not quote US domestic,
-UPS depends on the origin, FedEx had no account, and USPS offered a service the
-enum did not contain. Which carriers exist is a property of the account and the
-lane, discovered at quote time -- see `rates`.
+UPS depends on the origin, and USPS offered a service the enum did not contain.
+FedEx is the same shape: it participates when an active FedEx account in Shippo
+quotes the lane, not because Python declares it. Which carriers exist is a
+property of the account and the lane, discovered at quote time -- see `rates`.
 
 ## Units
 
@@ -178,8 +179,8 @@ BOXES: dict[BoxSize, Box] = {
     ),
 }
 
-#: Design 3: gel packs, not dry ice. Avoids hazmat classification and keeps
-#: all four carriers available.
+#: Design 3: gel packs, not dry ice. Avoids hazmat classification and does not
+#: exclude otherwise available carriers on hazmat grounds.
 MAX_GEL_PACKS = 6
 #: Operator policy, not physics. Frozen barbecue arriving with no refrigerant
 #: in the box reads as a mistake to whoever opens it, whatever the arrival

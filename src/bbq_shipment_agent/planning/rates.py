@@ -6,10 +6,11 @@ it changes C2's shape.
 The first version declared four carriers and nine services as constants, with
 transit times I chose. Against the real Shippo API that was wrong in kind, not
 just in value: DHL Express will not quote US domestic at all, UPS refused the
-origin as out of its service area, FedEx had no account, and USPS returned a
-service ("Ground Advantage") that was not in the enum. Which carriers and
-services exist is a property of the account *and* the specific lane, resolved
-at runtime. A static catalog cannot represent that.
+origin as out of its service area, and USPS returned a service ("Ground
+Advantage") that was not in the enum. FedEx likewise appears only when its
+Shippo carrier account is active and the lane returns a rate. Which carriers
+and services exist is a property of the account *and* the specific lane,
+resolved at runtime. A static catalog cannot represent that.
 
 So the enumeration inverts. C2 no longer takes a cross product against a
 declared service list; it builds parcel variants and asks what can carry them.
@@ -17,6 +18,10 @@ Price and transit estimate arrive in the same answer, which means C2 and C5's
 pricing step collapse into one call -- a divergence from design 4's ordering,
 forced by the fact that you cannot learn which services exist without also
 being told what they cost.
+
+FedEx needs no Python adapter: connecting and activating a FedEx carrier
+account in Shippo makes its rates part of this same response. Shippo account
+credentials stay in Shippo; this application only holds `SHIPPO_API_KEY`.
 
 ## The carrier set is pinned per shipment
 
@@ -267,6 +272,11 @@ class ShippoQuoter:
     re-running a plan during development free rather than rate-limited, and
     the retry turns the remaining flakiness into latency, which at three to
     five runs a year costs nothing.
+
+    The cache predates any carrier-account lookup and therefore cannot notice
+    that an account was activated or deactivated in Shippo. Clear
+    `.cache/shippo-quotes.json` after changing Shippo's active carrier set;
+    otherwise a cached reference quote can pin the old set indefinitely.
     """
 
     def __init__(

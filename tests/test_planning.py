@@ -19,6 +19,8 @@ from bbq_shipment_agent.planning import (
     BoxSize,
     Lane,
     LumpedCapacitanceModel,
+    Quote,
+    QuoteResult,
     QuotingUnavailable,
     RecordedQuoter,
     ShipDay,
@@ -56,6 +58,37 @@ def load():
 
 def enumerate_all(load, quoter, dates=ALL_DAYS):
     return enumerate_configurations(load, ORIGIN, DEST, dates, quoter)
+
+
+class FedExQuoter:
+    """A protocol fake until the configured Shippo account can record FedEx.
+
+    Values are deliberately not presented as real rates. These tests pin the
+    carrier-agnostic control flow only; the canonical rate fixture remains a
+    recording of real Shippo answers.
+    """
+
+    def __init__(self, estimated_days=1, duration_terms="Next business day delivery."):
+        self.estimated_days = estimated_days
+        self.duration_terms = duration_terms
+        self.required = []
+
+    def quote(self, origin, destination, parcel, require=frozenset()):
+        self.required.append(require)
+        return QuoteResult(
+            quotes=(
+                Quote(
+                    carrier="FedEx",
+                    service_token="fedex_test_service",
+                    service_name="FedEx test service",
+                    amount=10.0,
+                    currency="USD",
+                    estimated_days=self.estimated_days,
+                    duration_terms=self.duration_terms,
+                    parcel=parcel,
+                ),
+            )
+        )
 
 
 class TestShipDays:
@@ -150,6 +183,18 @@ class TestParcelVariants:
 
 
 class TestEnumeration:
+    def test_fedex_is_discovered_pinned_and_kept_on_weekdays(self, load):
+        quoter = FedExQuoter()
+        enumeration = enumerate_all(load, quoter)
+
+        assert enumeration.pinned_carriers == {"FedEx"}
+        assert {c.carrier for c in enumeration.configurations if c.ship_date == MONDAY} == {
+            "FedEx"
+        }
+        assert not any(c.ship_date == SATURDAY for c in enumeration.configurations)
+        assert quoter.required[0] == frozenset()
+        assert all(required == frozenset({"FedEx"}) for required in quoter.required[1:])
+
     def test_carriers_are_discovered_not_declared(self, load, quoter):
         # The whole point of the rework: the carrier set comes back as an
         # answer rather than going in as an assumption.
@@ -236,6 +281,16 @@ class TestThermalGate:
         configurations = enumerate_all(load, quoter).configurations
         feasible = thermal_gate(load, configurations)
         assert 0 < len(feasible) < len(configurations)
+
+    def test_fedex_without_a_transit_estimate_cannot_pass(self, load):
+        configurations = enumerate_all(load, FedExQuoter(estimated_days=None), (MONDAY,))
+        assert thermal_gate(load, configurations.configurations) == ()
+
+    def test_a_fedex_option_can_reach_thermal_feasibility(self, load):
+        configurations = enumerate_all(load, FedExQuoter(), (MONDAY,))
+        feasible = thermal_gate(load, configurations.configurations)
+        assert feasible
+        assert {row.configuration.carrier for row in feasible} == {"FedEx"}
 
     def test_zero_gel_packs_never_survives(self, load, quoter):
         # Built directly rather than taken from the enumerator. C2 no longer

@@ -71,7 +71,7 @@ The authority ceiling was a third row here, `propose_only`, enforced by a clamp 
 |---|---|
 | Ship days | Saturday, Monday, Tuesday only |
 | Saturday shipments | USPS only for perishables, given weekend ground schedules |
-| Refrigerant | Gel packs, not dry ice. Avoids hazmat classification and keeps all four carriers available |
+| Refrigerant | Gel packs, not dry ice. Avoids hazmat classification and does not exclude otherwise available carriers |
 | Minimum gel packs | At least one, always. Not a thermal claim — see below |
 
 **The gel pack floor is presentation, not physics.** A parcel with no refrigerant in it reads as a mistake to whoever opens it, whatever the arrival temperature says, and the recipient is not holding the thermal model. So C2 never enumerates a zero-gel parcel and C5 cannot select one however cheap it is.
@@ -157,7 +157,7 @@ Deterministic, and a pure function of its input: B4 reads no prior state, so the
 Packet contents to weight and dimensions per shipment. Currently uniform.
 
 **C2. Enumerate configurations.**
-Cross product of gel pack count, ship date, and carrier service, per shipment, in the smallest box the load fits in. All four carriers at this stage. No pair restriction yet.
+Cross product of gel pack count, ship date, and carrier service, per shipment, in the smallest box the load fits in. Every carrier Shippo returns for the account and lane participates at this stage; there is no declared carrier list and no pair restriction yet. Connecting FedEx in Shippo is therefore an account operation, not a new quoting adapter.
 
 Box size is a fit check rather than an axis of the cross product — see section 5, where the larger box turns out to be dominated on cost and thermal margin at once. Gel pack count stays crossed exhaustively above the section 3 floor of one, because it is a genuine tradeoff: more refrigerant is never thermally worse but always weighs more, so the count C5 wants is the cheapest one that clears the gate, and that is not knowable without quoting.
 
@@ -177,8 +177,8 @@ This loop handles global infeasibility only. A shipment that is feasible under s
 
 C4 is the likeliest place in the system for a model to helpfully suggest relaxing a food safety constraint, because it is invoked precisely *when the 4.4C gate has rejected everything*. It must not, and its instructions say so twice. The point compounds now that section 5 has given up on calibration: an argument from a tenth of a degree is wrong both because the gate is not negotiable and because the number it is arguing over was computed from stated assumptions rather than measured.
 
-**C5. Solve carrier pairs.**
-Four carriers choose two is six candidate pairs. For each pair, assign every shipment its cheapest feasible configuration by independent lookup. Brute force over six options, not an optimization problem.
+**C5. Solve carrier subsets.**
+Enumerate every non-empty subset up to the hard two-carrier ceiling from the carriers that actually returned feasible quotes. For each subset, assign every shipment its cheapest feasible configuration by independent lookup. This remains brute force over a small discovered set, not an optimization problem.
 
 For each pair, compute:
 
@@ -698,7 +698,7 @@ E2 survives in reduced form: approval still writes the shipment rows, because a 
 
 Two consequences are worth naming rather than discovering later. The thermal model loses its calibration path, since E3 was the only source of real arrival data — section 5 now says the model will not be calibrated. And the authority machinery in 6.5 was left gating nothing that exists; it was kept for a while on a stated argument and has since been removed, which 6.5 records.
 
-**Dry ice.** Rejected. Gel packs avoid hazmat classification and keep all four carriers available.
+**Dry ice.** Rejected. Gel packs avoid hazmat classification and do not exclude otherwise available carriers on hazmat grounds.
 
 ---
 

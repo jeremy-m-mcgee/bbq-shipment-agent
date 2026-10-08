@@ -378,6 +378,20 @@ Recording another lane is the same task as recording B3's proposed addresses,
 noted in design 10. Until that is done, those two are the replayed paths that
 work end to end.
 
+### Changing Shippo carrier accounts
+
+Carriers are discovered from the rates Shippo returns; there is no carrier
+allow-list in this repository. To add FedEx, connect and activate the FedEx
+account in the same Shippo environment as `SHIPPO_API_KEY`. Keep the FedEx
+credentials in Shippo -- the application needs no `FEDEX_*` secret.
+
+After activating or deactivating any Shippo carrier account, remove
+`.cache/shippo-quotes.json` before the next live plan. The cache contains rate
+responses, not carrier-account metadata, so an old reference response would
+otherwise pin the carrier set that existed when it was recorded. Removing the
+file is safe: it is gitignored, derived entirely from Shippo, and rebuilt by
+the next live quote run.
+
 ## Layout
 
 | path | what |

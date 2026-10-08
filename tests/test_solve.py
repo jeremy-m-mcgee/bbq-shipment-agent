@@ -1,5 +1,6 @@
 """Quoting and C5, against real recorded Shippo quotes."""
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -150,11 +151,76 @@ class TestQuoterRetry:
             quoter.quote(ORIGIN, DEST, parcel)
 
 
+class TestCarrierAccountCache:
+    def test_the_cache_must_be_cleared_after_activating_fedex(self, tmp_path):
+        parcel = parcel_variants(define_load("r0"))[0]
+        key = f"{ORIGIN.cache_key()}>{DEST.cache_key()}#{parcel.cache_key()}"
+        cache = tmp_path / "shippo-quotes.json"
+        cache.write_text(
+            json.dumps(
+                {
+                    key: {
+                        "rates": [
+                            {
+                                "carrier": "USPS",
+                                "service_token": "usps_test_service",
+                                "service_name": "USPS test service",
+                                "amount": 10.0,
+                                "currency": "USD",
+                                "estimated_days": 1,
+                                "duration_terms": "Delivery in 1 day.",
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class AccountChangedQuoter(ShippoQuoter):
+            def __init__(self):
+                super().__init__(api_key="test", cache_path=cache)
+                self.fetches = 0
+
+            def _fetch(self, origin, destination, parcel, attempt):
+                self.fetches += 1
+                return QuoteResult(
+                    quotes=(
+                        Quote(
+                            "FedEx", "fedex_test_service", "FedEx test service",
+                            9.0, "USD", 1, parcel, "Next business day delivery.",
+                        ),
+                    )
+                )
+
+        stale = AccountChangedQuoter()
+        assert stale.quote(ORIGIN, DEST, parcel).carriers == {"USPS"}
+        assert stale.fetches == 0
+
+        cache.unlink()
+        refreshed = AccountChangedQuoter()
+        assert refreshed.quote(ORIGIN, DEST, parcel).carriers == {"FedEx"}
+        assert refreshed.fetches == 1
+
+        replayed = AccountChangedQuoter()
+        replayed_result = replayed.quote(ORIGIN, DEST, parcel)
+        assert replayed_result.carriers == {"FedEx"}
+        assert replayed_result.quotes[0].service_token == "fedex_test_service"
+        assert replayed.fetches == 0
+
+
 class TestCarrierSubsets:
     def test_it_enumerates_singletons_and_pairs(self):
         assert carrier_subsets(frozenset({"UPS", "USPS"})) == (
             ("UPS",), ("USPS",), ("UPS", "USPS"),
         )
+
+    def test_fedex_singletons_and_pairs_obey_the_ceiling(self):
+        subsets = carrier_subsets(frozenset({"FedEx", "UPS", "USPS"}))
+        assert ("FedEx",) in subsets
+        assert ("FedEx", "UPS") in subsets
+        assert ("FedEx", "USPS") in subsets
+        assert all(len(subset) <= MAX_CARRIERS_PER_RUN for subset in subsets)
 
     def test_four_carriers_give_ten_subsets_not_six_pairs(self):
         # "At most two" is a ceiling, not a quota, and a single carrier
