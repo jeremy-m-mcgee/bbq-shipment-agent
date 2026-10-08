@@ -53,3 +53,6 @@ demo/.out/
 # working document that describes the repo without being part of it: it can go
 # stale, it answers to nobody, and docs/design.md stays the committed account.
 *.local.md
+
+# macOS Finder metadata.
+.DS_Store
